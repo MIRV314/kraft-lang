@@ -78,23 +78,108 @@ function P:parse_program()
     elseif self:check("dedent") then
       self:advance()
     elseif self:check("indent") then
-      self:fail(self:peek(), "SYNTAX_ERROR", "statement", "indent (blocks are not implemented yet)")
+      self:fail(self:peek(), "SYNTAX_ERROR", "statement", "unexpected indent")
     else
-      stmts[#stmts + 1] = self:parse_stmt()
-      if self:check("newline") then
-        self:advance()
-      elseif not self:check("eof") then
-        self:fail(self:peek(), "SYNTAX_ERROR", "end of line", describe(self:peek()))
+      local s = self:parse_stmt()
+      stmts[#stmts + 1] = s
+      if not s.block_stmt then
+        if self:check("newline") then
+          self:advance()
+        elseif not self:check("eof") then
+          self:fail(self:peek(), "SYNTAX_ERROR", "end of line", describe(self:peek()))
+        end
       end
     end
   end
   return { k = "program", stmts = stmts }
 end
 
+-- Блок после ':' — это newline, indent, стейтменты, dedent.
+function P:parse_block()
+  self:expect("newline", nil, "end of line after ':'")
+  self:expect("indent", nil, "indented block")
+  self.block_depth = self.block_depth + 1
+
+  local stmts = {}
+  while not self:check("dedent") and not self:check("eof") do
+    if self:check("newline") then
+      self:advance()
+    else
+      local s = self:parse_stmt()
+      stmts[#stmts + 1] = s
+      if not s.block_stmt then
+        if self:check("newline") then
+          self:advance()
+        elseif not self:check("dedent") then
+          self:fail(self:peek(), "SYNTAX_ERROR", "end of line", describe(self:peek()))
+        end
+      end
+    end
+  end
+
+  if self:check("dedent") then self:advance() end
+  self.block_depth = self.block_depth - 1
+  return stmts
+end
+
+function P:parse_if()
+  local tok = self:advance()
+  local branches = {}
+
+  local cond = self:parse_expr()
+  self:expect("op", ":", "':'")
+  branches[1] = { cond = cond, body = self:parse_block() }
+
+  while self:check_kw("elif") do
+    self:advance()
+    local c = self:parse_expr()
+    self:expect("op", ":", "':'")
+    branches[#branches + 1] = { cond = c, body = self:parse_block() }
+  end
+
+  local else_body
+  if self:check_kw("else") then
+    self:advance()
+    self:expect("op", ":", "':'")
+    else_body = self:parse_block()
+  end
+
+  return {
+    k = "if", branches = branches, else_body = else_body,
+    block_stmt = true, line = tok.line, col = tok.col,
+  }
+end
+
+function P:parse_while()
+  local tok = self:advance()
+  local cond = self:parse_expr()
+  self:expect("op", ":", "':'")
+  self.loop_depth = self.loop_depth + 1
+  local body = self:parse_block()
+  self.loop_depth = self.loop_depth - 1
+  return {
+    k = "while", cond = cond, body = body,
+    block_stmt = true, line = tok.line, col = tok.col,
+  }
+end
+
 function P:parse_stmt()
   local t = self:peek()
   if t.type == "kw" and (t.value == "str" or t.value == "flint" or t.value == "bool") then
     return self:parse_decl()
+  end
+  if t.type == "kw" and t.value == "if" then
+    return self:parse_if()
+  end
+  if t.type == "kw" and t.value == "while" then
+    return self:parse_while()
+  end
+  if t.type == "kw" and (t.value == "break" or t.value == "continue") then
+    self:advance()
+    if self.loop_depth == 0 then
+      self:fail(t, "SCOPE_ERROR", "'break' or 'continue' inside a loop", "'" .. t.value .. "' outside a loop")
+    end
+    return { k = t.value, line = t.line, col = t.col }
   end
   if t.type == "name" and not lexer.TEMPLATE_FUNCS[t.value] then
     local nextt = self.tokens[self.pos + 1]
@@ -132,6 +217,8 @@ function P:parse_decl()
 
   self.vars[name] = ty
   self.nullable[name] = (expr.t == "NONE") or nil
+  -- Объявление внутри блока может не выполниться — тогда значение NONE (D11).
+  if self.block_depth > 0 then self.maybe_unset[name] = true end
   return { k = "decl", type = ty, name = name, expr = expr, line = name_tok.line, col = name_tok.col }
 end
 
@@ -367,7 +454,8 @@ function P:parse_primary()
       self:fail(t, "NAME_ERROR", "declared name", "undeclared '" .. t.value .. "'")
     end
     return {
-      k = "var", name = t.value, t = ty, nullable = self.nullable[t.value],
+      k = "var", name = t.value, t = ty,
+      nullable = (self.nullable[t.value] or self.maybe_unset[t.value]) or nil,
       line = t.line, col = t.col,
     }
   end
@@ -405,7 +493,8 @@ function P:parse_parts(tpl)
       end
       local sub = setmetatable({
         tokens = toks, pos = 1, path = self.path, vars = self.vars,
-        nullable = self.nullable,
+        nullable = self.nullable, maybe_unset = self.maybe_unset,
+        block_depth = self.block_depth, loop_depth = self.loop_depth,
       }, P)
       local e = sub:parse_expr()
       local rest = sub:peek()
@@ -421,6 +510,7 @@ end
 function parser.parse(tokens, path)
   local self = setmetatable({
     tokens = tokens, pos = 1, path = path, vars = {}, nullable = {},
+    maybe_unset = {}, block_depth = 0, loop_depth = 0,
   }, P)
   return self:parse_program()
 end

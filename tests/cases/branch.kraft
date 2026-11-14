@@ -1,0 +1,23 @@
+flint age = 20
+if age < 18:
+    show(несовершеннолетний)
+elif age < 65:
+    show(взрослый)
+else:
+    show(пожилой)
+
+if age > 100:
+    show(долгожитель)
+else:
+    show(не долгожитель)
+
+if FALSE:
+    flint hidden = 42
+show({hidden})
+show({hidden is NONE})
+
+flint n = 0
+if n:
+    show(ноль истинен)
+else:
+    show(ноль ложен)
