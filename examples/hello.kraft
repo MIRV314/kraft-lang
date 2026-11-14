@@ -1,0 +1,22 @@
+# Первая программа на Kraft.
+# Всё вне {} — текст, внутри {} — выражение.
+
+str name = "Kraft"
+flint version = 3
+
+show(привет, {name}!)
+show(версия: {version})
+
+show(2 + 2)          # 2 + 2   — это текст
+show({2 + 2})        # 4       — это выражение
+
+flint x = 10
+x += 5
+show(x = {x})
+show({7 / 2} {7 // 2} {-7 % 3} {2 ** 3 ** 2})
+
+show({x > 3})
+show({x is flint})
+show({NONE})
+show(цена: $5)
+show(\{x\})

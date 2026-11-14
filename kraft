@@ -1,0 +1,140 @@
+#!/usr/bin/env luajit
+-- kraft — запуск программы на Kraft: компиляция в Lua и сразу luajit.
+--   kraft file.kraft [args...]
+--   kraft --emit-lua file.kraft      (для отладки, печатает Lua)
+
+local this = arg[0] or "kraft"
+local root = this:match("^(.*)/[^/]*$") or "."
+package.path = root .. "/src/?.lua;" .. package.path
+
+local lexer = require("lexer")
+local parser = require("parser")
+local codegen = require("codegen")
+
+local function read_file(path)
+  local f = io.open(path, "rb")
+  if not f then return nil end
+  local s = f:read("*a")
+  f:close()
+  return s
+end
+
+local function die(msg)
+  io.stderr:write("kraft: " .. msg .. "\n")
+  os.exit(1)
+end
+
+local function is_tty()
+  local ok, ffi = pcall(require, "ffi")
+  if not ok then return false end
+  pcall(ffi.cdef, "int isatty(int);")
+  local ok2, r = pcall(function() return ffi.C.isatty(2) end)
+  return ok2 and r == 1
+end
+
+local function split_lines(s)
+  local lines = {}
+  for line in (s .. "\n"):gmatch("(.-)\r?\n") do lines[#lines + 1] = line end
+  return lines
+end
+
+local function format_error(e, src)
+  local lines = split_lines(src)
+  local line_text = lines[e.line] or ""
+  local num = string.format("%5d | ", e.line)
+  local col = e.col or 1
+
+  local red, yellow, reset = "", "", ""
+  if is_tty() then
+    red, yellow, reset = "\27[31m", "\27[33m", "\27[0m"
+  end
+
+  io.stderr:write(red .. (e.cat or "SYNTAX_ERROR") .. reset .. ": " .. (e.path or "?") .. ":" .. e.line .. "\n")
+  io.stderr:write(num .. line_text .. "\n")
+
+  local pad = string.rep(" ", #num + col - 1)
+  if e.expected and e.found then
+    io.stderr:write(pad .. "^ " .. yellow .. "expected " .. e.expected .. reset ..
+      ", " .. red .. "found " .. e.found .. reset .. "\n")
+  else
+    io.stderr:write(pad .. "^ " .. red .. (e.msg or "error") .. reset .. "\n")
+  end
+end
+
+local function compile(src, path)
+  local tokens, lerr = lexer.tokenize(src, path)
+  if not tokens then
+    error({
+      kraft_error = true, cat = "SYNTAX_ERROR",
+      line = lerr.line or 1, col = lerr.col or 1,
+      msg = lerr.msg, path = path,
+    }, 0)
+  end
+  local ast = parser.parse(tokens, path)
+  local krt_src = read_file(root .. "/src/krt.lua")
+  if not krt_src then die("cannot read runtime: " .. root .. "/src/krt.lua") end
+  return codegen.generate(ast, { path = path, krt = krt_src })
+end
+
+-- ---------- аргументы ----------
+
+local emit_lua = false
+local src_path
+local prog_args = {}
+
+local i = 1
+if arg[1] == "--emit-lua" then
+  emit_lua = true
+  i = 2
+end
+src_path = arg[i]
+if not src_path then die("usage: kraft file.kraft [args...]") end
+for j = i + 1, #arg do prog_args[#prog_args + 1] = arg[j] end
+
+local src = read_file(src_path)
+if not src then die("cannot open " .. src_path) end
+
+-- ---------- компиляция ----------
+
+local ok, lua_src = pcall(compile, src, src_path)
+if not ok then
+  if type(lua_src) == "table" and lua_src.kraft_error then
+    format_error(lua_src, src)
+    os.exit(1)
+  end
+  io.stderr:write("kraft: internal error: " .. tostring(lua_src) .. "\n")
+  os.exit(1)
+end
+
+if emit_lua then
+  io.write(lua_src)
+  os.exit(0)
+end
+
+-- ---------- запуск ----------
+
+local tmp = os.tmpname()
+local f = io.open(tmp, "wb")
+if not f then die("cannot write temporary file") end
+f:write(lua_src)
+f:close()
+
+local function q(s) return "'" .. s:gsub("'", "'\\''") .. "'" end
+local cmd = "luajit " .. q(tmp)
+for _, a in ipairs(prog_args) do cmd = cmd .. " " .. q(a) end
+
+local status = os.execute(cmd)
+os.remove(tmp)
+
+local code = 0
+if type(status) == "number" then
+  if status == 0 then code = 0
+  elseif status >= 256 then code = math.floor(status / 256)
+  else code = status end
+elseif status == true then
+  code = 0
+else
+  code = 1
+end
+
+os.exit(code)

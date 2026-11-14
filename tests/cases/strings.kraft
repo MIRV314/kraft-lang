@@ -1,0 +1,9 @@
+str name = "Kraft"
+flint n = 3
+str msg = "привет, {name}!"
+show({msg})
+show(версия {n}, следующая {n + 1})
+show({name} + 1)
+show(цена: $5)
+show(\{x\})
+show(a \(b\))

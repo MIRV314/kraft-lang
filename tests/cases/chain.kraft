@@ -1,0 +1,5 @@
+flint x = 5
+show({0 <= x <= 10})
+show({0 <= x <= 3})
+show({x > 3 AND x < 10})
+show({NOT (x == 5)})
