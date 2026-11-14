@@ -163,6 +163,67 @@ function P:parse_while()
   }
 end
 
+-- Числовой for: `for i N` (0..N-1) или `for i a..b` / `for i a..b..step`.
+function P:parse_for()
+  local tok = self:advance()
+  local name_tok = self:expect("name", nil, "loop variable")
+  local name = name_tok.value
+
+  if self:check_kw("in") then
+    self:fail(self:peek(), "SYNTAX_ERROR", "numeric range (for i N or for i a..b)",
+      "'in' (for-in needs collections, later)")
+  end
+
+  if is_const(name) then
+    self:fail(name_tok, "CONST_ERROR", "variable", "constant '" .. name .. "'")
+  end
+  if self.vars[name] or self.for_names[name] then
+    self:fail(name_tok, "REDECLARE_ERROR", "unique loop variable",
+      "name '" .. name .. "' is already declared")
+  end
+
+  local function flint_operand(e, what)
+    if e.t ~= "flint" and e.t ~= "NONE" then
+      self:fail({ line = e.line, col = e.col }, "TYPE_ERROR",
+        what .. " to be flint", e.t)
+    end
+    return e
+  end
+
+  local node = { k = "for", name = name, line = tok.line, col = tok.col }
+
+  local first = flint_operand(self:parse_expr(), "loop bound")
+  if self:check_op("..") then
+    self:advance()
+    local last = flint_operand(self:parse_expr(), "loop bound")
+    local step
+    if self:check_op("..") then
+      self:advance()
+      step = flint_operand(self:parse_expr(), "loop step")
+    end
+    node.form = "range"
+    node.from = first
+    node.to = last
+    node.step = step
+  else
+    node.form = "upto"
+    node.to = first
+  end
+
+  self:expect("op", ":", "':'")
+
+  -- Переменная цикла видна только внутри тела и не может быть объявлена повторно.
+  self.for_names[name] = true
+  self.vars[name] = "flint"
+  self.loop_depth = self.loop_depth + 1
+  node.body = self:parse_block()
+  self.loop_depth = self.loop_depth - 1
+  self.vars[name] = nil
+
+  node.block_stmt = true
+  return node
+end
+
 function P:parse_stmt()
   local t = self:peek()
   if t.type == "kw" and (t.value == "str" or t.value == "flint" or t.value == "bool") then
@@ -173,6 +234,9 @@ function P:parse_stmt()
   end
   if t.type == "kw" and t.value == "while" then
     return self:parse_while()
+  end
+  if t.type == "kw" and t.value == "for" then
+    return self:parse_for()
   end
   if t.type == "kw" and (t.value == "break" or t.value == "continue") then
     self:advance()
@@ -494,6 +558,7 @@ function P:parse_parts(tpl)
       local sub = setmetatable({
         tokens = toks, pos = 1, path = self.path, vars = self.vars,
         nullable = self.nullable, maybe_unset = self.maybe_unset,
+        for_names = self.for_names,
         block_depth = self.block_depth, loop_depth = self.loop_depth,
       }, P)
       local e = sub:parse_expr()
@@ -510,7 +575,7 @@ end
 function parser.parse(tokens, path)
   local self = setmetatable({
     tokens = tokens, pos = 1, path = path, vars = {}, nullable = {},
-    maybe_unset = {}, block_depth = 0, loop_depth = 0,
+    maybe_unset = {}, for_names = {}, block_depth = 0, loop_depth = 0,
   }, P)
   return self:parse_program()
 end

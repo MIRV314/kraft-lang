@@ -38,6 +38,8 @@ function codegen.generate(ast, opts)
         if s.else_body then collect(s.else_body) end
       elseif s.k == "while" then
         collect(s.body)
+      elseif s.k == "for" then
+        collect(s.body)
       end
     end
   end
@@ -235,6 +237,45 @@ function codegen.generate(ast, opts)
 
     elseif s.k == "continue" then
       emit("goto " .. loop_stack[#loop_stack].cont)
+
+    elseif s.k == "for" then
+      loop_id = loop_id + 1
+      local id = loop_id
+      local cont = "__continue_" .. id
+      local brk = "__break_" .. id
+      local v = lua_name(s.name)
+      local to = "__to_" .. id
+
+      emit("do")
+      indent = indent + 1
+      if s.form == "upto" then
+        emit("local " .. v .. " = 0")
+        emit("local " .. to .. " = " .. numeric(s.to))
+        emit("while " .. v .. " < " .. to .. " do")
+      else
+        local step = "__step_" .. id
+        emit("local " .. v .. " = " .. numeric(s.from))
+        emit("local " .. to .. " = " .. numeric(s.to))
+        emit("local " .. step .. " = " .. (s.step and numeric(s.step) or "1"))
+        emit("while ((" .. step .. " > 0) and (" .. v .. " < " .. to ..
+          ")) or ((" .. step .. " < 0) and (" .. v .. " > " .. to .. ")) do")
+      end
+
+      indent = indent + 1
+      loop_stack[#loop_stack + 1] = { cont = cont, brk = brk }
+      emit_stmts(s.body)
+      emit("::" .. cont .. "::")
+      if s.form == "upto" then
+        emit(v .. " = " .. v .. " + 1")
+      else
+        emit(v .. " = " .. v .. " + __step_" .. id)
+      end
+      loop_stack[#loop_stack] = nil
+      indent = indent - 1
+      emit("end")
+      indent = indent - 1
+      emit("end")
+      emit("::" .. brk .. "::")
 
     else
       error("codegen: unknown statement " .. tostring(s.k))

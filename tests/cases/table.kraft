@@ -1,0 +1,4 @@
+for row 1..4:
+    for col 1..4:
+        show({row} × {col} = {row * col})
+    show()
