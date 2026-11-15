@@ -176,6 +176,139 @@ function krt.utf8_len(s)
   return n
 end
 
+-- ---------- строки: индексы, срезы, методы ----------
+
+function krt.utf8_chars(s)
+  local out = {}
+  local i, n = 1, #s
+  while i <= n do
+    local b = s:byte(i)
+    local len = 1
+    if b >= 0xF0 then len = 4
+    elseif b >= 0xE0 then len = 3
+    elseif b >= 0xC0 then len = 2 end
+    out[#out + 1] = s:sub(i, i + len - 1)
+    i = i + len
+  end
+  return out
+end
+
+function krt.str_index(s, i)
+  local chars = krt.utf8_chars(s)
+  local n = #chars
+  i = math.floor(i)
+  if i < 0 then i = i + n end
+  if i < 0 or i >= n then
+    krt.fail("VALUE_ERROR", "string index out of range: " .. tostring(math.floor(i)))
+  end
+  return chars[i + 1]
+end
+
+-- Правая граница не входит; открытые границы; отрицательные индексы.
+function krt.str_slice(s, from, to, step)
+  local chars = krt.utf8_chars(s)
+  local n = #chars
+  step = step or 1
+  if step == 0 then krt.fail("VALUE_ERROR", "slice step cannot be zero") end
+
+  local function norm(i, default)
+    if i == nil then return default end
+    i = math.floor(i)
+    if i < 0 then i = i + n end
+    if step > 0 then
+      if i < 0 then i = 0 end
+      if i > n then i = n end
+    else
+      if i < -1 then i = -1 end
+      if i > n - 1 then i = n - 1 end
+    end
+    return i
+  end
+
+  local a = norm(from, step > 0 and 0 or n - 1)
+  local b = norm(to, step > 0 and n or -1)
+
+  local out = {}
+  local i = a
+  while (step > 0 and i < b) or (step < 0 and i > b) do
+    out[#out + 1] = chars[i + 1]
+    i = i + step
+  end
+  return table.concat(out)
+end
+
+function krt.str_part(s, from, to)
+  return krt.str_slice(s, from, to, 1)
+end
+
+function krt.str_find(s, sub)
+  local a = krt.utf8_chars(s)
+  local b = krt.utf8_chars(sub)
+  if #b == 0 then return 0 end
+  for i = 0, #a - #b do
+    local ok = true
+    for j = 1, #b do
+      if a[i + j] ~= b[j] then ok = false; break end
+    end
+    if ok then return i end
+  end
+  return krt.NONE
+end
+
+function krt.str_contains(s, sub)
+  return krt.str_find(s, sub) ~= krt.NONE
+end
+
+function krt.str_preff(s, p)
+  return s:sub(1, #p) == p
+end
+
+function krt.str_suff(s, p)
+  return p == "" or s:sub(-#p) == p
+end
+
+function krt.str_trim(s)
+  return (s:gsub("^%s+", ""):gsub("%s+$", ""))
+end
+
+function krt.str_triml(s)
+  return (s:gsub("^%s+", ""))
+end
+
+function krt.str_trimr(s)
+  return (s:gsub("%s+$", ""))
+end
+
+function krt.str_replace(s, old, new)
+  if old == "" then return s end
+  local out = {}
+  local i = 1
+  while true do
+    local a, b = s:find(old, i, true)
+    if not a then
+      out[#out + 1] = s:sub(i)
+      break
+    end
+    out[#out + 1] = s:sub(i, a - 1)
+    out[#out + 1] = new
+    i = b + 1
+  end
+  return table.concat(out)
+end
+
+function krt.str_count(s, sub)
+  if sub == "" then return 0 end
+  local count = 0
+  local i = 1
+  while true do
+    local a, b = s:find(sub, i, true)
+    if not a then break end
+    count = count + 1
+    i = b + 1
+  end
+  return count
+end
+
 function krt.len(v)
   if type(v) == "string" then return krt.utf8_len(v) end
   if krt.is_list(v) then return #v end

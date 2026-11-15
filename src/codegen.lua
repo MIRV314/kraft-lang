@@ -98,6 +98,12 @@ function codegen.generate(ast, opts)
     return x
   end
 
+  local function as_str(e)
+    local x = emit_expr(e)
+    if e.t == "NONE" or e.nullable then return "krt.as_str(" .. x .. ")" end
+    return x
+  end
+
   emit_expr = function(e)
     local k = e.k
 
@@ -123,6 +129,29 @@ function codegen.generate(ast, opts)
       local args = {}
       for _, a in ipairs(e.args) do args[#args + 1] = emit_expr(a) end
       return lua_func(e.name) .. "(" .. table.concat(args, ", ") .. ")"
+    elseif k == "index" then
+      return "krt.str_index(" .. as_str(e.base) .. ", " .. numeric(e.index) .. ")"
+    elseif k == "slice" then
+      local parts = {
+        as_str(e.base),
+        e.from and numeric(e.from) or "nil",
+        e.to and numeric(e.to) or "nil",
+      }
+      if e.step then parts[#parts + 1] = numeric(e.step) end
+      return "krt.str_slice(" .. table.concat(parts, ", ") .. ")"
+    elseif k == "method" then
+      local args = { as_str(e.base) }
+      for i, a in ipairs(e.args) do
+        local at = e.argtypes[i]
+        if at == "str" then
+          args[#args + 1] = as_str(a)
+        elseif at == "flint" then
+          args[#args + 1] = numeric(a)
+        else
+          args[#args + 1] = emit_expr(a)
+        end
+      end
+      return "krt.str_" .. e.name .. "(" .. table.concat(args, ", ") .. ")"
     elseif k == "un" then
       if e.op == "-" then
         return "(-(" .. numeric(e.a) .. "))"

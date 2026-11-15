@@ -608,6 +608,130 @@ function P:parse_power()
 end
 
 function P:parse_primary()
+  local e = self:parse_atom()
+  return self:parse_postfix(e)
+end
+
+-- Постфикс: s[i], s[a..b], s[a..b..step], s.method(...).
+function P:parse_postfix(e)
+  while true do
+    if self:check_op("[") then
+      self:advance()
+      e = self:parse_index(e)
+    elseif self:check_op(".") then
+      self:advance()
+      e = self:parse_method(e)
+    else
+      return e
+    end
+  end
+end
+
+function P:parse_index(base)
+  local open = self:peek()
+
+  local from
+  if self:check_op("..") then
+    -- s[..to]
+  else
+    from = self:parse_expr()
+  end
+
+  if self:check_op("..") then
+    self:advance()
+    local to
+    if not self:check_op("]") then to = self:parse_expr() end
+    local step
+    if self:check_op("..") then
+      self:advance()
+      step = self:parse_expr()
+    end
+    self:expect("op", "]", "']'")
+
+    if base.t ~= "str" and base.t ~= "NONE" then
+      self:fail(open, "TYPE_ERROR", "string receiver of a slice", base.t)
+    end
+    for _, b in ipairs({ from, to, step }) do
+      if b and b.t ~= "flint" and b.t ~= "NONE" then
+        self:fail({ line = b.line, col = b.col }, "TYPE_ERROR", "slice bound to be flint", b.t)
+      end
+    end
+    return {
+      k = "slice", base = base, from = from, to = to, step = step, t = "str",
+      line = open.line, col = open.col,
+    }
+  end
+
+  self:expect("op", "]", "']'")
+  if base.t ~= "str" and base.t ~= "NONE" then
+    self:fail(open, "TYPE_ERROR", "string receiver of an index", base.t)
+  end
+  if from.t ~= "flint" and from.t ~= "NONE" then
+    self:fail({ line = from.line, col = from.col }, "TYPE_ERROR", "index to be flint", from.t)
+  end
+  return {
+    k = "index", base = base, index = from, t = "str",
+    line = open.line, col = open.col,
+  }
+end
+
+local STR_METHODS = {
+  part = { min = 1, max = 2, args = { "flint", "flint" }, t = "str" },
+  find = { min = 1, max = 1, args = { "str" }, t = "flint", nullable = true },
+  contains = { min = 1, max = 1, args = { "str" }, t = "bool" },
+  preff = { min = 1, max = 1, args = { "str" }, t = "bool" },
+  suff = { min = 1, max = 1, args = { "str" }, t = "bool" },
+  trim = { min = 0, max = 0, args = {}, t = "str" },
+  triml = { min = 0, max = 0, args = {}, t = "str" },
+  trimr = { min = 0, max = 0, args = {}, t = "str" },
+  replace = { min = 2, max = 2, args = { "str", "str" }, t = "str" },
+  count = { min = 1, max = 1, args = { "str" }, t = "flint" },
+}
+
+function P:parse_method(base)
+  local name_tok = self:expect("name", nil, "method name")
+  local name = name_tok.value
+
+  self:expect("op", "(", "'('")
+  local args = {}
+  if not self:check_op(")") then
+    while true do
+      args[#args + 1] = self:parse_expr()
+      if self:check_op(",") then self:advance() else break end
+    end
+  end
+  self:expect("op", ")", "')'")
+
+  if base.t ~= "str" and base.t ~= "NONE" then
+    self:fail(name_tok, "TYPE_ERROR", "string receiver of '" .. name .. "'", base.t)
+  end
+
+  local m = STR_METHODS[name]
+  if not m then
+    self:fail(name_tok, "NAME_ERROR", "string method", "unknown method '" .. name .. "'")
+  end
+
+  if #args < m.min or #args > m.max then
+    self:fail(name_tok, "ARGCOUNT_ERROR",
+      m.min .. (m.min ~= m.max and (".." .. m.max) or "") .. " argument(s) to '" .. name .. "'",
+      #args .. " argument(s)")
+  end
+  for i, a in ipairs(args) do
+    local at = m.args[i]
+    if at and a.t ~= "NONE" and a.t ~= at then
+      self:fail({ line = a.line, col = a.col }, "TYPE_ERROR",
+        "argument " .. i .. " of '" .. name .. "' to be " .. at, a.t)
+    end
+  end
+
+  return {
+    k = "method", base = base, name = name, args = args, argtypes = m.args, t = m.t,
+    nullable = m.nullable or nil,
+    line = name_tok.line, col = name_tok.col,
+  }
+end
+
+function P:parse_atom()
   local t = self:peek()
 
   if t.type == "number" then
