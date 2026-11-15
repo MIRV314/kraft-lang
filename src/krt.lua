@@ -209,6 +209,9 @@ function krt.str_slice(s, from, to, step)
   local chars = krt.utf8_chars(s)
   local n = #chars
   step = step or 1
+  if step ~= math.floor(step) then
+    krt.fail("VALUE_ERROR", "slice step must be integer")
+  end
   if step == 0 then krt.fail("VALUE_ERROR", "slice step cannot be zero") end
 
   local function norm(i, default)
@@ -308,6 +311,223 @@ function krt.str_count(s, sub)
   end
   return count
 end
+
+-- ---------- списки ----------
+
+function krt.as_list(v)
+  if not krt.is_list(v) then
+    krt.fail("TYPE_MISMATCH_ERROR", "expected list, found " .. krt.typeof(v))
+  end
+  return v
+end
+
+function krt.as_dict(v)
+  if not krt.is_dict(v) then
+    krt.fail("TYPE_MISMATCH_ERROR", "expected dict, found " .. krt.typeof(v))
+  end
+  return v
+end
+
+function krt.list_index(xs, i)
+  local n = #xs
+  i = math.floor(i)
+  if i < 0 then i = i + n end
+  if i < 0 or i >= n then
+    krt.fail("VALUE_ERROR", "list index out of range: " .. tostring(math.floor(i)))
+  end
+  return xs[i + 1]
+end
+
+function krt.list_slice(xs, from, to, step)
+  local n = #xs
+  step = step or 1
+  if step ~= math.floor(step) then
+    krt.fail("VALUE_ERROR", "slice step must be integer")
+  end
+  if step == 0 then krt.fail("VALUE_ERROR", "slice step cannot be zero") end
+
+  local function norm(i, default)
+    if i == nil then return default end
+    i = math.floor(i)
+    if i < 0 then i = i + n end
+    if step > 0 then
+      if i < 0 then i = 0 end
+      if i > n then i = n end
+    else
+      if i < -1 then i = -1 end
+      if i > n - 1 then i = n - 1 end
+    end
+    return i
+  end
+
+  local a = norm(from, step > 0 and 0 or n - 1)
+  local b = norm(to, step > 0 and n or -1)
+
+  local out = krt.list({})
+  local i = a
+  while (step > 0 and i < b) or (step < 0 and i > b) do
+    out[#out + 1] = xs[i + 1]
+    i = i + step
+  end
+  return out
+end
+
+-- Индекс и срез значения внутреннего типа any: тип выбирается в рантайме.
+function krt.index(v, i)
+  if krt.is_list(v) then return krt.list_index(v, i) end
+  if type(v) == "string" then return krt.str_index(v, i) end
+  krt.fail("TYPE_MISMATCH_ERROR", "expected list or str, found " .. krt.typeof(v))
+end
+
+function krt.slice(v, from, to, step)
+  if krt.is_list(v) then return krt.list_slice(v, from, to, step) end
+  if type(v) == "string" then return krt.str_slice(v, from, to, step) end
+  krt.fail("TYPE_MISMATCH_ERROR", "expected list or str, found " .. krt.typeof(v))
+end
+
+function krt.list_add(xs, v)
+  xs[#xs + 1] = v
+  return krt.NONE
+end
+
+function krt.list_del(xs, i)
+  local n = #xs
+  i = math.floor(i)
+  if i < 0 then i = i + n end
+  if i < 0 or i >= n then
+    krt.fail("VALUE_ERROR", "list index out of range: " .. tostring(math.floor(i)))
+  end
+  table.remove(xs, i + 1)
+  return krt.NONE
+end
+
+function krt.list_remove(xs, v)
+  for i = 1, #xs do
+    if xs[i] == v then
+      table.remove(xs, i)
+      return true
+    end
+  end
+  return false
+end
+
+function krt.list_replace(xs, i, v)
+  local n = #xs
+  i = math.floor(i)
+  if i < 0 then i = i + n end
+  if i < 0 or i >= n then
+    krt.fail("VALUE_ERROR", "list index out of range: " .. tostring(math.floor(i)))
+  end
+  xs[i + 1] = v
+  return krt.NONE
+end
+
+function krt.list_contains(xs, v)
+  for i = 1, #xs do
+    if xs[i] == v then return true end
+  end
+  return false
+end
+
+function krt.list_count(xs, v)
+  local c = 0
+  for i = 1, #xs do
+    if xs[i] == v then c = c + 1 end
+  end
+  return c
+end
+
+function krt.list_index_of(xs, v)
+  for i = 1, #xs do
+    if xs[i] == v then return i - 1 end
+  end
+  return krt.NONE
+end
+
+function krt.list_join(xs, sep)
+  local out = {}
+  for i = 1, #xs do out[i] = krt.tostr(xs[i]) end
+  return table.concat(out, sep)
+end
+
+-- ---------- словари ----------
+
+local function dict_pos(d, k)
+  for i = 1, #d.keys do
+    if d.keys[i] == k then return i end
+  end
+  return nil
+end
+
+function krt.dict_set(d, k, v)
+  local p = dict_pos(d, k)
+  if p then
+    d.vals[p] = v
+  else
+    d.keys[#d.keys + 1] = k
+    d.vals[#d.vals + 1] = v
+  end
+  return d
+end
+
+function krt.dict_get(d, k)
+  local p = dict_pos(d, k)
+  if not p then return krt.NONE end
+  return d.vals[p]
+end
+
+local function dict_key(k)
+  if type(k) ~= "string" then
+    krt.fail("TYPE_MISMATCH_ERROR", "dict key must be str, found " .. krt.typeof(k))
+  end
+  return k
+end
+
+function krt.dict_add(d, k, v)
+  krt.dict_set(d, dict_key(k), v)
+  return krt.NONE
+end
+
+function krt.dict_take(d, k)
+  return krt.dict_get(d, dict_key(k))
+end
+
+function krt.dict_remove(d, k)
+  local p = dict_pos(d, dict_key(k))
+  if not p then return false end
+  table.remove(d.keys, p)
+  table.remove(d.vals, p)
+  return true
+end
+
+function krt.dict_contains(d, k)
+  return dict_pos(d, dict_key(k)) ~= nil
+end
+
+function krt.dict_merge(d, other)
+  for i = 1, #other.keys do
+    krt.dict_set(d, other.keys[i], other.vals[i])
+  end
+  return krt.NONE
+end
+
+-- ---------- сравнение значений неизвестного типа ----------
+
+local function order_pair(a, b)
+  if type(a) ~= type(b) then
+    krt.fail("TYPE_MISMATCH_ERROR",
+      "expected comparable operands, found " .. krt.typeof(a) .. " and " .. krt.typeof(b))
+  end
+  if type(a) ~= "number" and type(a) ~= "string" then
+    krt.fail("TYPE_MISMATCH_ERROR", "expected flint or str, found " .. krt.typeof(a))
+  end
+  return a, b
+end
+
+function krt.lt(a, b) local x, y = order_pair(a, b); return x < y end
+function krt.le(a, b) local x, y = order_pair(a, b); return x <= y end
+function krt.gt(a, b) local x, y = order_pair(a, b); return x > y end
+function krt.ge(a, b) local x, y = order_pair(a, b); return x >= y end
 
 function krt.len(v)
   if type(v) == "string" then return krt.utf8_len(v) end

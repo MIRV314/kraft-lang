@@ -18,6 +18,15 @@ local COMPOUND = {
   ["%="] = true, ["//="] = true, ["**="] = true,
 }
 
+-- "any" — внутренний тип чтения из list/dict без параметра (D56).
+local function numeric_type(t)
+  return t == "flint" or t == "NONE" or t == "any"
+end
+
+local function assignable(from, to)
+  return from == "NONE" or from == "any" or from == to
+end
+
 local function is_const(name)
   return name:match("^[A-Z_][A-Z0-9_]*$") ~= nil
 end
@@ -163,27 +172,87 @@ function P:parse_while()
   }
 end
 
--- Числовой for: `for i N` (0..N-1) или `for i a..b` / `for i a..b..step`.
+-- for: числовой (`for i N`, `for i a..b..step`) или по коллекции
+-- (`for x in xs`, `for k, v in d`).
 function P:parse_for()
   local tok = self:advance()
-  local name_tok = self:expect("name", nil, "loop variable")
-  local name = name_tok.value
+  local name_toks = { self:expect("name", nil, "loop variable") }
+  if self:check_op(",") then
+    self:advance()
+    name_toks[#name_toks + 1] = self:expect("name", nil, "loop variable")
+  end
+
+  local function register(types)
+    local seen = {}
+    for i, nt in ipairs(name_toks) do
+      local n = nt.value
+      if is_const(n) then
+        self:fail(nt, "CONST_ERROR", "variable", "constant '" .. n .. "'")
+      end
+      if seen[n] or self.vars[n] or self.for_names[n] then
+        self:fail(nt, "REDECLARE_ERROR", "unique loop variable",
+          "name '" .. n .. "' is already declared")
+      end
+      seen[n] = true
+    end
+    for i, nt in ipairs(name_toks) do
+      self.vars[nt.value] = types[i]
+      self.for_names[nt.value] = true
+    end
+  end
 
   if self:check_kw("in") then
-    self:fail(self:peek(), "SYNTAX_ERROR", "numeric range (for i N or for i a..b)",
-      "'in' (for-in needs collections, later)")
+    self:advance()
+    local coll = self:parse_expr()
+    local types
+    if coll.t == "list" then
+      if #name_toks ~= 1 then
+        self:fail(name_toks[2], "TYPE_ERROR",
+          "one loop variable for a list", "two variables")
+      end
+      types = { "any" }
+    elseif coll.t == "dict" then
+      if #name_toks ~= 2 then
+        self:fail(name_toks[1], "TYPE_ERROR",
+          "two loop variables for a dict (key, value)", "one variable")
+      end
+      types = { "str", "any" }
+    elseif coll.t == "any" then
+      if #name_toks == 1 then
+        types = { "any" }
+      else
+        types = { "str", "any" }
+      end
+    else
+      self:fail(tok, "TYPE_ERROR", "list or dict after 'in'", coll.t)
+    end
+
+    register(types)
+    self:expect("op", ":", "':'")
+    self.loop_depth = self.loop_depth + 1
+    local body = self:parse_block()
+    self.loop_depth = self.loop_depth - 1
+
+    local names = {}
+    for i, nt in ipairs(name_toks) do
+      names[i] = nt.value
+      self.vars[nt.value] = nil
+    end
+    return {
+      k = "for_in", names = names, coll = coll, body = body,
+      block_stmt = true, line = tok.line, col = tok.col,
+    }
   end
 
-  if is_const(name) then
-    self:fail(name_tok, "CONST_ERROR", "variable", "constant '" .. name .. "'")
+  if #name_toks ~= 1 then
+    self:fail(name_toks[2], "SYNTAX_ERROR",
+      "one loop variable for a numeric range", "two variables")
   end
-  if self.vars[name] or self.for_names[name] then
-    self:fail(name_tok, "REDECLARE_ERROR", "unique loop variable",
-      "name '" .. name .. "' is already declared")
-  end
+  local name_tok = name_toks[1]
+  local name = name_tok.value
 
   local function flint_operand(e, what)
-    if e.t ~= "flint" and e.t ~= "NONE" then
+    if not numeric_type(e.t) then
       self:fail({ line = e.line, col = e.col }, "TYPE_ERROR",
         what .. " to be flint", e.t)
     end
@@ -212,9 +281,7 @@ function P:parse_for()
 
   self:expect("op", ":", "':'")
 
-  -- Переменная цикла видна только внутри тела и не может быть объявлена повторно.
-  self.for_names[name] = true
-  self.vars[name] = "flint"
+  register({ "flint" })
   self.loop_depth = self.loop_depth + 1
   node.body = self:parse_block()
   self.loop_depth = self.loop_depth - 1
@@ -307,10 +374,10 @@ function P:parse_func()
   local seen
 
   for _, r in ipairs(returns) do
-    if r.empty or r.type == "NONE" then
+    if r.empty or r.type == "NONE" or r.nullable then
       nullable = true
     elseif ret then
-      if r.type ~= ret then
+      if r.type ~= ret and r.type ~= "any" then
         self:fail(r, "TYPE_ERROR", "return type " .. ret, r.type)
       end
     else
@@ -348,14 +415,19 @@ function P:parse_return()
 
   self.func_returns[#self.func_returns + 1] = {
     empty = (expr == nil), type = expr and expr.t or "NONE",
+    nullable = expr and expr.nullable or nil,
     line = tok.line, col = tok.col,
   }
   return { k = "return", expr = expr, line = tok.line, col = tok.col }
 end
 
+local TYPE_KEYWORDS = {
+  str = true, flint = true, bool = true, list = true, dict = true,
+}
+
 function P:parse_stmt()
   local t = self:peek()
-  if t.type == "kw" and (t.value == "str" or t.value == "flint" or t.value == "bool") then
+  if t.type == "kw" and TYPE_KEYWORDS[t.value] then
     return self:parse_decl()
   end
   if t.type == "kw" and t.value == "if" then
@@ -405,7 +477,7 @@ function P:parse_decl()
   self:expect("op", "=", "'='")
   local expr = self:parse_expr()
 
-  if expr.t ~= "NONE" and expr.t ~= ty then
+  if not assignable(expr.t, ty) then
     self:fail(
       { line = expr.line, col = expr.col },
       "TYPE_ERROR",
@@ -432,7 +504,7 @@ function P:parse_assign()
   end
   self:expect("op", "=", "'='")
   local expr = self:parse_expr()
-  if expr.t ~= "NONE" and expr.t ~= self.vars[name] then
+  if not assignable(expr.t, self.vars[name]) then
     self:fail(
       { line = expr.line, col = expr.col },
       "TYPE_ERROR",
@@ -441,7 +513,10 @@ function P:parse_assign()
     )
   end
   self.nullable[name] = (expr.t == "NONE" or expr.nullable) or nil
-  return { k = "assign", name = name, expr = expr, line = name_tok.line, col = name_tok.col }
+  return {
+    k = "assign", name = name, expr = expr, type = self.vars[name],
+    line = name_tok.line, col = name_tok.col,
+  }
 end
 
 function P:parse_compound()
@@ -457,7 +532,7 @@ function P:parse_compound()
   local op = op_tok.value:sub(1, -2) -- "+=" -> "+"
   local expr = self:parse_expr()
 
-  if self.vars[name] ~= "flint" or (expr.t ~= "flint" and expr.t ~= "NONE") then
+  if self.vars[name] ~= "flint" or not numeric_type(expr.t) then
     self:fail(op_tok, "TYPE_ERROR", "numeric operands of '" .. op_tok.value .. "'", expr.t)
   end
 
@@ -528,7 +603,7 @@ function P:parse_cmp()
     local a, b = operands[i], operands[i + 1]
     if o.op ~= "==" and o.op ~= "!=" then
       local ok = (a.t == b.t) and (a.t == "flint" or a.t == "str")
-      if not ok and a.t ~= "NONE" and b.t ~= "NONE" then
+      if not ok and a.t ~= "NONE" and b.t ~= "NONE" and a.t ~= "any" and b.t ~= "any" then
         self:fail(o, "TYPE_ERROR", "comparable operands of '" .. o.op .. "'", a.t .. " and " .. b.t)
       end
     end
@@ -561,7 +636,7 @@ function P:parse_add()
     if tok.value == "+" and (e.t == "str" or r.t == "str") then
       self:fail(tok, "CONCATENATE_NOT_SUPPORT", "numeric operands of '+'", "str")
     end
-    if (e.t ~= "flint" and e.t ~= "NONE") or (r.t ~= "flint" and r.t ~= "NONE") then
+    if not (numeric_type(e.t) and numeric_type(r.t)) then
       self:fail(tok, "TYPE_ERROR", "operands of '" .. tok.value .. "' to be flint", e.t .. " and " .. r.t)
     end
     e = { k = "bin", op = tok.value, a = e, b = r, t = "flint", line = tok.line, col = tok.col }
@@ -574,7 +649,7 @@ function P:parse_mul()
   while self:check_op("*") or self:check_op("/") or self:check_op("//") or self:check_op("%") do
     local tok = self:advance()
     local r = self:parse_unary()
-    if (e.t ~= "flint" and e.t ~= "NONE") or (r.t ~= "flint" and r.t ~= "NONE") then
+    if not (numeric_type(e.t) and numeric_type(r.t)) then
       self:fail(tok, "TYPE_ERROR", "operands of '" .. tok.value .. "' to be flint", e.t .. " and " .. r.t)
     end
     e = { k = "bin", op = tok.value, a = e, b = r, t = "flint", line = tok.line, col = tok.col }
@@ -586,7 +661,7 @@ function P:parse_unary()
   if self:check_op("-") then
     local tok = self:advance()
     local e = self:parse_unary()
-    if e.t ~= "flint" and e.t ~= "NONE" then
+    if not numeric_type(e.t) then
       self:fail(tok, "TYPE_ERROR", "operand of unary '-' to be flint", e.t)
     end
     return { k = "un", op = "-", a = e, t = "flint", line = tok.line, col = tok.col }
@@ -599,7 +674,7 @@ function P:parse_power()
   if self:check_op("**") then
     local tok = self:advance()
     local exp = self:parse_unary() -- правоассоциативно: 2**3**2 = 2**(3**2)
-    if (base.t ~= "flint" and base.t ~= "NONE") or (exp.t ~= "flint" and exp.t ~= "NONE") then
+    if not (numeric_type(base.t) and numeric_type(exp.t)) then
       self:fail(tok, "TYPE_ERROR", "operands of '**' to be flint", base.t .. " and " .. exp.t)
     end
     return { k = "bin", op = "**", a = base, b = exp, t = "flint", line = tok.line, col = tok.col }
@@ -629,13 +704,41 @@ end
 
 function P:parse_index(base)
   local open = self:peek()
+  local bt = base.t
+
+  -- Ключ словаря: bare-имя или строковый литерал (D32).
+  if bt == "dict" then
+    local kt = self:peek()
+    local key
+    if kt.type == "name" then
+      self:advance()
+      key = kt.value
+    elseif kt.type == "string" then
+      self:advance()
+      local buf = {}
+      for _, p in ipairs(kt.parts) do
+        if p.kind ~= "text" then
+          self:fail(kt, "TYPE_ERROR", "plain string key", "interpolated string")
+        end
+        buf[#buf + 1] = p.value
+      end
+      key = table.concat(buf)
+    else
+      self:fail(kt, "TYPE_ERROR", "dict key as bare name or string literal", describe(kt))
+    end
+    self:expect("op", "]", "']'")
+    return {
+      k = "dget", base = base, key = key, t = "any", nullable = true,
+      line = open.line, col = open.col,
+    }
+  end
+
+  if bt ~= "str" and bt ~= "list" and bt ~= "NONE" and bt ~= "any" then
+    self:fail(open, "TYPE_ERROR", "str, list or dict receiver of an index", bt)
+  end
 
   local from
-  if self:check_op("..") then
-    -- s[..to]
-  else
-    from = self:parse_expr()
-  end
+  if not self:check_op("..") then from = self:parse_expr() end
 
   if self:check_op("..") then
     self:advance()
@@ -648,45 +751,62 @@ function P:parse_index(base)
     end
     self:expect("op", "]", "']'")
 
-    if base.t ~= "str" and base.t ~= "NONE" then
-      self:fail(open, "TYPE_ERROR", "string receiver of a slice", base.t)
-    end
     for _, b in ipairs({ from, to, step }) do
-      if b and b.t ~= "flint" and b.t ~= "NONE" then
+      if b and b.t ~= "flint" and b.t ~= "NONE" and b.t ~= "any" then
         self:fail({ line = b.line, col = b.col }, "TYPE_ERROR", "slice bound to be flint", b.t)
       end
     end
     return {
-      k = "slice", base = base, from = from, to = to, step = step, t = "str",
+      k = "slice", base = base, from = from, to = to, step = step,
+      t = (bt == "list") and "list" or (bt == "str" and "str" or "any"),
       line = open.line, col = open.col,
     }
   end
 
   self:expect("op", "]", "']'")
-  if base.t ~= "str" and base.t ~= "NONE" then
-    self:fail(open, "TYPE_ERROR", "string receiver of an index", base.t)
-  end
-  if from.t ~= "flint" and from.t ~= "NONE" then
+  if from.t ~= "flint" and from.t ~= "NONE" and from.t ~= "any" then
     self:fail({ line = from.line, col = from.col }, "TYPE_ERROR", "index to be flint", from.t)
   end
   return {
-    k = "index", base = base, index = from, t = "str",
+    k = "index", base = base, index = from,
+    t = (bt == "list") and "any" or (bt == "str" and "str" or "any"),
     line = open.line, col = open.col,
   }
 end
 
 local STR_METHODS = {
-  part = { min = 1, max = 2, args = { "flint", "flint" }, t = "str" },
-  find = { min = 1, max = 1, args = { "str" }, t = "flint", nullable = true },
-  contains = { min = 1, max = 1, args = { "str" }, t = "bool" },
-  preff = { min = 1, max = 1, args = { "str" }, t = "bool" },
-  suff = { min = 1, max = 1, args = { "str" }, t = "bool" },
-  trim = { min = 0, max = 0, args = {}, t = "str" },
-  triml = { min = 0, max = 0, args = {}, t = "str" },
-  trimr = { min = 0, max = 0, args = {}, t = "str" },
-  replace = { min = 2, max = 2, args = { "str", "str" }, t = "str" },
-  count = { min = 1, max = 1, args = { "str" }, t = "flint" },
+  part = { min = 1, max = 2, args = { "flint", "flint" }, t = "str", rt = "str_part" },
+  find = { min = 1, max = 1, args = { "str" }, t = "flint", nullable = true, rt = "str_find" },
+  contains = { min = 1, max = 1, args = { "str" }, t = "bool", rt = "str_contains" },
+  preff = { min = 1, max = 1, args = { "str" }, t = "bool", rt = "str_preff" },
+  suff = { min = 1, max = 1, args = { "str" }, t = "bool", rt = "str_suff" },
+  trim = { min = 0, max = 0, args = {}, t = "str", rt = "str_trim" },
+  triml = { min = 0, max = 0, args = {}, t = "str", rt = "str_triml" },
+  trimr = { min = 0, max = 0, args = {}, t = "str", rt = "str_trimr" },
+  replace = { min = 2, max = 2, args = { "str", "str" }, t = "str", rt = "str_replace" },
+  count = { min = 1, max = 1, args = { "str" }, t = "flint", rt = "str_count" },
 }
+
+local LIST_METHODS = {
+  add = { min = 1, max = 1, args = { "any" }, t = "NONE", rt = "list_add" },
+  del = { min = 1, max = 1, args = { "flint" }, t = "NONE", rt = "list_del" },
+  remove = { min = 1, max = 1, args = { "any" }, t = "bool", rt = "list_remove" },
+  replace = { min = 2, max = 2, args = { "flint", "any" }, t = "NONE", rt = "list_replace" },
+  contains = { min = 1, max = 1, args = { "any" }, t = "bool", rt = "list_contains" },
+  count = { min = 1, max = 1, args = { "any" }, t = "flint", rt = "list_count" },
+  index = { min = 1, max = 1, args = { "any" }, t = "flint", nullable = true, rt = "list_index_of" },
+  join = { min = 1, max = 1, args = { "str" }, t = "str", rt = "list_join" },
+}
+
+local DICT_METHODS = {
+  add = { min = 2, max = 2, args = { "str", "any" }, t = "NONE", rt = "dict_add" },
+  take = { min = 1, max = 1, args = { "str" }, t = "any", nullable = true, rt = "dict_take" },
+  remove = { min = 1, max = 1, args = { "str" }, t = "bool", rt = "dict_remove" },
+  contains = { min = 1, max = 1, args = { "str" }, t = "bool", rt = "dict_contains" },
+  merge = { min = 1, max = 1, args = { "dict" }, t = "NONE", rt = "dict_merge" },
+}
+
+local METHOD_TABLES = { str = STR_METHODS, list = LIST_METHODS, dict = DICT_METHODS }
 
 function P:parse_method(base)
   local name_tok = self:expect("name", nil, "method name")
@@ -702,13 +822,18 @@ function P:parse_method(base)
   end
   self:expect("op", ")", "')'")
 
-  if base.t ~= "str" and base.t ~= "NONE" then
-    self:fail(name_tok, "TYPE_ERROR", "string receiver of '" .. name .. "'", base.t)
+  local tbl = METHOD_TABLES[base.t]
+  if not tbl then
+    if base.t == "any" then
+      self:fail(name_tok, "TYPE_ERROR",
+        "typed receiver of method '" .. name .. "' (bind the value to a type first)", "any")
+    end
+    self:fail(name_tok, "TYPE_ERROR", "str, list or dict receiver of '" .. name .. "'", base.t)
   end
 
-  local m = STR_METHODS[name]
+  local m = tbl[name]
   if not m then
-    self:fail(name_tok, "NAME_ERROR", "string method", "unknown method '" .. name .. "'")
+    self:fail(name_tok, "NAME_ERROR", base.t .. " method", "unknown method '" .. name .. "'")
   end
 
   if #args < m.min or #args > m.max then
@@ -718,15 +843,15 @@ function P:parse_method(base)
   end
   for i, a in ipairs(args) do
     local at = m.args[i]
-    if at and a.t ~= "NONE" and a.t ~= at then
+    if at and at ~= "any" and a.t ~= "NONE" and a.t ~= "any" and a.t ~= at then
       self:fail({ line = a.line, col = a.col }, "TYPE_ERROR",
         "argument " .. i .. " of '" .. name .. "' to be " .. at, a.t)
     end
   end
 
   return {
-    k = "method", base = base, name = name, args = args, argtypes = m.args, t = m.t,
-    nullable = m.nullable or nil,
+    k = "method", base = base, name = name, rt = m.rt, args = args,
+    argtypes = m.args, t = m.t, nullable = m.nullable or nil,
     line = name_tok.line, col = name_tok.col,
   }
 end
@@ -795,6 +920,51 @@ function P:parse_atom()
     return e
   end
 
+  if t.type == "op" and t.value == "[" then
+    self:advance()
+    local items = {}
+    if not self:check_op("]") then
+      while true do
+        items[#items + 1] = self:parse_expr()
+        if self:check_op(",") then self:advance() else break end
+      end
+    end
+    self:expect("op", "]", "']'")
+    return { k = "list", items = items, t = "list", line = t.line, col = t.col }
+  end
+
+  if t.type == "op" and t.value == "{" then
+    self:advance()
+    local pairs = {}
+    if not self:check_op("}") then
+      while true do
+        local kt = self:peek()
+        local key
+        if kt.type == "name" then
+          self:advance()
+          key = kt.value
+        elseif kt.type == "string" then
+          self:advance()
+          local buf = {}
+          for _, p in ipairs(kt.parts) do
+            if p.kind ~= "text" then
+              self:fail(kt, "TYPE_ERROR", "plain string key", "interpolated string")
+            end
+            buf[#buf + 1] = p.value
+          end
+          key = table.concat(buf)
+        else
+          self:fail(kt, "TYPE_ERROR", "dict key as bare name or string literal", describe(kt))
+        end
+        self:expect("op", ":", "':'")
+        pairs[#pairs + 1] = { key = key, value = self:parse_expr() }
+        if self:check_op(",") then self:advance() else break end
+      end
+    end
+    self:expect("op", "}", "'}'")
+    return { k = "dict", pairs = pairs, t = "dict", line = t.line, col = t.col }
+  end
+
   self:fail(t, "SYNTAX_ERROR", "expression", describe(t))
 end
 
@@ -827,16 +997,18 @@ function P:parse_call()
       #args .. " argument(s)")
   end
 
+  local ptypes = {}
   for i, a in ipairs(args) do
     local pt = fn.params[i].type
-    if a.t ~= "NONE" and a.t ~= pt then
+    ptypes[i] = pt
+    if a.t ~= "NONE" and a.t ~= "any" and a.t ~= pt then
       self:fail({ line = a.line, col = a.col }, "TYPE_ERROR",
         "argument " .. i .. " of '" .. name .. "' to be " .. pt, a.t)
     end
   end
 
   return {
-    k = "call_user", name = name, args = args, t = fn.ret,
+    k = "call_user", name = name, args = args, ptypes = ptypes, t = fn.ret,
     nullable = fn.ret_nullable or nil,
     line = name_tok.line, col = name_tok.col,
   }

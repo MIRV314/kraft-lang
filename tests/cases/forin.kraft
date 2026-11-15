@@ -1,0 +1,23 @@
+list xs = [3, 1, 2]
+flint total = 0
+for x in xs:
+    total += x
+show({total})
+
+for a in xs:
+    if a == 1:
+        continue
+    show({a})
+
+for b in xs:
+    if b == 2:
+        break
+    show({b})
+
+dict d = {a: 1, b: 2}
+for k, v in d:
+    show({k} -> {v})
+
+dict box = {rows: [7, 8]}
+for y in box[rows]:
+    show({y})

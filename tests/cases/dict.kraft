@@ -1,0 +1,18 @@
+dict user = {имя: "Kraft", возраст: 25}
+show({user})
+show({user[имя]})
+show({user["возраст"]})
+show({user.take("нет")})
+show({user.take("нет") is NONE})
+show({user.contains("имя")})
+user.add("рост", 180)
+show({user})
+user.remove("возраст")
+show({user})
+dict extra = {страна: "РФ"}
+user.merge(extra)
+show({user})
+show({user is dict})
+show({user is list})
+list missing = user[нет]
+show({missing is NONE})
