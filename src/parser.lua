@@ -224,6 +224,135 @@ function P:parse_for()
   return node
 end
 
+-- func name(тип имя, ...) -> тип: — только верхний уровень.
+function P:parse_func()
+  local tok = self:advance()
+  if self.in_func or self.block_depth > 0 then
+    self:fail(tok, "SYNTAX_ERROR", "function at top level", "nested function")
+  end
+
+  local name_tok = self:expect("name", nil, "function name")
+  local name = name_tok.value
+  if is_const(name) then
+    self:fail(name_tok, "CONST_ERROR", "function name", "constant '" .. name .. "'")
+  end
+  if self.funcs[name] or self.vars[name] then
+    self:fail(name_tok, "REDECLARE_ERROR", "unique name",
+      "name '" .. name .. "' is already declared")
+  end
+
+  self:expect("op", "(", "'('")
+  local params = {}
+  if not self:check_op(")") then
+    while true do
+      local pty_tok = self:peek()
+      local pty = self:parse_type_name()
+      if pty == "NONE" then
+        self:fail(pty_tok, "TYPE_ERROR", "parameter type", "NONE")
+      end
+      local pn = self:expect("name", nil, "parameter name")
+      for _, p in ipairs(params) do
+        if p.name == pn.value then
+          self:fail(pn, "REDECLARE_ERROR", "unique parameter name",
+            "duplicate '" .. pn.value .. "'")
+        end
+      end
+      params[#params + 1] = { name = pn.value, type = pty, line = pn.line, col = pn.col }
+      if self:check_op(",") then self:advance() else break end
+    end
+  end
+  self:expect("op", ")", "')'")
+
+  local ret
+  if self:check_op("->") then
+    self:advance()
+    local ret_tok = self:peek()
+    ret = self:parse_type_name()
+    if ret == "NONE" then
+      self:fail(ret_tok, "SYNTAX_ERROR", "return type (omit '->' for NONE)", "NONE")
+    end
+  end
+  self:expect("op", ":", "':'")
+
+  -- Функция регистрируется до тела: так работает рекурсия с явным '->'.
+  local fn = { params = params, ret = ret, ret_nullable = false, inferring = true }
+  self.funcs[name] = fn
+
+  -- Тело — своя область видимости: переменные файла не видны.
+  local saved = {
+    vars = self.vars, nullable = self.nullable, maybe_unset = self.maybe_unset,
+    for_names = self.for_names, loop_depth = self.loop_depth,
+    in_func = self.in_func, func_ret = self.func_ret, func_returns = self.func_returns,
+  }
+  self.vars = {}
+  self.nullable = {}
+  self.maybe_unset = {}
+  self.for_names = {}
+  for _, p in ipairs(params) do self.vars[p.name] = p.type end
+  self.loop_depth = 0
+  self.in_func = true
+  self.func_ret = ret
+  self.func_returns = {}
+
+  local body = self:parse_block()
+
+  local returns = self.func_returns
+  self.vars, self.nullable, self.maybe_unset = saved.vars, saved.nullable, saved.maybe_unset
+  self.for_names, self.loop_depth = saved.for_names, saved.loop_depth
+  self.in_func, self.func_ret, self.func_returns = saved.in_func, saved.func_ret, saved.func_returns
+
+  -- Тело без return в конце может «провалиться» — тогда результат NONE.
+  local fallthrough = not (body[#body] and body[#body].k == "return")
+  local nullable = fallthrough
+  local seen
+
+  for _, r in ipairs(returns) do
+    if r.empty or r.type == "NONE" then
+      nullable = true
+    elseif ret then
+      if r.type ~= ret then
+        self:fail(r, "TYPE_ERROR", "return type " .. ret, r.type)
+      end
+    else
+      if seen and seen ~= r.type then
+        self:fail(r, "TYPE_ERROR",
+          "all returns of '" .. name .. "' to have one type", seen .. " and " .. r.type)
+      end
+      seen = r.type
+    end
+  end
+
+  if not ret then ret = seen or "NONE" end
+  fn.ret = ret
+  fn.ret_nullable = nullable
+  fn.inferring = false
+
+  return {
+    k = "func", name = name, params = params, ret = ret, body = body,
+    block_stmt = true, line = tok.line, col = tok.col,
+  }
+end
+
+function P:parse_return()
+  local tok = self:advance()
+  if not self.in_func then
+    self:fail(tok, "SCOPE_ERROR", "'return' inside a function", "'return' at top level")
+  end
+
+  local expr
+  if self:check_op(":") then
+    self:advance()
+  else
+    expr = self:parse_expr()
+  end
+
+  self.func_returns[#self.func_returns + 1] = {
+    empty = (expr == nil), type = expr and expr.t or "NONE",
+    line = tok.line, col = tok.col,
+  }
+  return { k = "return", expr = expr, line = tok.line, col = tok.col }
+end
+
 function P:parse_stmt()
   local t = self:peek()
   if t.type == "kw" and (t.value == "str" or t.value == "flint" or t.value == "bool") then
@@ -237,6 +366,12 @@ function P:parse_stmt()
   end
   if t.type == "kw" and t.value == "for" then
     return self:parse_for()
+  end
+  if t.type == "kw" and t.value == "func" then
+    return self:parse_func()
+  end
+  if t.type == "kw" and t.value == "return" then
+    return self:parse_return()
   end
   if t.type == "kw" and (t.value == "break" or t.value == "continue") then
     self:advance()
@@ -263,7 +398,7 @@ function P:parse_decl()
   local name_tok = self:expect("name", nil, "variable name")
   local name = name_tok.value
 
-  if self.vars[name] then
+  if self.vars[name] or self.funcs[name] then
     self:fail(name_tok, "REDECLARE_ERROR", "unique name", "name '" .. name .. "' is already declared")
   end
 
@@ -280,7 +415,7 @@ function P:parse_decl()
   end
 
   self.vars[name] = ty
-  self.nullable[name] = (expr.t == "NONE") or nil
+  self.nullable[name] = (expr.t == "NONE" or expr.nullable) or nil
   -- Объявление внутри блока может не выполниться — тогда значение NONE (D11).
   if self.block_depth > 0 then self.maybe_unset[name] = true end
   return { k = "decl", type = ty, name = name, expr = expr, line = name_tok.line, col = name_tok.col }
@@ -305,7 +440,7 @@ function P:parse_assign()
       expr.t
     )
   end
-  self.nullable[name] = (expr.t == "NONE") or nil
+  self.nullable[name] = (expr.t == "NONE" or expr.nullable) or nil
   return { k = "assign", name = name, expr = expr, line = name_tok.line, col = name_tok.col }
 end
 
@@ -326,9 +461,10 @@ function P:parse_compound()
     self:fail(op_tok, "TYPE_ERROR", "numeric operands of '" .. op_tok.value .. "'", expr.t)
   end
 
+  local maybe = (self.nullable[name] or self.maybe_unset[name]) or nil
   self.nullable[name] = nil
   return {
-    k = "compound", name = name, op = op, expr = expr,
+    k = "compound", name = name, op = op, expr = expr, nullable = maybe,
     line = name_tok.line, col = name_tok.col,
   }
 end
@@ -512,6 +648,10 @@ function P:parse_primary()
   end
 
   if t.type == "name" then
+    local nextt = self.tokens[self.pos + 1]
+    if nextt and nextt.type == "op" and nextt.value == "(" then
+      return self:parse_call()
+    end
     self:advance()
     local ty = self.vars[t.value]
     if not ty then
@@ -532,6 +672,50 @@ function P:parse_primary()
   end
 
   self:fail(t, "SYNTAX_ERROR", "expression", describe(t))
+end
+
+function P:parse_call()
+  local name_tok = self:advance()
+  local name = name_tok.value
+  local fn = self.funcs[name]
+  if not fn then
+    self:fail(name_tok, "NAME_ERROR", "declared function", "undeclared function '" .. name .. "'")
+  end
+  if fn.inferring and not fn.ret then
+    self:fail(name_tok, "TYPE_ERROR",
+      "explicit '->' for recursion",
+      "'" .. name .. "' is called while its return type is inferred")
+  end
+
+  self:expect("op", "(", "'('")
+  local args = {}
+  if not self:check_op(")") then
+    while true do
+      args[#args + 1] = self:parse_expr()
+      if self:check_op(",") then self:advance() else break end
+    end
+  end
+  self:expect("op", ")", "')'")
+
+  if #args ~= #fn.params then
+    self:fail(name_tok, "ARGCOUNT_ERROR",
+      #fn.params .. " argument(s) to '" .. name .. "'",
+      #args .. " argument(s)")
+  end
+
+  for i, a in ipairs(args) do
+    local pt = fn.params[i].type
+    if a.t ~= "NONE" and a.t ~= pt then
+      self:fail({ line = a.line, col = a.col }, "TYPE_ERROR",
+        "argument " .. i .. " of '" .. name .. "' to be " .. pt, a.t)
+    end
+  end
+
+  return {
+    k = "call_user", name = name, args = args, t = fn.ret,
+    nullable = fn.ret_nullable or nil,
+    line = name_tok.line, col = name_tok.col,
+  }
 end
 
 -- Части строки/шаблона: текст и выражения.
@@ -558,7 +742,9 @@ function P:parse_parts(tpl)
       local sub = setmetatable({
         tokens = toks, pos = 1, path = self.path, vars = self.vars,
         nullable = self.nullable, maybe_unset = self.maybe_unset,
-        for_names = self.for_names,
+        for_names = self.for_names, funcs = self.funcs,
+        in_func = self.in_func, func_ret = self.func_ret,
+        func_returns = self.func_returns,
         block_depth = self.block_depth, loop_depth = self.loop_depth,
       }, P)
       local e = sub:parse_expr()
@@ -575,7 +761,9 @@ end
 function parser.parse(tokens, path)
   local self = setmetatable({
     tokens = tokens, pos = 1, path = path, vars = {}, nullable = {},
-    maybe_unset = {}, for_names = {}, block_depth = 0, loop_depth = 0,
+    maybe_unset = {}, for_names = {}, funcs = {},
+    in_func = false, func_ret = nil, func_returns = nil,
+    block_depth = 0, loop_depth = 0,
   }, P)
   return self:parse_program()
 end

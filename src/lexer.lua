@@ -17,7 +17,7 @@ local TEMPLATE_FUNCS = { show = true, show_err = true, input = true }
 
 local OPS2 = {
   ["**"] = true, ["//"] = true, ["=="] = true, ["!="] = true,
-  ["<="] = true, [">="] = true, [".."] = true,
+  ["<="] = true, [">="] = true, [".."] = true, ["->"] = true,
   ["+="] = true, ["-="] = true, ["*="] = true, ["/="] = true, ["%="] = true,
 }
 

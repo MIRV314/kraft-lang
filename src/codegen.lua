@@ -17,7 +17,6 @@ function codegen.generate(ast, opts)
   end
 
   local lua_vars = {}
-  local decl_order = {}
   local counter = 0
   local function lua_name(name)
     if not lua_vars[name] then
@@ -27,23 +26,46 @@ function codegen.generate(ast, opts)
     return lua_vars[name]
   end
 
-  -- Все объявления поднимаются в начало функции (D11, D43).
-  local function collect(stmts)
-    for _, s in ipairs(stmts) do
-      if s.k == "decl" then
-        lua_name(s.name)
-        decl_order[#decl_order + 1] = s.name
-      elseif s.k == "if" then
-        for _, b in ipairs(s.branches) do collect(b.body) end
-        if s.else_body then collect(s.else_body) end
-      elseif s.k == "while" then
-        collect(s.body)
-      elseif s.k == "for" then
-        collect(s.body)
+  local lua_funcs = {}
+  local func_counter = 0
+  local function lua_func(name)
+    if not lua_funcs[name] then
+      func_counter = func_counter + 1
+      lua_funcs[name] = "f_" .. func_counter
+    end
+    return lua_funcs[name]
+  end
+
+  -- Объявления поднимаются в начало своей функции (D11, D43).
+  -- Тела функций — отдельные области, сюда не заходим.
+  local function collect_scope(stmts)
+    local names = {}
+    local function walk(list)
+      for _, s in ipairs(list) do
+        if s.k == "decl" then
+          lua_name(s.name)
+          names[#names + 1] = s.name
+        elseif s.k == "if" then
+          for _, b in ipairs(s.branches) do walk(b.body) end
+          if s.else_body then walk(s.else_body) end
+        elseif s.k == "while" or s.k == "for" then
+          walk(s.body)
+        end
       end
     end
+    walk(stmts)
+    return names
   end
-  collect(ast.stmts)
+
+  local function emit_hoist(names)
+    if #names == 0 then return end
+    local lua, nones = {}, {}
+    for _, n in ipairs(names) do
+      lua[#lua + 1] = lua_name(n)
+      nones[#nones + 1] = "krt.NONE"
+    end
+    emit("local " .. table.concat(lua, ", ") .. " = " .. table.concat(nones, ", "))
+  end
 
   local emit_expr
 
@@ -97,6 +119,10 @@ function codegen.generate(ast, opts)
       else
         return "krt.input(" .. emit_parts(e.parts) .. ")"
       end
+    elseif k == "call_user" then
+      local args = {}
+      for _, a in ipairs(e.args) do args[#args + 1] = emit_expr(a) end
+      return lua_func(e.name) .. "(" .. table.concat(args, ", ") .. ")"
     elseif k == "un" then
       if e.op == "-" then
         return "(-(" .. numeric(e.a) .. "))"
@@ -182,16 +208,17 @@ function codegen.generate(ast, opts)
 
     elseif s.k == "compound" then
       local v = lua_name(s.name)
+      local lhs = s.nullable and ("krt.as_flint(" .. v .. ")") or v
       local rhs = numeric(s.expr)
       local op = s.op
       local expr
-      if op == "+" then expr = v .. " + " .. rhs
-      elseif op == "-" then expr = v .. " - " .. rhs
-      elseif op == "*" then expr = v .. " * " .. rhs
-      elseif op == "/" then expr = "krt.div(" .. v .. ", " .. rhs .. ")"
-      elseif op == "//" then expr = "krt.idiv(" .. v .. ", " .. rhs .. ")"
-      elseif op == "%" then expr = "krt.mod(" .. v .. ", " .. rhs .. ")"
-      elseif op == "**" then expr = "krt.pow(" .. v .. ", " .. rhs .. ")"
+      if op == "+" then expr = lhs .. " + " .. rhs
+      elseif op == "-" then expr = lhs .. " - " .. rhs
+      elseif op == "*" then expr = lhs .. " * " .. rhs
+      elseif op == "/" then expr = "krt.div(" .. lhs .. ", " .. rhs .. ")"
+      elseif op == "//" then expr = "krt.idiv(" .. lhs .. ", " .. rhs .. ")"
+      elseif op == "%" then expr = "krt.mod(" .. lhs .. ", " .. rhs .. ")"
+      elseif op == "**" then expr = "krt.pow(" .. lhs .. ", " .. rhs .. ")"
       else error("codegen: unknown compound " .. tostring(op)) end
       emit(v .. " = " .. expr)
 
@@ -277,13 +304,45 @@ function codegen.generate(ast, opts)
       emit("end")
       emit("::" .. brk .. "::")
 
+    elseif s.k == "return" then
+      if s.expr then
+        emit("return " .. emit_expr(s.expr))
+      else
+        emit("return krt.NONE")
+      end
+
+    elseif s.k == "func" then
+      local params = {}
+      for _, p in ipairs(s.params) do params[#params + 1] = lua_name(p.name) end
+      emit("local function " .. lua_func(s.name) .. "(" .. table.concat(params, ", ") .. ")")
+      indent = indent + 1
+      emit_hoist(collect_scope(s.body))
+      emit_stmts(s.body)
+      if not (s.body[#s.body] and s.body[#s.body].k == "return") then
+        emit("return krt.NONE")
+      end
+      indent = indent - 1
+      emit("end")
+
     else
       error("codegen: unknown statement " .. tostring(s.k))
     end
   end
 
   emit_stmts = function(stmts)
-    for _, s in ipairs(stmts) do emit_stmt(s) end
+    for i, s in ipairs(stmts) do
+      -- return в Lua обязан быть последним в блоке; если после него есть
+      -- стейтменты, оборачиваем в do ... end.
+      if s.k == "return" and i < #stmts then
+        emit("do")
+        indent = indent + 1
+        emit_stmt(s)
+        indent = indent - 1
+        emit("end")
+      else
+        emit_stmt(s)
+      end
+    end
   end
 
   -- ---------- шапка ----------
@@ -296,14 +355,7 @@ function codegen.generate(ast, opts)
   emit("krt.run(function()")
   indent = 1
 
-  if #decl_order > 0 then
-    local names, nones = {}, {}
-    for _, n in ipairs(decl_order) do
-      names[#names + 1] = lua_name(n)
-      nones[#nones + 1] = "krt.NONE"
-    end
-    emit("local " .. table.concat(names, ", ") .. " = " .. table.concat(nones, ", "))
-  end
+  emit_hoist(collect_scope(ast.stmts))
 
   emit_stmts(ast.stmts)
 

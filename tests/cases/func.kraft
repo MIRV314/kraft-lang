@@ -1,0 +1,21 @@
+func add(flint a, flint b) -> flint:
+    return a + b
+
+func fib(flint n) -> flint:
+    if n < 2:
+        return n
+    return fib(n - 1) + fib(n - 2)
+
+func kind(flint n):
+    if n > 0:
+        return "плюс"
+    return "минус"
+
+func greet(str who):
+    show(Привет, {who})
+
+greet("Kraft")
+show({add(2, 3)})
+show({fib(10)})
+show({kind(5)} {kind(-5)})
+show({add(fib(5), 1)})
