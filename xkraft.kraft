@@ -1,0 +1,2440 @@
+# xkraft — компилятор Kraft, написанный на Kraft.
+# Лексер, парсер со статическими проверками, кодогенератор в Lua.
+# Написан на замороженном v0.1 и компилирует сам себя.
+#
+# Запуск: ./kraft xkraft.kraft [--tokens] [-c] file.kraft
+
+# ---------- утилиты ----------
+
+func cat(list xs) -> str:
+    return xs.join("")
+
+func spaces(flint n) -> str:
+    list parts = []
+    flint i = 0
+    while i < n:
+        parts.add(" ")
+        i += 1
+    return parts.join("")
+
+func char_at(str s, flint i) -> str:
+    if i < 0 OR i >= len(s):
+        return ""
+    return s[i]
+
+func split_lines(str s) -> list:
+    list out = []
+    flint start = 0
+    flint i = 0
+    flint n = len(s)
+    while i < n:
+        if s[i] == "\n":
+            str line = s.part(start, i)
+            if line.suff("\r"):
+                line = line.part(0, len(line) - 1)
+            out.add(line)
+            start = i + 1
+        i += 1
+    str last = s.part(start, n)
+    if last.suff("\r"):
+        last = last.part(0, len(last) - 1)
+    out.add(last)
+    return out
+
+func lua_str(str s) -> str:
+    list out = []
+    out.add("\"")
+    flint i = 0
+    flint n = len(s)
+    while i < n:
+        str c = s[i]
+        if c == "\\":
+            out.add("\\\\")
+        elif c == "\"":
+            out.add("\\\"")
+        elif c == "\n":
+            out.add("\\n")
+        elif c == "\r":
+            out.add("\\r")
+        elif c == "\t":
+            out.add("\\t")
+        elif c == "\e":
+            out.add("\\27")
+        else:
+            out.add(c)
+        i += 1
+    out.add("\"")
+    return out.join("")
+
+func pad5(flint n) -> str:
+    str s = str(n)
+    if len(s) >= 5:
+        return s
+    return cat([spaces(5 - len(s)), s])
+
+func report_error(dict e, str src):
+    list lines = split_lines(src)
+    str ecat = "SYNTAX_ERROR"
+    if e.contains("cat"):
+        ecat = e[cat]
+    flint line = 1
+    if e.contains("line"):
+        line = e[line]
+    flint col = 1
+    if e.contains("col"):
+        col = e[col]
+    str text = ""
+    if line >= 1 AND line <= len(lines):
+        text = lines[line - 1]
+
+    str red = ""
+    str yellow = ""
+    str reset = ""
+    if is_tty():
+        red = "\e[31m"
+        yellow = "\e[33m"
+        reset = "\e[0m"
+
+    str num = cat([pad5(line), " | "])
+    list head = []
+    head.add(red)
+    head.add(ecat)
+    head.add(reset)
+    head.add(": ")
+    head.add(e[path])
+    head.add(":")
+    head.add(str(line))
+    show_err({head.join("")})
+    show_err({cat([num, text])})
+    str pad = spaces(len(num) + col - 1)
+    if e.contains("expected"):
+        list body = []
+        body.add(pad)
+        body.add("^ ")
+        body.add(yellow)
+        body.add("expected ")
+        body.add(e[expected])
+        body.add(reset)
+        body.add(", ")
+        body.add(red)
+        body.add("found ")
+        body.add(e[found])
+        body.add(reset)
+        show_err({body.join("")})
+    else:
+        str msg = ""
+        if e.contains("msg"):
+            msg = e[msg]
+        show_err({cat([pad, "^ ", red, msg, reset])})
+
+# ---------- лексические таблицы ----------
+
+func is_digit(str c) -> bool:
+    return c != "" AND "0123456789".contains(c)
+
+func is_ascii_other(str c) -> bool:
+    str set = " \t\r\n#\"'\{\}()[]+-*/%<>=,:.;!?@$&|^~`\\"
+    return set.contains(c)
+
+func is_name_char(str c) -> bool:
+    if c == "":
+        return FALSE
+    if is_digit(c):
+        return TRUE
+    if "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_".contains(c):
+        return TRUE
+    return NOT is_ascii_other(c)
+
+func is_name_start(str c) -> bool:
+    if c == "" OR is_digit(c):
+        return FALSE
+    return is_name_char(c)
+
+func is_keyword(str w) -> bool:
+    if w == "func" OR w == "model" OR w == "method" OR w == "construct":
+        return TRUE
+    if w == "if" OR w == "elif" OR w == "else" OR w == "for" OR w == "in":
+        return TRUE
+    if w == "while" OR w == "break" OR w == "continue" OR w == "return":
+        return TRUE
+    if w == "is" OR w == "AND" OR w == "OR" OR w == "NOT" OR w == "glob":
+        return TRUE
+    if w == "self" OR w == "try" OR w == "finally" OR w == "trigger" OR w == "panic":
+        return TRUE
+    if w == "init" OR w == "import_file" OR w == "from_file":
+        return TRUE
+    if w == "import_lib" OR w == "from_lib":
+        return TRUE
+    if w == "str" OR w == "flint" OR w == "bool" OR w == "list" OR w == "dict":
+        return TRUE
+    if w == "froz":
+        return TRUE
+    if w == "TRUE" OR w == "FALSE" OR w == "NONE":
+        return TRUE
+    return FALSE
+
+func is_template_func(str w) -> bool:
+    return w == "show" OR w == "show_err" OR w == "input"
+
+func is_op1(str c) -> bool:
+    return c != "" AND "+-*/%<>=()[]\{\},:.".contains(c)
+
+func is_op2(str s) -> bool:
+    if s == "**" OR s == "//" OR s == "==" OR s == "!=":
+        return TRUE
+    if s == "<=" OR s == ">=" OR s == ".." OR s == "->":
+        return TRUE
+    if s == "+=" OR s == "-=" OR s == "*=" OR s == "/=" OR s == "%=":
+        return TRUE
+    return FALSE
+
+func is_op3(str s) -> bool:
+    return s == "**=" OR s == "//="
+
+func escape_of(str n) -> str:
+    if n == "n":
+        return "\n"
+    if n == "t":
+        return "\t"
+    if n == "r":
+        return "\r"
+    if n == "e":
+        return "\e"
+    if n == "\\":
+        return "\\"
+    if n == "\{":
+        return "\{"
+    if n == "\}":
+        return "\}"
+    if n == "(":
+        return "("
+    if n == ")":
+        return ")"
+    if n == "\"":
+        return "\""
+    if n == "'":
+        return "'"
+    return NONE
+
+# ---------- лексер ----------
+
+# Сканирует строку или шаблон с позиции i.
+# quoted=TRUE  -> закрывающая кавычка quote
+# quoted=FALSE -> закрывающая скобка ")"
+# Возвращает {parts, close, err}.
+func scan_parts(str line, flint i, flint lineno, bool quoted, str quote) -> dict:
+    list parts = []
+    list text = []
+    flint n = len(line)
+
+    while i < n:
+        str c = line[i]
+        if c == "\\":
+            str nc = char_at(line, i + 1)
+            str v = escape_of(nc)
+            if v is NONE:
+                return {parts: parts, close: i, err: {msg: cat(["unknown escape '\\", nc, "'"]), col: i + 1}}
+            text.add(v)
+            i += 2
+        elif c == "\{":
+            if len(text) > 0:
+                parts.add({kind: "text", value: text.join("")})
+                text = []
+            flint start = i + 1
+            flint depth = 0
+            flint j = start
+            while j < n:
+                str d = line[j]
+                if d == "\"" OR d == "'":
+                    str q = d
+                    j += 1
+                    while j < n:
+                        str e = line[j]
+                        if e == "\\":
+                            j += 2
+                        elif e == q:
+                            j += 1
+                            break
+                        else:
+                            j += 1
+                elif d == "\{":
+                    depth += 1
+                    j += 1
+                elif d == "\}":
+                    if depth == 0:
+                        break
+                    depth -= 1
+                    j += 1
+                else:
+                    j += 1
+            if j >= n:
+                return {parts: parts, close: i, err: {msg: "unclosed '\{'", col: i + 1}}
+            str inner = line.part(start, j)
+            if inner.trim() == "":
+                return {parts: parts, close: i, err: {msg: "empty substitution '\{\}'", col: i + 1}}
+            parts.add({kind: "expr", src: inner, line: lineno, col: start + 1})
+            i = j + 1
+        elif c == "\}":
+            return {parts: parts, close: i, err: {msg: "unexpected '\}': use '\\\}'", col: i + 1}}
+        elif quoted AND c == quote:
+            if len(text) > 0:
+                parts.add({kind: "text", value: text.join("")})
+            return {parts: parts, close: i, err: NONE}
+        elif (NOT quoted) AND c == ")":
+            if len(text) > 0:
+                parts.add({kind: "text", value: text.join("")})
+            return {parts: parts, close: i, err: NONE}
+        else:
+            text.add(c)
+            i += 1
+
+    if len(text) > 0:
+        parts.add({kind: "text", value: text.join("")})
+    if quoted:
+        return {parts: parts, close: i, err: {msg: "unclosed string", col: i + 1}}
+    return {parts: parts, close: i, err: {msg: "unclosed show template: expected ')'", col: i + 1}}
+
+# Разбирает одну строку (без отступа). Дописывает токены в tokens.
+func scan_line(str line, flint i, flint lineno, list tokens) -> dict:
+    flint n = len(line)
+    while i < n:
+        str c = line[i]
+
+        if c == " " OR c == "\t":
+            i += 1
+        elif c == "#":
+            return {err: NONE}
+        elif c == "\"" OR c == "'":
+            dict r = scan_parts(line, i + 1, lineno, TRUE, c)
+            if r[err]:
+                dict e = r[err]
+                e.add("line", lineno)
+                return {err: e}
+            tokens.add({type: "string", parts: r[parts], line: lineno, col: i + 1})
+            i = r[close] + 1
+        elif is_digit(c):
+            flint j = i
+            while j < n AND is_digit(line[j]):
+                j += 1
+            if char_at(line, j) == "." AND char_at(line, j + 1) != ".":
+                j += 1
+                while j < n AND is_digit(line[j]):
+                    j += 1
+            str raw = line.part(i, j)
+            tokens.add({type: "number", value: flint(raw), raw: raw, line: lineno, col: i + 1})
+            i = j
+        elif is_name_start(c):
+            flint j2 = i + 1
+            while j2 < n AND is_name_char(line[j2]):
+                j2 += 1
+            str word = line.part(i, j2)
+            flint col = i + 1
+
+            if is_template_func(word):
+                flint k = j2
+                while k < n AND (line[k] == " " OR line[k] == "\t"):
+                    k += 1
+                if char_at(line, k) == "(":
+                    tokens.add({type: "name", value: word, line: lineno, col: col})
+                    tokens.add({type: "op", value: "(", line: lineno, col: k + 1})
+                    dict r2 = scan_parts(line, k + 1, lineno, FALSE, "")
+                    if r2[err]:
+                        dict e2 = r2[err]
+                        e2.add("line", lineno)
+                        return {err: e2}
+                    tokens.add({type: "template", parts: r2[parts], line: lineno, col: k + 2})
+                    tokens.add({type: "op", value: ")", line: lineno, col: r2[close] + 1})
+                    i = r2[close] + 1
+                else:
+                    tokens.add({type: "name", value: word, line: lineno, col: col})
+                    i = j2
+            elif is_keyword(word):
+                tokens.add({type: "kw", value: word, line: lineno, col: col})
+                i = j2
+            else:
+                tokens.add({type: "name", value: word, line: lineno, col: col})
+                i = j2
+        else:
+            str three = line.part(i, i + 3)
+            str two = line.part(i, i + 2)
+            if is_op3(three):
+                tokens.add({type: "op", value: three, line: lineno, col: i + 1})
+                i += 3
+            elif is_op2(two):
+                tokens.add({type: "op", value: two, line: lineno, col: i + 1})
+                i += 2
+            elif is_op1(c):
+                tokens.add({type: "op", value: c, line: lineno, col: i + 1})
+                i += 1
+            else:
+                return {err: {msg: cat(["unexpected character '", c, "'"]), line: lineno, col: i + 1}}
+    return {err: NONE}
+
+# Токенизирует весь файл. Возвращает {tokens, err}.
+func lex(str src, str path) -> dict:
+    list tokens = []
+    list indent_stack = [""]
+    flint lineno = 0
+    bool in_block = FALSE
+    list lines = split_lines(src)
+
+    for raw_line in lines:
+        str line = raw_line
+        lineno += 1
+        str trimmed = line.trim()
+
+        bool skip = FALSE
+        if in_block:
+            if trimmed.part(0, 3) == "---":
+                in_block = FALSE
+            skip = TRUE
+        elif trimmed.part(0, 3) == "---":
+            in_block = TRUE
+            skip = TRUE
+        elif trimmed == "" OR trimmed.part(0, 1) == "#":
+            skip = TRUE
+        if NOT skip:
+            flint k = 0
+            flint ln = len(line)
+            while k < ln AND (line[k] == " " OR line[k] == "\t"):
+                k += 1
+            str indent = line.part(0, k)
+            if indent.contains(" ") AND indent.contains("\t"):
+                return {tokens: tokens, err: {msg: "mixed tabs and spaces in indentation", line: lineno, col: 1}}
+
+            str top = indent_stack[len(indent_stack) - 1]
+            if indent != top:
+                if indent.part(0, len(top)) == top:
+                    indent_stack.add(indent)
+                    tokens.add({type: "indent", line: lineno, col: 1})
+                else:
+                    while len(indent_stack) > 1 AND indent_stack[len(indent_stack) - 1] != indent:
+                        indent_stack.del(len(indent_stack) - 1)
+                        tokens.add({type: "dedent", line: lineno, col: 1})
+                    if indent_stack[len(indent_stack) - 1] != indent:
+                        return {tokens: tokens, err: {msg: "inconsistent indentation", line: lineno, col: 1}}
+
+            dict r = scan_line(line, len(indent), lineno, tokens)
+            if r[err]:
+                return {tokens: tokens, err: r[err]}
+            tokens.add({type: "newline", line: lineno, col: len(line) + 1})
+
+    while len(indent_stack) > 1:
+        indent_stack.del(len(indent_stack) - 1)
+        tokens.add({type: "dedent", line: lineno, col: 1})
+    tokens.add({type: "eof", line: lineno, col: 1})
+    return {tokens: tokens, err: NONE}
+
+# ---------- отладка: --tokens ----------
+
+func describe_tok(dict t) -> str:
+    list p = []
+    p.add(t[type])
+    p.add(" ")
+    p.add(str(t[line]))
+    p.add(":")
+    p.add(str(t[col]))
+    if t.contains("value"):
+        p.add(" ")
+        p.add(str(t[value]))
+    if t.contains("raw"):
+        p.add(" raw=")
+        p.add(t[raw])
+    if t.contains("parts"):
+        p.add(" parts=")
+        p.add(str(t[parts]))
+    return p.join("")
+
+func dump_tokens(list toks):
+    for t in toks:
+        show({describe_tok(t)})
+
+# ---------- парсер: состояние и токены ----------
+
+func token_at(dict st, flint i) -> dict:
+    list ts = st[toks]
+    if len(ts) == 0:
+        return {type: "eof", line: 1, col: 1}
+    if i < 0 OR i >= len(ts):
+        return ts[len(ts) - 1]
+    return ts[i]
+
+func tk(dict st) -> dict:
+    return token_at(st, st[pos])
+
+func advance(dict st) -> dict:
+    dict t = tk(st)
+    st.add("pos", st[pos] + 1)
+    return t
+
+func tok_is(dict t, str ty, str val) -> bool:
+    if t[type] != ty:
+        return FALSE
+    if val == "":
+        return TRUE
+    return t[value] == val
+
+func peek_value(dict st) -> str:
+    dict n = token_at(st, st[pos] + 1)
+    if n[type] == "op":
+        return n[value]
+    return ""
+
+func fail(dict st, dict t, str ecat, str expected, str found):
+    if st[err]:
+        return:
+    dict e = {cat: ecat, line: 1, col: 1, expected: expected, found: found, path: st[path]}
+    if len(t) > 0:
+        e.add("line", t[line])
+        e.add("col", t[col])
+    st.add("err", e)
+
+func expect(dict st, str ty, str val, str what) -> dict:
+    dict t = tk(st)
+    if NOT tok_is(t, ty, val):
+        fail(st, t, "SYNTAX_ERROR", what, describe_tok(t))
+        return {type: "eof", value: "", line: 1, col: 1}
+    advance(st)
+    return t
+
+# ---------- парсер: типы и имена ----------
+
+func is_type_keyword(str w) -> bool:
+    return w == "str" OR w == "flint" OR w == "bool" OR w == "list" OR w == "dict"
+
+func is_numeric(str t) -> bool:
+    return t == "flint" OR t == "NONE" OR t == "any"
+
+func assignable(str from, str to) -> bool:
+    return from == "NONE" OR from == "any" OR from == to
+
+func is_compare(str op) -> bool:
+    return op == "==" OR op == "!=" OR op == "<" OR op == "<=" OR op == ">" OR op == ">="
+
+func is_compound(str op) -> bool:
+    if op == "+=" OR op == "-=" OR op == "*=" OR op == "/=":
+        return TRUE
+    return op == "%=" OR op == "//=" OR op == "**="
+
+func is_const_name(str n) -> bool:
+    if len(n) == 0:
+        return FALSE
+    flint i = 0
+    while i < len(n):
+        str c = n[i]
+        if NOT "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_".contains(c):
+            return FALSE
+        i += 1
+    return TRUE
+
+func builtin_arg_ok(str spec, str t) -> bool:
+    if spec == "any":
+        return TRUE
+    if t == "NONE" OR t == "any":
+        return TRUE
+    if spec == "strlistdict":
+        return t == "str" OR t == "list" OR t == "dict"
+    return t == spec
+
+func builtin_arg_desc(str spec) -> str:
+    if spec == "any":
+        return "any value"
+    if spec == "strlistdict":
+        return "str, list, dict"
+    return spec
+
+func builtin_info(str name) -> dict:
+    if name == "len":
+        return {ok: TRUE, n: 1, ret: "flint", a1: "strlistdict"}
+    if name == "type":
+        return {ok: TRUE, n: 1, ret: "str", a1: "any"}
+    if name == "str":
+        return {ok: TRUE, n: 1, ret: "str", a1: "any"}
+    if name == "flint":
+        return {ok: TRUE, n: 1, ret: "flint", a1: "any"}
+    if name == "read_file":
+        return {ok: TRUE, n: 1, ret: "str", a1: "str"}
+    if name == "write_file":
+        return {ok: TRUE, n: 2, ret: "bool", a1: "str", a2: "str"}
+    if name == "file_exists":
+        return {ok: TRUE, n: 1, ret: "bool", a1: "str"}
+    if name == "args":
+        return {ok: TRUE, n: 0, ret: "list", a1: "any"}
+    if name == "exit":
+        return {ok: TRUE, n: 1, ret: "NONE", a1: "flint"}
+    if name == "time_ms":
+        return {ok: TRUE, n: 0, ret: "flint", a1: "any"}
+    if name == "is_tty":
+        return {ok: TRUE, n: 0, ret: "bool", a1: "any"}
+    return {ok: FALSE}
+
+func is_builtin(str name) -> bool:
+    return builtin_info(name)[ok]
+
+func is_reserved(str name) -> bool:
+    return is_builtin(name) OR name == "show" OR name == "show_err" OR name == "input"
+
+func method_info(str base, str name) -> dict:
+    if base == "str":
+        if name == "part":
+            return {ok: TRUE, min: 1, max: 2, a1: "flint", a2: "flint", rt: "str_part", ret: "str", nullable: FALSE}
+        if name == "find":
+            return {ok: TRUE, min: 1, max: 1, a1: "str", a2: "any", rt: "str_find", ret: "flint", nullable: TRUE}
+        if name == "contains":
+            return {ok: TRUE, min: 1, max: 1, a1: "str", a2: "any", rt: "str_contains", ret: "bool", nullable: FALSE}
+        if name == "preff":
+            return {ok: TRUE, min: 1, max: 1, a1: "str", a2: "any", rt: "str_preff", ret: "bool", nullable: FALSE}
+        if name == "suff":
+            return {ok: TRUE, min: 1, max: 1, a1: "str", a2: "any", rt: "str_suff", ret: "bool", nullable: FALSE}
+        if name == "trim":
+            return {ok: TRUE, min: 0, max: 0, a1: "any", a2: "any", rt: "str_trim", ret: "str", nullable: FALSE}
+        if name == "triml":
+            return {ok: TRUE, min: 0, max: 0, a1: "any", a2: "any", rt: "str_triml", ret: "str", nullable: FALSE}
+        if name == "trimr":
+            return {ok: TRUE, min: 0, max: 0, a1: "any", a2: "any", rt: "str_trimr", ret: "str", nullable: FALSE}
+        if name == "replace":
+            return {ok: TRUE, min: 2, max: 2, a1: "str", a2: "str", rt: "str_replace", ret: "str", nullable: FALSE}
+        if name == "count":
+            return {ok: TRUE, min: 1, max: 1, a1: "str", a2: "any", rt: "str_count", ret: "flint", nullable: FALSE}
+    elif base == "list":
+        if name == "add":
+            return {ok: TRUE, min: 1, max: 1, a1: "any", a2: "any", rt: "list_add", ret: "NONE", nullable: FALSE}
+        if name == "del":
+            return {ok: TRUE, min: 1, max: 1, a1: "flint", a2: "any", rt: "list_del", ret: "NONE", nullable: FALSE}
+        if name == "remove":
+            return {ok: TRUE, min: 1, max: 1, a1: "any", a2: "any", rt: "list_remove", ret: "bool", nullable: FALSE}
+        if name == "replace":
+            return {ok: TRUE, min: 2, max: 2, a1: "flint", a2: "any", rt: "list_replace", ret: "NONE", nullable: FALSE}
+        if name == "contains":
+            return {ok: TRUE, min: 1, max: 1, a1: "any", a2: "any", rt: "list_contains", ret: "bool", nullable: FALSE}
+        if name == "count":
+            return {ok: TRUE, min: 1, max: 1, a1: "any", a2: "any", rt: "list_count", ret: "flint", nullable: FALSE}
+        if name == "index":
+            return {ok: TRUE, min: 1, max: 1, a1: "any", a2: "any", rt: "list_index_of", ret: "flint", nullable: TRUE}
+        if name == "join":
+            return {ok: TRUE, min: 1, max: 1, a1: "str", a2: "any", rt: "list_join", ret: "str", nullable: FALSE}
+    elif base == "dict":
+        if name == "add":
+            return {ok: TRUE, min: 2, max: 2, a1: "str", a2: "any", rt: "dict_add", ret: "NONE", nullable: FALSE}
+        if name == "take":
+            return {ok: TRUE, min: 1, max: 1, a1: "str", a2: "any", rt: "dict_take", ret: "any", nullable: TRUE}
+        if name == "remove":
+            return {ok: TRUE, min: 1, max: 1, a1: "str", a2: "any", rt: "dict_remove", ret: "bool", nullable: FALSE}
+        if name == "contains":
+            return {ok: TRUE, min: 1, max: 1, a1: "str", a2: "any", rt: "dict_contains", ret: "bool", nullable: FALSE}
+        if name == "merge":
+            return {ok: TRUE, min: 1, max: 1, a1: "dict", a2: "any", rt: "dict_merge", ret: "NONE", nullable: FALSE}
+    return {ok: FALSE}
+
+func parse_type_name(dict st) -> str:
+    dict t = tk(st)
+    if t[type] == "kw":
+        str v = t[value]
+        if v == "str" OR v == "flint" OR v == "bool" OR v == "list" OR v == "dict" OR v == "NONE":
+            advance(st)
+            return v
+    fail(st, t, "TYPE_ERROR", "type name", describe_tok(t))
+    return ""
+
+func mangle_var(dict st, str name) -> str:
+    st.add("vcounter", st[vcounter] + 1)
+    str lua = cat(["v_", str(st[vcounter])])
+    dict names = st[names]
+    names.add(name, lua)
+    return lua
+
+func mangle_func(dict st, str name) -> str:
+    st.add("fcounter", st[fcounter] + 1)
+    str lua = cat(["f_", str(st[fcounter])])
+    dict fnames = st[fnames]
+    fnames.add(name, lua)
+    return lua
+
+func e_nullable(dict e) -> bool:
+    if e.contains("nullable"):
+        return e[nullable]
+    return FALSE
+
+# ---------- парсер: выражения ----------
+
+func template_state(dict st, dict p) -> dict:
+    dict lx = lex(p[src], st[path])
+    list ts = lx[tokens]
+    dict e0 = NONE
+    if lx[err]:
+        dict le = lx[err]
+        flint eline = p[line] + le[line] - 1
+        flint ecol = le[col]
+        if le[line] == 1:
+            ecol = p[col] + le[col] - 1
+        e0 = {cat: "SYNTAX_ERROR", line: eline, col: ecol, msg: le[msg], path: st[path]}
+    flint i = 0
+    while i < len(ts):
+        dict t2 = ts[i]
+        t2.add("line", t2[line] + p[line] - 1)
+        if t2[line] == p[line]:
+            t2.add("col", t2[col] + p[col] - 1)
+        i += 1
+    return {toks: ts, pos: 0, path: st[path], vars: st[vars], nullable: st[nullable], maybe_unset: st[maybe_unset], for_names: st[for_names], funcs: st[funcs], in_func: st[in_func], func_ret: st[func_ret], func_returns: st[func_returns], block_depth: st[block_depth], loop_depth: st[loop_depth], err: e0, names: st[names], fnames: st[fnames], vcounter: st[vcounter], fcounter: st[fcounter]}
+
+func parse_expr(dict st, flint min_bp) -> dict:
+    if st[err]:
+        return {}
+    dict t = tk(st)
+    str ty = t[type]
+    dict e = {}
+    dict ptok = NONE
+    str pfn = ""
+
+    if ty == "number":
+        advance(st)
+        e = {k: "num", value: t[value], t: "flint", line: t[line], col: t[col]}
+    elif ty == "string":
+        advance(st)
+        ptok = t
+    elif ty == "kw" AND t[value] == "TRUE":
+        advance(st)
+        e = {k: "bool", value: TRUE, t: "bool", line: t[line], col: t[col]}
+    elif ty == "kw" AND t[value] == "FALSE":
+        advance(st)
+        e = {k: "bool", value: FALSE, t: "bool", line: t[line], col: t[col]}
+    elif ty == "kw" AND t[value] == "NONE":
+        advance(st)
+        e = {k: "none", t: "NONE", line: t[line], col: t[col]}
+    elif (ty == "kw" OR ty == "name") AND is_builtin(t[value]) AND peek_value(st) == "(":
+        str bn = t[value]
+        advance(st)
+        expect(st, "op", "(", "'('")
+        list bargs = []
+        if NOT tok_is(tk(st), "op", ")"):
+            while TRUE:
+                dict ba1 = parse_expr(st, 0)
+                if st[err]:
+                    return {}
+                bargs.add(ba1)
+                if tok_is(tk(st), "op", ","):
+                    advance(st)
+                else:
+                    break
+        expect(st, "op", ")", "')'")
+        if st[err]:
+            return {}
+        dict bi = builtin_info(bn)
+        flint np = bi[n]
+        if len(bargs) != np:
+            fail(st, t, "ARGCOUNT_ERROR", cat([str(np), " argument(s) to '", bn, "'"]), cat([str(len(bargs)), " argument(s)"]))
+            return {}
+        flint bai = 0
+        while bai < len(bargs):
+            dict ba2 = bargs[bai]
+            str bspec = bi[a1]
+            if bai == 1:
+                bspec = bi[a2]
+            if NOT builtin_arg_ok(bspec, ba2[t]):
+                fail(st, {line: ba2[line], col: ba2[col]}, "TYPE_ERROR", cat(["argument ", str(bai + 1), " of '", bn, "' to be ", builtin_arg_desc(bspec)]), ba2[t])
+                return {}
+            bai += 1
+        e = {k: "builtin", name: bn, args: bargs, t: bi[ret], line: t[line], col: t[col]}
+    elif ty == "name" AND is_template_func(t[value]):
+        pfn = t[value]
+        advance(st)
+        expect(st, "op", "(", "'('")
+        dict tpl = expect(st, "template", "", "template")
+        expect(st, "op", ")", "')'")
+        if st[err]:
+            return {}
+        ptok = tpl
+    elif ty == "name":
+        str fn = t[value]
+        if peek_value(st) == "(":
+            dict funcs = st[funcs]
+            if NOT funcs.contains(fn):
+                fail(st, t, "NAME_ERROR", "declared function", cat(["undeclared function '", fn, "'"]))
+                return {}
+            dict fi = funcs.take(fn)
+            if fi[inferring] AND fi[ret] is NONE:
+                fail(st, t, "TYPE_ERROR", "explicit '->' for recursion", cat(["'", fn, "' is called while its return type is inferred"]))
+                return {}
+            advance(st)
+            expect(st, "op", "(", "'('")
+            list cargs = []
+            if NOT tok_is(tk(st), "op", ")"):
+                while TRUE:
+                    dict ca1 = parse_expr(st, 0)
+                    if st[err]:
+                        return {}
+                    cargs.add(ca1)
+                    if tok_is(tk(st), "op", ","):
+                        advance(st)
+                    else:
+                        break
+            expect(st, "op", ")", "')'")
+            if st[err]:
+                return {}
+            list params = fi[params]
+            if len(cargs) != len(params):
+                fail(st, t, "ARGCOUNT_ERROR", cat([str(len(params)), " argument(s) to '", fn, "'"]), cat([str(len(cargs)), " argument(s)"]))
+                return {}
+            list ptypes = []
+            flint cai = 0
+            while cai < len(cargs):
+                dict ca2 = cargs[cai]
+                dict pp = params[cai]
+                str pt = pp[type]
+                ptypes.add(pt)
+                if ca2[t] != "NONE" AND ca2[t] != "any" AND ca2[t] != pt:
+                    fail(st, {line: ca2[line], col: ca2[col]}, "TYPE_ERROR", cat(["argument ", str(cai + 1), " of '", fn, "' to be ", pt]), ca2[t])
+                    return {}
+                cai += 1
+            dict fnames = st[fnames]
+            e = {k: "call_user", name: fn, lua: fnames.take(fn), args: cargs, ptypes: ptypes, t: fi[ret], nullable: fi[ret_nullable], line: t[line], col: t[col]}
+        else:
+            str vn = t[value]
+            dict vars = st[vars]
+            if NOT vars.contains(vn):
+                fail(st, t, "NAME_ERROR", "declared name", cat(["undeclared '", vn, "'"]))
+                return {}
+            advance(st)
+            dict names = st[names]
+            bool nl = FALSE
+            dict nd = st[nullable]
+            if nd.contains(vn):
+                nl = nd.take(vn)
+            dict mu = st[maybe_unset]
+            if mu.contains(vn):
+                nl = TRUE
+            e = {k: "var", name: vn, lua: names.take(vn), t: vars.take(vn), nullable: nl, line: t[line], col: t[col]}
+    elif ty == "op" AND t[value] == "(":
+        advance(st)
+        e = parse_expr(st, 0)
+        if st[err]:
+            return {}
+        expect(st, "op", ")", "')'")
+        if st[err]:
+            return {}
+    elif ty == "op" AND t[value] == "[":
+        advance(st)
+        list items = []
+        if NOT tok_is(tk(st), "op", "]"):
+            while TRUE:
+                dict it = parse_expr(st, 0)
+                if st[err]:
+                    return {}
+                items.add(it)
+                if tok_is(tk(st), "op", ","):
+                    advance(st)
+                else:
+                    break
+        expect(st, "op", "]", "']'")
+        if st[err]:
+            return {}
+        e = {k: "list", items: items, t: "list", line: t[line], col: t[col]}
+    elif ty == "op" AND t[value] == "\{":
+        advance(st)
+        list pairs = []
+        if NOT tok_is(tk(st), "op", "\}"):
+            while TRUE:
+                dict dkt = tk(st)
+                str dkey = ""
+                if dkt[type] == "name":
+                    advance(st)
+                    dkey = dkt[value]
+                elif dkt[type] == "string":
+                    advance(st)
+                    list drawk = dkt[parts]
+                    list dbuf = []
+                    for dp0 in drawk:
+                        dict dpd = dp0
+                        if dpd[kind] != "text":
+                            fail(st, dkt, "TYPE_ERROR", "plain string dkey", "interpolated string")
+                            return {}
+                        dbuf.add(dpd[value])
+                    dkey = dbuf.join("")
+                else:
+                    fail(st, dkt, "TYPE_ERROR", "dict dkey as bare name or string literal", describe_tok(dkt))
+                    return {}
+                expect(st, "op", ":", "':'")
+                dict dval = parse_expr(st, 0)
+                if st[err]:
+                    return {}
+                pairs.add({key: dkey, value: dval})
+                if tok_is(tk(st), "op", ","):
+                    advance(st)
+                else:
+                    break
+        expect(st, "op", "\}", "'\}'")
+        if st[err]:
+            return {}
+        e = {k: "dict", pairs: pairs, t: "dict", line: t[line], col: t[col]}
+    elif ty == "op" AND t[value] == "-":
+        advance(st)
+        dict ua = parse_expr(st, 60)
+        if st[err]:
+            return {}
+        if NOT is_numeric(ua[t]):
+            fail(st, t, "TYPE_ERROR", "operand of unary '-' to be flint", ua[t])
+            return {}
+        e = {k: "un", op: "-", a: ua, t: "flint", line: t[line], col: t[col]}
+    elif ty == "kw" AND t[value] == "NOT":
+        advance(st)
+        dict na = parse_expr(st, 25)
+        if st[err]:
+            return {}
+        e = {k: "un", op: "NOT", a: na, t: "bool", line: t[line], col: t[col]}
+    else:
+        fail(st, t, "SYNTAX_ERROR", "expression", describe_tok(t))
+        return {}
+
+    if NOT (ptok is NONE):
+        list parts = []
+        list raw = ptok[parts]
+        flint pi = 0
+        while pi < len(raw):
+            dict p = raw[pi]
+            if p[kind] == "text":
+                parts.add({kind: "text", value: p[value]})
+            else:
+                dict sub = template_state(st, p)
+                dict ex = parse_expr(sub, 0)
+                if sub[err]:
+                    st.add("err", sub[err])
+                    return {}
+                if st[err]:
+                    return {}
+                dict rest = tk(sub)
+                if rest[type] != "newline" AND rest[type] != "eof":
+                    fail(sub, rest, "SYNTAX_ERROR", "end of expression", describe_tok(rest))
+                    st.add("err", sub[err])
+                    return {}
+                parts.add({kind: "expr", expr: ex})
+            pi += 1
+        if pfn == "":
+            e = {k: "str", parts: parts, t: "str", line: t[line], col: t[col]}
+        else:
+            str tt = "NONE"
+            if pfn == "input":
+                tt = "str"
+            e = {k: "call", fn: pfn, parts: parts, t: tt, line: t[line], col: t[col]}
+
+    # постфиксы: индексы, срезы, методы
+    bool more = TRUE
+    while more:
+        dict nt = tk(st)
+        if nt[type] == "op" AND nt[value] == "[":
+            advance(st)
+            str bt = e[t]
+            if bt == "dict":
+                dict pkt = tk(st)
+                str pkey = ""
+                if pkt[type] == "name":
+                    advance(st)
+                    pkey = pkt[value]
+                elif pkt[type] == "string":
+                    advance(st)
+                    list prawk = pkt[parts]
+                    list pbuf = []
+                    for pp0 in prawk:
+                        dict ppd = pp0
+                        if ppd[kind] != "text":
+                            fail(st, pkt, "TYPE_ERROR", "plain string pkey", "interpolated string")
+                            return {}
+                        pbuf.add(ppd[value])
+                    pkey = pbuf.join("")
+                else:
+                    fail(st, pkt, "TYPE_ERROR", "dict pkey as bare name or string literal", describe_tok(pkt))
+                    return {}
+                expect(st, "op", "]", "']'")
+                if st[err]:
+                    return {}
+                e = {k: "dget", base: e, key: pkey, t: "any", nullable: TRUE, line: nt[line], col: nt[col]}
+            else:
+                if bt != "str" AND bt != "list" AND bt != "NONE" AND bt != "any":
+                    fail(st, nt, "TYPE_ERROR", "str, list or dict receiver of an index", bt)
+                    return {}
+                dict from = {}
+                bool has_from = FALSE
+                if NOT tok_is(tk(st), "op", ".."):
+                    from = parse_expr(st, 0)
+                    if st[err]:
+                        return {}
+                    has_from = TRUE
+                if tok_is(tk(st), "op", ".."):
+                    advance(st)
+                    dict to = {}
+                    bool has_to = FALSE
+                    if NOT tok_is(tk(st), "op", "]"):
+                        to = parse_expr(st, 0)
+                        if st[err]:
+                            return {}
+                        has_to = TRUE
+                    dict step = {}
+                    bool has_step = FALSE
+                    if tok_is(tk(st), "op", ".."):
+                        advance(st)
+                        step = parse_expr(st, 0)
+                        if st[err]:
+                            return {}
+                        has_step = TRUE
+                    expect(st, "op", "]", "']'")
+                    if st[err]:
+                        return {}
+                    list bounds = []
+                    if has_from:
+                        bounds.add(from)
+                    if has_to:
+                        bounds.add(to)
+                    if has_step:
+                        bounds.add(step)
+                    for b0 in bounds:
+                        dict sb = b0
+                        if sb[t] != "flint" AND sb[t] != "NONE" AND sb[t] != "any":
+                            fail(st, {line: sb[line], col: sb[col]}, "TYPE_ERROR", "slice bound to be flint", sb[t])
+                            return {}
+                    str stype = "any"
+                    if bt == "list":
+                        stype = "list"
+                    elif bt == "str":
+                        stype = "str"
+                    dict node = {k: "slice", base: e, t: stype, line: nt[line], col: nt[col]}
+                    if has_from:
+                        node.add("from", from)
+                    else:
+                        node.add("from", NONE)
+                    if has_to:
+                        node.add("to", to)
+                    else:
+                        node.add("to", NONE)
+                    if has_step:
+                        node.add("step", step)
+                    else:
+                        node.add("step", NONE)
+                    e = node
+                else:
+                    expect(st, "op", "]", "']'")
+                    if st[err]:
+                        return {}
+                    if from[t] != "flint" AND from[t] != "NONE" AND from[t] != "any":
+                        fail(st, {line: from[line], col: from[col]}, "TYPE_ERROR", "index to be flint", from[t])
+                        return {}
+                    str itype = "any"
+                    if bt == "str":
+                        itype = "str"
+                    e = {k: "index", base: e, index: from, t: itype, line: nt[line], col: nt[col]}
+        elif nt[type] == "op" AND nt[value] == ".":
+            advance(st)
+            dict mt = tk(st)
+            str mname = ""
+            if mt[type] == "name":
+                advance(st)
+                mname = mt[value]
+            else:
+                fail(st, mt, "SYNTAX_ERROR", "method name", describe_tok(mt))
+                return {}
+            expect(st, "op", "(", "'('")
+            list margs = []
+            if NOT tok_is(tk(st), "op", ")"):
+                while TRUE:
+                    dict ma = parse_expr(st, 0)
+                    if st[err]:
+                        return {}
+                    margs.add(ma)
+                    if tok_is(tk(st), "op", ","):
+                        advance(st)
+                    else:
+                        break
+            expect(st, "op", ")", "')'")
+            if st[err]:
+                return {}
+            str mbt = e[t]
+            if mbt == "any":
+                fail(st, mt, "TYPE_ERROR", cat(["typed receiver of method '", mname, "' (bind the value to a type first)"]), "any")
+                return {}
+            dict mi = method_info(mbt, mname)
+            if NOT mi[ok]:
+                if mbt == "str" OR mbt == "list" OR mbt == "dict":
+                    fail(st, mt, "NAME_ERROR", cat([mbt, " method"]), cat(["unknown method '", mname, "'"]))
+                else:
+                    fail(st, mt, "TYPE_ERROR", cat(["str, list or dict receiver of '", mname, "'"]), mbt)
+                return {}
+            flint mn = mi[min]
+            flint mx = mi[max]
+            if len(margs) < mn OR len(margs) > mx:
+                str want = str(mn)
+                if mn != mx:
+                    want = cat([str(mn), "..", str(mx)])
+                fail(st, mt, "ARGCOUNT_ERROR", cat([want, " argument(s) to '", mname, "'"]), cat([str(len(margs)), " argument(s)"]))
+                return {}
+            flint ai2 = 0
+            while ai2 < len(margs):
+                dict mma = margs[ai2]
+                str mspec = mi[a1]
+                if ai2 == 1:
+                    mspec = mi[a2]
+                if mspec != "any" AND mma[t] != "NONE" AND mma[t] != "any" AND mma[t] != mspec:
+                    fail(st, {line: mma[line], col: mma[col]}, "TYPE_ERROR", cat(["argument ", str(ai2 + 1), " of '", mname, "' to be ", mspec]), mma[t])
+                    return {}
+                ai2 += 1
+            e = {k: "method", base: e, name: mname, rt: mi[rt], args: margs, a1: mi[a1], a2: mi[a2], t: mi[ret], nullable: mi[nullable], line: mt[line], col: mt[col]}
+        else:
+            more = FALSE
+
+    # инфиксные операторы
+    more = TRUE
+    while more:
+        if st[err]:
+            return {}
+        dict it2 = tk(st)
+        str nty = it2[type]
+        if nty == "op":
+            str op = it2[value]
+            if is_compare(op):
+                if 30 <= min_bp:
+                    more = FALSE
+                else:
+                    list ops = []
+                    list operands = [e]
+                    bool go = TRUE
+                    while go:
+                        dict ot = tk(st)
+                        if ot[type] == "op" AND is_compare(ot[value]):
+                            advance(st)
+                            dict rhs = parse_expr(st, 31)
+                            if st[err]:
+                                return {}
+                            ops.add({op: ot[value], line: ot[line], col: ot[col]})
+                            operands.add(rhs)
+                        else:
+                            go = FALSE
+                    flint ci = 0
+                    while ci < len(ops):
+                        dict o = ops[ci]
+                        dict oa = operands[ci]
+                        dict ob = operands[ci + 1]
+                        if o[op] != "==" AND o[op] != "!=":
+                            str at = oa[t]
+                            str btv = ob[t]
+                            bool ok = (at == btv) AND (at == "flint" OR at == "str")
+                            if NOT ok AND at != "NONE" AND btv != "NONE" AND at != "any" AND btv != "any":
+                                fail(st, o, "TYPE_ERROR", cat(["comparable operands of '", o[op], "'"]), cat([at, " and ", btv]))
+                                return {}
+                        ci += 1
+                    if len(ops) == 1:
+                        dict o0 = ops[0]
+                        e = {k: "bin", op: o0[op], a: operands[0], b: operands[1], t: "bool", line: o0[line], col: o0[col]}
+                    else:
+                        e = {k: "chain", ops: ops, operands: operands, t: "bool", line: e[line], col: e[col]}
+            elif op == "OR" OR op == "AND":
+                flint obp = 10
+                if op == "AND":
+                    obp = 20
+                if obp <= min_bp:
+                    more = FALSE
+                else:
+                    advance(st)
+                    dict orhs = parse_expr(st, obp)
+                    if st[err]:
+                        return {}
+                    e = {k: "bin", op: op, a: e, b: orhs, t: "bool", line: it2[line], col: it2[col]}
+            elif op == "+" OR op == "-" OR op == "*" OR op == "/" OR op == "//" OR op == "%":
+                flint abp = 40
+                if op == "*" OR op == "/" OR op == "//" OR op == "%":
+                    abp = 50
+                if abp <= min_bp:
+                    more = FALSE
+                else:
+                    advance(st)
+                    dict arhs = parse_expr(st, abp)
+                    if st[err]:
+                        return {}
+                    if op == "+" AND (e[t] == "str" OR arhs[t] == "str"):
+                        fail(st, it2, "CONCATENATE_NOT_SUPPORT", "numeric operands of '+'", "str")
+                        return {}
+                    if NOT (is_numeric(e[t]) AND is_numeric(arhs[t])):
+                        fail(st, it2, "TYPE_ERROR", cat(["operands of '", op, "' to be flint"]), cat([e[t], " and ", arhs[t]]))
+                        return {}
+                    e = {k: "bin", op: op, a: e, b: arhs, t: "flint", line: it2[line], col: it2[col]}
+            elif op == "**":
+                if 70 <= min_bp:
+                    more = FALSE
+                else:
+                    advance(st)
+                    dict prhs = parse_expr(st, 69)
+                    if st[err]:
+                        return {}
+                    if NOT (is_numeric(e[t]) AND is_numeric(prhs[t])):
+                        fail(st, it2, "TYPE_ERROR", "operands of '**' to be flint", cat([e[t], " and ", prhs[t]]))
+                        return {}
+                    e = {k: "bin", op: "**", a: e, b: prhs, t: "flint", line: it2[line], col: it2[col]}
+            else:
+                more = FALSE
+        elif nty == "kw" AND (it2[value] == "OR" OR it2[value] == "AND"):
+            str lop = it2[value]
+            flint lbp = 10
+            if lop == "AND":
+                lbp = 20
+            if lbp <= min_bp:
+                more = FALSE
+            else:
+                advance(st)
+                dict lrhs = parse_expr(st, lbp)
+                if st[err]:
+                    return {}
+                e = {k: "bin", op: lop, a: e, b: lrhs, t: "bool", line: it2[line], col: it2[col]}
+        elif nty == "kw" AND it2[value] == "is":
+            if 30 <= min_bp:
+                more = FALSE
+            else:
+                advance(st)
+                str tn = parse_type_name(st)
+                if st[err]:
+                    return {}
+                e = {k: "is", a: e, typename: tn, t: "bool", line: it2[line], col: it2[col]}
+        else:
+            more = FALSE
+
+    return e
+# ---------- парсер: операторы ----------
+
+func stmt_is_decl(dict st) -> bool:
+    dict t = tk(st)
+    if t[type] != "kw":
+        return FALSE
+    str v = t[value]
+    if NOT is_type_keyword(v):
+        return FALSE
+    dict nx = token_at(st, st[pos] + 1)
+    if nx[type] == "op" AND nx[value] == "(" AND (v == "str" OR v == "flint"):
+        return FALSE
+    return TRUE
+
+# Разбирает блок. top=TRUE — весь файл до eof; top=FALSE — после ':'.
+# Рекурсивна: тела if/while/for/func разбираются ею же.
+func parse_block(dict st, bool top) -> list:
+    list stmts = []
+    if NOT top:
+        expect(st, "newline", "", "end of line after ':'")
+        expect(st, "indent", "", "indented block")
+        st.add("block_depth", st[block_depth] + 1)
+    bool going = TRUE
+    while going:
+        dict t = tk(st)
+        if st[err]:
+            return stmts
+        bool skip = FALSE
+        if top:
+            if t[type] == "eof":
+                going = FALSE
+                skip = TRUE
+            elif t[type] == "newline" OR t[type] == "dedent":
+                advance(st)
+                skip = TRUE
+            elif t[type] == "indent":
+                fail(st, t, "SYNTAX_ERROR", "statement", "unexpected indent")
+                return stmts
+        else:
+            if t[type] == "dedent" OR t[type] == "eof":
+                going = FALSE
+                skip = TRUE
+            elif t[type] == "newline":
+                advance(st)
+                skip = TRUE
+        if going AND NOT skip:
+            dict node = {}
+            bool block_stmt = FALSE
+            if stmt_is_decl(st):
+                str dty = advance(st)[value]
+                dict dname_tok = expect(st, "name", "", "variable name")
+                str dname = dname_tok[value]
+                if is_reserved(dname):
+                    fail(st, dname_tok, "NAME_ERROR", "free name", cat(["builtin '", dname, "'"]))
+                    return stmts
+                dict dvars = st[vars]
+                dict dfuncs = st[funcs]
+                if dvars.contains(dname) OR dfuncs.contains(dname):
+                    fail(st, dname_tok, "REDECLARE_ERROR", "unique name", cat(["name '", dname, "' is already declared"]))
+                    return stmts
+                expect(st, "op", "=", "'='")
+                dict dexpr = parse_expr(st, 0)
+                if st[err]:
+                    return stmts
+                if NOT assignable(dexpr[t], dty):
+                    fail(st, {line: dexpr[line], col: dexpr[col]}, "TYPE_ERROR", cat(["declaration of '", dname, "': type ", dty]), dexpr[t])
+                    return stmts
+                str dlua = mangle_var(st, dname)
+                dvars.add(dname, dty)
+                dict dnl = st[nullable]
+                if dexpr[t] == "NONE" OR e_nullable(dexpr):
+                    dnl.add(dname, TRUE)
+                else:
+                    dnl.remove(dname)
+                if st[block_depth] > 0:
+                    dict dmu = st[maybe_unset]
+                    dmu.add(dname, TRUE)
+                node = {k: "decl", type: dty, name: dname, lua: dlua, expr: dexpr, line: dname_tok[line], col: dname_tok[col]}
+            elif t[type] == "kw" AND t[value] == "if":
+                dict iftok = advance(st)
+                list branches = []
+                dict cond = parse_expr(st, 0)
+                expect(st, "op", ":", "':'")
+                list ibody = parse_block(st, FALSE)
+                branches.add({cond: cond, body: ibody})
+                while tok_is(tk(st), "kw", "elif"):
+                    advance(st)
+                    dict c2 = parse_expr(st, 0)
+                    expect(st, "op", ":", "':'")
+                    list b2 = parse_block(st, FALSE)
+                    branches.add({cond: c2, body: b2})
+                node = {k: "if", branches: branches, block_stmt: TRUE, line: iftok[line], col: iftok[col]}
+                if tok_is(tk(st), "kw", "else"):
+                    advance(st)
+                    expect(st, "op", ":", "':'")
+                    list eb = parse_block(st, FALSE)
+                    node.add("else_body", eb)
+                block_stmt = TRUE
+            elif t[type] == "kw" AND t[value] == "while":
+                dict wtok = advance(st)
+                dict wcond = parse_expr(st, 0)
+                expect(st, "op", ":", "':'")
+                st.add("loop_depth", st[loop_depth] + 1)
+                list wbody = parse_block(st, FALSE)
+                st.add("loop_depth", st[loop_depth] - 1)
+                node = {k: "while", cond: wcond, body: wbody, block_stmt: TRUE, line: wtok[line], col: wtok[col]}
+                block_stmt = TRUE
+            elif t[type] == "kw" AND t[value] == "for":
+                dict ftok = advance(st)
+                list nts = []
+                dict nt1 = expect(st, "name", "", "loop variable")
+                nts.add(nt1)
+                if tok_is(tk(st), "op", ","):
+                    advance(st)
+                    dict nt2 = expect(st, "name", "", "loop variable")
+                    nts.add(nt2)
+                if tok_is(tk(st), "kw", "in"):
+                    advance(st)
+                    dict coll = parse_expr(st, 0)
+                    if st[err]:
+                        return stmts
+                    list ftypes = []
+                    str cty = coll[t]
+                    if cty == "list":
+                        if len(nts) != 1:
+                            fail(st, nts[1], "TYPE_ERROR", "one loop variable for a list", "two variables")
+                            return stmts
+                        ftypes.add("any")
+                    elif cty == "dict":
+                        if len(nts) != 2:
+                            fail(st, nts[0], "TYPE_ERROR", "two loop variables for a dict (key, value)", "one variable")
+                            return stmts
+                        ftypes.add("str")
+                        ftypes.add("any")
+                    elif cty == "any":
+                        if len(nts) == 1:
+                            ftypes.add("any")
+                        else:
+                            ftypes.add("str")
+                            ftypes.add("any")
+                    else:
+                        fail(st, ftok, "TYPE_ERROR", "list or dict after 'in'", cty)
+                        return stmts
+                    list fnames_k = []
+                    list fnames_l = []
+                    flint ni = 0
+                    while ni < len(nts):
+                        dict ntx = nts[ni]
+                        str nm = ntx[value]
+                        if is_const_name(nm):
+                            fail(st, ntx, "CONST_ERROR", "variable", cat(["constant '", nm, "'"]))
+                            return stmts
+                        if is_reserved(nm):
+                            fail(st, ntx, "NAME_ERROR", "free name", cat(["builtin '", nm, "'"]))
+                            return stmts
+                        dict fvars = st[vars]
+                        dict ffor = st[for_names]
+                        if fvars.contains(nm) OR ffor.contains(nm):
+                            fail(st, ntx, "REDECLARE_ERROR", "unique loop variable", cat(["name '", nm, "' is already declared"]))
+                            return stmts
+                        fvars.add(nm, ftypes[ni])
+                        ffor.add(nm, TRUE)
+                        fnames_k.add(nm)
+                        fnames_l.add(mangle_var(st, nm))
+                        ni += 1
+                    expect(st, "op", ":", "':'")
+                    st.add("loop_depth", st[loop_depth] + 1)
+                    list fibody = parse_block(st, FALSE)
+                    st.add("loop_depth", st[loop_depth] - 1)
+                    flint rj = 0
+                    while rj < len(fnames_k):
+                        dict fvars2 = st[vars]
+                        fvars2.remove(fnames_k[rj])
+                        rj += 1
+                    node = {k: "for_in", names: fnames_k, lnames: fnames_l, coll: coll, body: fibody, block_stmt: TRUE, line: ftok[line], col: ftok[col]}
+                    block_stmt = TRUE
+                else:
+                    if len(nts) != 1:
+                        fail(st, nts[1], "SYNTAX_ERROR", "one loop variable for a numeric range", "two variables")
+                        return stmts
+                    dict rnt = nts[0]
+                    str rname = rnt[value]
+                    if is_const_name(rname):
+                        fail(st, rnt, "CONST_ERROR", "variable", cat(["constant '", rname, "'"]))
+                        return stmts
+                    if is_reserved(rname):
+                        fail(st, rnt, "NAME_ERROR", "free name", cat(["builtin '", rname, "'"]))
+                        return stmts
+                    dict rvars = st[vars]
+                    dict rfor = st[for_names]
+                    if rvars.contains(rname) OR rfor.contains(rname):
+                        fail(st, rnt, "REDECLARE_ERROR", "unique loop variable", cat(["name '", rname, "' is already declared"]))
+                        return stmts
+                    rvars.add(rname, "flint")
+                    rfor.add(rname, TRUE)
+                    str rlua = mangle_var(st, rname)
+                    dict first = parse_expr(st, 0)
+                    if st[err]:
+                        return stmts
+                    if NOT is_numeric(first[t]):
+                        fail(st, first, "TYPE_ERROR", "loop bound to be flint", first[t])
+                        return stmts
+                    dict ftnode = {k: "for", name: rname, lua: rlua, line: ftok[line], col: ftok[col]}
+                    if tok_is(tk(st), "op", ".."):
+                        advance(st)
+                        dict last = parse_expr(st, 0)
+                        if st[err]:
+                            return stmts
+                        if NOT is_numeric(last[t]):
+                            fail(st, last, "TYPE_ERROR", "loop bound to be flint", last[t])
+                            return stmts
+                        ftnode.add("form", "range")
+                        ftnode.add("from", first)
+                        ftnode.add("to", last)
+                        if tok_is(tk(st), "op", ".."):
+                            advance(st)
+                            dict step = parse_expr(st, 0)
+                            if st[err]:
+                                return stmts
+                            if NOT is_numeric(step[t]):
+                                fail(st, step, "TYPE_ERROR", "loop step to be flint", step[t])
+                                return stmts
+                            ftnode.add("step", step)
+                    else:
+                        ftnode.add("form", "upto")
+                        ftnode.add("to", first)
+                    expect(st, "op", ":", "':'")
+                    st.add("loop_depth", st[loop_depth] + 1)
+                    list rbody = parse_block(st, FALSE)
+                    st.add("loop_depth", st[loop_depth] - 1)
+                    dict rvars2 = st[vars]
+                    rvars2.remove(rname)
+                    ftnode.add("body", rbody)
+                    ftnode.add("block_stmt", TRUE)
+                    node = ftnode
+                    block_stmt = TRUE
+            elif t[type] == "kw" AND t[value] == "func":
+                dict funtok = advance(st)
+                if st[in_func] OR st[block_depth] > 0:
+                    fail(st, funtok, "SYNTAX_ERROR", "function at top level", "nested function")
+                    return stmts
+                dict fntok = expect(st, "name", "", "function name")
+                str fn_name = fntok[value]
+                if is_reserved(fn_name):
+                    fail(st, fntok, "NAME_ERROR", "free name", cat(["builtin '", fn_name, "'"]))
+                    return stmts
+                if is_const_name(fn_name):
+                    fail(st, fntok, "CONST_ERROR", "function name", cat(["constant '", fn_name, "'"]))
+                    return stmts
+                dict gvars = st[vars]
+                dict gfuncs = st[funcs]
+                if gfuncs.contains(fn_name) OR gvars.contains(fn_name):
+                    fail(st, fntok, "REDECLARE_ERROR", "unique name", cat(["name '", fn_name, "' is already declared"]))
+                    return stmts
+                expect(st, "op", "(", "'('")
+                list params = []
+                if NOT tok_is(tk(st), "op", ")"):
+                    while TRUE:
+                        dict pty_tok = tk(st)
+                        str pty = parse_type_name(st)
+                        if st[err]:
+                            return stmts
+                        if pty == "NONE":
+                            fail(st, pty_tok, "TYPE_ERROR", "parameter type", "NONE")
+                            return stmts
+                        dict pn = expect(st, "name", "", "parameter name")
+                        str pnm = pn[value]
+                        if is_reserved(pnm):
+                            fail(st, pn, "NAME_ERROR", "free name", cat(["builtin '", pnm, "'"]))
+                            return stmts
+                        flint di = 0
+                        while di < len(params):
+                            dict pp0 = params[di]
+                            if pp0[name] == pnm:
+                                fail(st, pn, "REDECLARE_ERROR", "unique parameter name", cat(["duplicate '", pnm, "'"]))
+                                return stmts
+                            di += 1
+                        params.add({name: pnm, type: pty, line: pn[line], col: pn[col]})
+                        if tok_is(tk(st), "op", ","):
+                            advance(st)
+                        else:
+                            break
+                expect(st, "op", ")", "')'")
+                str fret = "NONE"
+                bool fhas_ret = FALSE
+                if tok_is(tk(st), "op", "->"):
+                    advance(st)
+                    dict rtok = tk(st)
+                    fret = parse_type_name(st)
+                    if st[err]:
+                        return stmts
+                    if fret == "NONE":
+                        fail(st, rtok, "SYNTAX_ERROR", "return type (omit '->' for NONE)", "NONE")
+                        return stmts
+                    fhas_ret = TRUE
+                expect(st, "op", ":", "':'")
+                dict fninfo = {params: params, ret: NONE, ret_nullable: FALSE, inferring: TRUE}
+                if fhas_ret:
+                    fninfo.add("ret", fret)
+                gfuncs.add(fn_name, fninfo)
+                str flua = mangle_func(st, fn_name)
+                dict sv_vars = st[vars]
+                dict sv_nullable = st[nullable]
+                dict sv_maybe = st[maybe_unset]
+                dict sv_for = st[for_names]
+                flint sv_loop = st[loop_depth]
+                bool sv_in = st[in_func]
+                str sv_ret = st[func_ret]
+                list sv_returns = st[func_returns]
+                st.add("vars", {})
+                st.add("nullable", {})
+                st.add("maybe_unset", {})
+                st.add("for_names", {})
+                st.add("loop_depth", 0)
+                st.add("in_func", TRUE)
+                st.add("func_ret", fret)
+                st.add("func_returns", [])
+                flint pj = 0
+                while pj < len(params):
+                    dict pj_p = params[pj]
+                    pj_p.add("lua", mangle_var(st, pj_p[name]))
+                    dict nv = st[vars]
+                    nv.add(pj_p[name], pj_p[type])
+                    pj += 1
+                list fnbody = parse_block(st, FALSE)
+                list frets = st[func_returns]
+                st.add("vars", sv_vars)
+                st.add("nullable", sv_nullable)
+                st.add("maybe_unset", sv_maybe)
+                st.add("for_names", sv_for)
+                st.add("loop_depth", sv_loop)
+                st.add("in_func", sv_in)
+                st.add("func_ret", sv_ret)
+                st.add("func_returns", sv_returns)
+                bool fallthrough = TRUE
+                if len(fnbody) > 0:
+                    dict last_stmt = fnbody[len(fnbody) - 1]
+                    if last_stmt[k] == "return":
+                        fallthrough = FALSE
+                bool fnullable = fallthrough
+                str seen = ""
+                flint ri = 0
+                while ri < len(frets):
+                    dict rr = frets[ri]
+                    if rr[empty] OR rr[type] == "NONE" OR e_nullable(rr):
+                        fnullable = TRUE
+                    elif fhas_ret:
+                        if rr[type] != fret AND rr[type] != "any":
+                            fail(st, rr, "TYPE_ERROR", cat(["return type ", fret]), rr[type])
+                            return stmts
+                    else:
+                        if seen != "" AND seen != rr[type]:
+                            fail(st, rr, "TYPE_ERROR", cat(["all returns of '", fn_name, "' to have one type"]), cat([seen, " and ", rr[type]]))
+                            return stmts
+                        seen = rr[type]
+                    ri += 1
+                str final_ret = fret
+                if NOT fhas_ret:
+                    final_ret = seen
+                    if final_ret == "":
+                        final_ret = "NONE"
+                fninfo.add("ret", final_ret)
+                fninfo.add("ret_nullable", fnullable)
+                fninfo.add("inferring", FALSE)
+                node = {k: "func", name: fn_name, lua: flua, params: params, ret: final_ret, body: fnbody, block_stmt: TRUE, line: funtok[line], col: funtok[col]}
+                block_stmt = TRUE
+            elif t[type] == "kw" AND t[value] == "return":
+                dict rtok2 = advance(st)
+                if NOT st[in_func]:
+                    fail(st, rtok2, "SCOPE_ERROR", "'return' inside a function", "'return' at top level")
+                    return stmts
+                dict rexpr = {}
+                bool has_expr = FALSE
+                if tok_is(tk(st), "op", ":"):
+                    advance(st)
+                else:
+                    rexpr = parse_expr(st, 0)
+                    if st[err]:
+                        return stmts
+                    has_expr = TRUE
+                list cur_rets = st[func_returns]
+                if has_expr:
+                    cur_rets.add({empty: FALSE, type: rexpr[t], nullable: e_nullable(rexpr), line: rtok2[line], col: rtok2[col]})
+                    node = {k: "return", expr: rexpr, line: rtok2[line], col: rtok2[col]}
+                else:
+                    cur_rets.add({empty: TRUE, type: "NONE", nullable: FALSE, line: rtok2[line], col: rtok2[col]})
+                    node = {k: "return", line: rtok2[line], col: rtok2[col]}
+            elif t[type] == "kw" AND (t[value] == "break" OR t[value] == "continue"):
+                dict btok = advance(st)
+                if st[loop_depth] == 0:
+                    fail(st, btok, "SCOPE_ERROR", "'break' or 'continue' inside a loop", cat(["'", btok[value], "' outside a loop"]))
+                    return stmts
+                node = {k: btok[value], line: btok[line], col: btok[col]}
+            elif t[type] == "name" AND NOT is_template_func(t[value]) AND peek_value(st) == "=":
+                dict atok = advance(st)
+                str aname = atok[value]
+                dict avars = st[vars]
+                if NOT avars.contains(aname):
+                    fail(st, atok, "NAME_ERROR", "declared variable", cat(["name '", aname, "' is not declared"]))
+                    return stmts
+                if is_const_name(aname):
+                    fail(st, atok, "CONST_ERROR", "variable", cat(["constant '", aname, "'"]))
+                    return stmts
+                advance(st)
+                dict aexpr = parse_expr(st, 0)
+                if st[err]:
+                    return stmts
+                str avt = avars.take(aname)
+                if NOT assignable(aexpr[t], avt):
+                    fail(st, {line: aexpr[line], col: aexpr[col]}, "TYPE_ERROR", cat(["assignment to '", aname, "': type ", avt]), aexpr[t])
+                    return stmts
+                dict anl = st[nullable]
+                if aexpr[t] == "NONE" OR e_nullable(aexpr):
+                    anl.add(aname, TRUE)
+                else:
+                    anl.remove(aname)
+                dict anames = st[names]
+                node = {k: "assign", name: aname, lua: anames.take(aname), expr: aexpr, type: avt, line: atok[line], col: atok[col]}
+            elif t[type] == "name" AND NOT is_template_func(t[value]) AND is_compound(peek_value(st)):
+                dict ctok = advance(st)
+                str cname = ctok[value]
+                dict cvars = st[vars]
+                if NOT cvars.contains(cname):
+                    fail(st, ctok, "NAME_ERROR", "declared variable", cat(["name '", cname, "' is not declared"]))
+                    return stmts
+                if is_const_name(cname):
+                    fail(st, ctok, "CONST_ERROR", "variable", cat(["constant '", cname, "'"]))
+                    return stmts
+                dict cop_tok = advance(st)
+                str cop_full = cop_tok[value]
+                str cop = cop_full.part(0, len(cop_full) - 1)
+                dict cexpr = parse_expr(st, 0)
+                if st[err]:
+                    return stmts
+                str cvt = cvars.take(cname)
+                if cvt != "flint" OR NOT is_numeric(cexpr[t]):
+                    fail(st, cop_tok, "TYPE_ERROR", cat(["numeric operands of '", cop_full, "'"]), cexpr[t])
+                    return stmts
+                bool cmaybe = FALSE
+                dict cnl = st[nullable]
+                dict cmu = st[maybe_unset]
+                if cnl.contains(cname):
+                    cmaybe = TRUE
+                if cmu.contains(cname):
+                    cmaybe = TRUE
+                cnl.remove(cname)
+                dict cnames = st[names]
+                node = {k: "compound", name: cname, lua: cnames.take(cname), op: cop, expr: cexpr, nullable: cmaybe, line: ctok[line], col: ctok[col]}
+            else:
+                dict e = parse_expr(st, 0)
+                if st[err]:
+                    return stmts
+                node = {k: "exprstmt", expr: e, line: e[line], col: e[col]}
+            stmts.add(node)
+            if NOT block_stmt:
+                dict nx2 = tk(st)
+                if top:
+                    if nx2[type] == "newline":
+                        advance(st)
+                    elif nx2[type] != "eof":
+                        fail(st, nx2, "SYNTAX_ERROR", "end of line", describe_tok(nx2))
+                        return stmts
+                else:
+                    if nx2[type] == "newline":
+                        advance(st)
+                    elif nx2[type] != "dedent":
+                        fail(st, nx2, "SYNTAX_ERROR", "end of line", describe_tok(nx2))
+                        return stmts
+    if NOT top:
+        if tk(st)[type] == "dedent":
+            advance(st)
+        st.add("block_depth", st[block_depth] - 1)
+    return stmts
+
+# ---------- кодогенератор ----------
+
+func wrap_flint(str x, str ty, bool nullable) -> str:
+    if ty == "NONE" OR ty == "any" OR nullable:
+        return cat(["krt.as_flint(", x, ")"])
+    return x
+
+func wrap_str(str x, str ty, bool nullable) -> str:
+    if ty == "NONE" OR ty == "any" OR nullable:
+        return cat(["krt.as_str(", x, ")"])
+    return x
+
+func wrap_list(str x, str ty, bool nullable) -> str:
+    if ty == "NONE" OR ty == "any" OR nullable:
+        return cat(["krt.as_list(", x, ")"])
+    return x
+
+func wrap_dict(str x, str ty, bool nullable) -> str:
+    if ty == "NONE" OR ty == "any" OR nullable:
+        return cat(["krt.as_dict(", x, ")"])
+    return x
+
+func wrap_bool(str x, str ty, bool nullable) -> str:
+    if ty == "NONE" OR ty == "any" OR nullable:
+        return cat(["krt.as_bool(", x, ")"])
+    return x
+
+func checked(str x, str ety, bool nullable, str target) -> str:
+    if ety == "any" AND NOT nullable:
+        if target == "flint":
+            return cat(["krt.as_flint(", x, ")"])
+        if target == "str":
+            return cat(["krt.as_str(", x, ")"])
+        if target == "bool":
+            return cat(["krt.as_bool(", x, ")"])
+        if target == "list":
+            return cat(["krt.as_list(", x, ")"])
+        if target == "dict":
+            return cat(["krt.as_dict(", x, ")"])
+    return x
+
+func wrap_to(str x, str ety, bool nullable, str target) -> str:
+    if ety == "NONE" OR ety == "any" OR nullable:
+        if target == "flint":
+            return cat(["krt.as_flint(", x, ")"])
+        if target == "str":
+            return cat(["krt.as_str(", x, ")"])
+        if target == "bool":
+            return cat(["krt.as_bool(", x, ")"])
+        if target == "list":
+            return cat(["krt.as_list(", x, ")"])
+        if target == "dict":
+            return cat(["krt.as_dict(", x, ")"])
+    return x
+
+func ordered_x(str x, dict e, dict other) -> str:
+    if e[t] == "NONE" OR e_nullable(e):
+        str ty = e[t]
+        if ty == "NONE":
+            ty = other[t]
+        if ty == "str":
+            return cat(["krt.as_str(", x, ")"])
+        return cat(["krt.as_flint(", x, ")"])
+    return x
+
+func emit_line(dict st, str s):
+    if NOT (st[cur_pos] is NONE):
+        dict cp = st[cur_pos]
+        if len(cp) > 0:
+            list lm = st[line_map]
+            lm.add({gen: len(st[out]) + 1, line: cp[line], col: cp[col]})
+    list o = st[out]
+    o.add(cat([spaces(st[indent] * 4), s]))
+
+func stmt_pos(dict s) -> dict:
+    str sk = s[k]
+    if sk == "decl" OR sk == "assign" OR sk == "compound" OR sk == "exprstmt" OR sk == "return":
+        if s.contains("expr"):
+            dict e = s[expr]
+            return {line: e[line], col: e[col]}
+    if sk == "if":
+        list brs = s[branches]
+        dict b0 = brs[0]
+        dict c0 = b0[cond]
+        return {line: c0[line], col: c0[col]}
+    if sk == "while":
+        dict wc = s[cond]
+        return {line: wc[line], col: wc[col]}
+    if sk == "for":
+        if s.contains("from"):
+            dict fe = s[from]
+            return {line: fe[line], col: fe[col]}
+        dict te = s[to]
+        return {line: te[line], col: te[col]}
+    if sk == "for_in":
+        dict cc = s[coll]
+        return {line: cc[line], col: cc[col]}
+    return {line: s[line], col: s[col]}
+
+# Выражение -> текст Lua. Рекурсивна только сама в себя.
+func emit_expr(dict st, dict e) -> str:
+    str k = e[k]
+
+    if k == "num":
+        return cat(["(", str(e[value]), ")"])
+    if k == "bool":
+        if e[value]:
+            return "true"
+        return "false"
+    if k == "none":
+        return "krt.NONE"
+    if k == "var":
+        return e[lua]
+
+    if k == "str" OR k == "call":
+        list parts = e[parts]
+        list pieces = []
+        for p0 in parts:
+            dict p = p0
+            if p[kind] == "text":
+                pieces.add(lua_str(p[value]))
+            else:
+                dict pe = p[expr]
+                pieces.add(cat(["krt.tostr(", emit_expr(st, pe), ")"]))
+        str body = "\"\""
+        if len(pieces) == 1:
+            body = pieces[0]
+        elif len(pieces) > 1:
+            body = cat(["(", pieces.join(" .. "), ")"])
+        if k == "str":
+            return body
+        str f = e[fn]
+        if f == "show":
+            return cat(["krt.show(", body, ")"])
+        if f == "show_err":
+            return cat(["krt.show_err(", body, ")"])
+        return cat(["krt.input(", body, ")"])
+
+    if k == "builtin":
+        str bn = e[name]
+        list ba = e[args]
+        if bn == "args":
+            return "krt.args()"
+        if bn == "time_ms":
+            return "krt.time_ms()"
+        if bn == "is_tty":
+            return "krt.is_tty()"
+        dict a0 = ba[0]
+        if bn == "len":
+            return cat(["krt.len(", emit_expr(st, a0), ")"])
+        if bn == "type":
+            return cat(["krt.typeof(", emit_expr(st, a0), ")"])
+        if bn == "str":
+            return cat(["krt.tostr(", emit_expr(st, a0), ")"])
+        if bn == "flint":
+            return cat(["krt.to_flint(", emit_expr(st, a0), ")"])
+        if bn == "read_file":
+            return cat(["krt.read_file(", wrap_str(emit_expr(st, a0), a0[t], e_nullable(a0)), ")"])
+        if bn == "write_file":
+            dict a1 = ba[1]
+            return cat(["krt.write_file(", wrap_str(emit_expr(st, a0), a0[t], e_nullable(a0)), ", ", wrap_str(emit_expr(st, a1), a1[t], e_nullable(a1)), ")"])
+        if bn == "file_exists":
+            return cat(["krt.file_exists(", wrap_str(emit_expr(st, a0), a0[t], e_nullable(a0)), ")"])
+        if bn == "exit":
+            return cat(["krt.exit(", wrap_flint(emit_expr(st, a0), a0[t], e_nullable(a0)), ")"])
+        return "krt.NONE"
+
+    if k == "call_user":
+        list car = e[args]
+        list cp = []
+        list cpt = e[ptypes]
+        flint ci = 0
+        while ci < len(car):
+            dict cnode = car[ci]
+            str ctgt = cpt[ci]
+            str cx = emit_expr(st, cnode)
+            cp.add(wrap_to(cx, cnode[t], e_nullable(cnode), ctgt))
+            ci += 1
+        return cat([e[lua], "(", cp.join(", "), ")"])
+
+    if k == "list":
+        list its = e[items]
+        list ip = []
+        for it0 in its:
+            dict itn = it0
+            ip.add(emit_expr(st, itn))
+        return cat(["krt.list(\{", ip.join(", "), "\})"])
+
+    if k == "dict":
+        list prs = e[pairs]
+        str dx = "krt.dict()"
+        for pd0 in prs:
+            dict pd = pd0
+            dict pv = pd[value]
+            dx = cat(["krt.dict_set(", dx, ", ", lua_str(pd[key]), ", ", emit_expr(st, pv), ")"])
+        return dx
+
+    if k == "dget":
+        dict db = e[base]
+        return cat(["krt.dict_get(", wrap_dict(emit_expr(st, db), db[t], e_nullable(db)), ", ", lua_str(e[key]), ")"])
+
+    if k == "index":
+        dict ib = e[base]
+        dict ii = e[index]
+        str ix = wrap_flint(emit_expr(st, ii), ii[t], e_nullable(ii))
+        if ib[t] == "list":
+            return cat(["krt.list_index(", wrap_list(emit_expr(st, ib), ib[t], e_nullable(ib)), ", ", ix, ")"])
+        if ib[t] == "any":
+            return cat(["krt.index(", emit_expr(st, ib), ", ", ix, ")"])
+        return cat(["krt.str_index(", wrap_str(emit_expr(st, ib), ib[t], e_nullable(ib)), ", ", ix, ")"])
+
+    if k == "slice":
+        dict sb = e[base]
+        str sx = emit_expr(st, sb)
+        str sfn = "str_slice"
+        str recv = wrap_str(sx, sb[t], e_nullable(sb))
+        if sb[t] == "list":
+            sfn = "list_slice"
+            recv = wrap_list(sx, sb[t], e_nullable(sb))
+        elif sb[t] == "any":
+            sfn = "slice"
+            recv = sx
+        list sp = [recv]
+        if e[from] is NONE:
+            sp.add("nil")
+        else:
+            dict fr = e[from]
+            sp.add(wrap_flint(emit_expr(st, fr), fr[t], e_nullable(fr)))
+        if e[to] is NONE:
+            sp.add("nil")
+        else:
+            dict tto = e[to]
+            sp.add(wrap_flint(emit_expr(st, tto), tto[t], e_nullable(tto)))
+        if NOT (e[step] is NONE):
+            dict stp = e[step]
+            sp.add(wrap_flint(emit_expr(st, stp), stp[t], e_nullable(stp)))
+        return cat(["krt.", sfn, "(", sp.join(", "), ")"])
+
+    if k == "method":
+        dict mb = e[base]
+        str mx = emit_expr(st, mb)
+        str mrecv = wrap_str(mx, mb[t], e_nullable(mb))
+        if mb[t] == "list":
+            mrecv = wrap_list(mx, mb[t], e_nullable(mb))
+        elif mb[t] == "dict":
+            mrecv = wrap_dict(mx, mb[t], e_nullable(mb))
+        list mar = e[args]
+        list mp = [mrecv]
+        flint mi = 0
+        while mi < len(mar):
+            dict ma = mar[mi]
+            str mspec = e[a1]
+            if mi == 1:
+                mspec = e[a2]
+            str mxx = emit_expr(st, ma)
+            if mspec == "str":
+                mxx = wrap_str(mxx, ma[t], e_nullable(ma))
+            elif mspec == "flint":
+                mxx = wrap_flint(mxx, ma[t], e_nullable(ma))
+            elif mspec == "dict":
+                mxx = wrap_dict(mxx, ma[t], e_nullable(ma))
+            mp.add(mxx)
+            mi += 1
+        return cat(["krt.", e[rt], "(", mp.join(", "), ")"])
+
+    if k == "un":
+        dict ua = e[a]
+        if e[op] == "-":
+            return cat(["(-(", wrap_flint(emit_expr(st, ua), ua[t], e_nullable(ua)), "))"])
+        return cat(["(not krt.truthy(", emit_expr(st, ua), "))"])
+
+    if k == "is":
+        dict ia = e[a]
+        str ix2 = emit_expr(st, ia)
+        str ty2 = e[typename]
+        if ty2 == "flint":
+            return cat(["(type(", ix2, ") == \"number\")"])
+        if ty2 == "str":
+            return cat(["(type(", ix2, ") == \"string\")"])
+        if ty2 == "bool":
+            return cat(["(type(", ix2, ") == \"boolean\")"])
+        if ty2 == "list":
+            return cat(["krt.is_list(", ix2, ")"])
+        if ty2 == "dict":
+            return cat(["krt.is_dict(", ix2, ")"])
+        return cat(["(", ix2, " == krt.NONE or ", ix2, " == nil)"])
+
+    if k == "bin":
+        str op = e[op]
+        dict bna = e[a]
+        dict bnb = e[b]
+        str xa = emit_expr(st, bna)
+        str xb = emit_expr(st, bnb)
+        if op == "+":
+            return cat(["(", wrap_flint(xa, bna[t], e_nullable(bna)), " + ", wrap_flint(xb, bnb[t], e_nullable(bnb)), ")"])
+        if op == "-":
+            return cat(["(", wrap_flint(xa, bna[t], e_nullable(bna)), " - ", wrap_flint(xb, bnb[t], e_nullable(bnb)), ")"])
+        if op == "*":
+            return cat(["(", wrap_flint(xa, bna[t], e_nullable(bna)), " * ", wrap_flint(xb, bnb[t], e_nullable(bnb)), ")"])
+        if op == "/":
+            return cat(["krt.div(", wrap_flint(xa, bna[t], e_nullable(bna)), ", ", wrap_flint(xb, bnb[t], e_nullable(bnb)), ")"])
+        if op == "//":
+            return cat(["krt.idiv(", wrap_flint(xa, bna[t], e_nullable(bna)), ", ", wrap_flint(xb, bnb[t], e_nullable(bnb)), ")"])
+        if op == "%":
+            return cat(["krt.mod(", wrap_flint(xa, bna[t], e_nullable(bna)), ", ", wrap_flint(xb, bnb[t], e_nullable(bnb)), ")"])
+        if op == "**":
+            return cat(["krt.pow(", wrap_flint(xa, bna[t], e_nullable(bna)), ", ", wrap_flint(xb, bnb[t], e_nullable(bnb)), ")"])
+        if op == "==":
+            return cat(["(", xa, " == ", xb, ")"])
+        if op == "!=":
+            return cat(["(", xa, " ~= ", xb, ")"])
+        if op == "<" OR op == "<=" OR op == ">" OR op == ">=":
+            if bna[t] == "any" OR bnb[t] == "any":
+                str cfn = "lt"
+                if op == "<=":
+                    cfn = "le"
+                elif op == ">":
+                    cfn = "gt"
+                elif op == ">=":
+                    cfn = "ge"
+                return cat(["krt.", cfn, "(", xa, ", ", xb, ")"])
+            return cat(["(", ordered_x(xa, bna, bnb), " ", op, " ", ordered_x(xb, bnb, bna), ")"])
+        if op == "AND":
+            return cat(["(krt.truthy(", xa, ") and krt.truthy(", xb, "))"])
+        if op == "OR":
+            return cat(["(krt.truthy(", xa, ") or krt.truthy(", xb, "))"])
+        return "krt.NONE"
+
+    if k == "chain":
+        list cops = e[ops]
+        list coper = e[operands]
+        list clines = []
+        list cconds = []
+        dict cprev_node = coper[0]
+        str cprev = emit_expr(st, cprev_node)
+        flint cj = 0
+        while cj < len(cops):
+            dict co = cops[cj]
+            dict crhs_node = coper[cj + 1]
+            str crhs = ""
+            if cj < len(cops) - 1:
+                crhs = cat(["__t", str(cj + 1)])
+                clines.add(cat(["local ", crhs, " = ", emit_expr(st, crhs_node)]))
+            else:
+                crhs = emit_expr(st, crhs_node)
+            str cl = cprev
+            str cr = crhs
+            str cop2 = co[op]
+            if cop2 == "==":
+                cconds.add(cat(["(", cl, " == ", cr, ")"]))
+            elif cop2 == "!=":
+                cconds.add(cat(["(", cl, " ~= ", cr, ")"]))
+            elif cprev_node[t] == "any" OR crhs_node[t] == "any":
+                str cfn2 = "lt"
+                if cop2 == "<=":
+                    cfn2 = "le"
+                elif cop2 == ">":
+                    cfn2 = "gt"
+                elif cop2 == ">=":
+                    cfn2 = "ge"
+                cconds.add(cat(["krt.", cfn2, "(", cl, ", ", cr, ")"]))
+            else:
+                if cprev_node[t] == "NONE" OR e_nullable(cprev_node):
+                    if cprev_node[t] == "str":
+                        cl = cat(["krt.as_str(", cl, ")"])
+                    else:
+                        cl = cat(["krt.as_flint(", cl, ")"])
+                if crhs_node[t] == "NONE" OR e_nullable(crhs_node):
+                    if crhs_node[t] == "str":
+                        cr = cat(["krt.as_str(", cr, ")"])
+                    else:
+                        cr = cat(["krt.as_flint(", cr, ")"])
+                cconds.add(cat(["(", cl, " ", cop2, " ", cr, ")"]))
+            cprev = crhs
+            cprev_node = crhs_node
+            cj += 1
+        str cpre = ""
+        if len(clines) > 0:
+            cpre = cat([clines.join("; "), "; "])
+        return cat(["(function() ", cpre, "return ", cconds.join(" and "), " end)()"])
+
+    return "krt.NONE"
+
+# Объявления поднимаются в начало своей функции (D11, D43).
+func collect_walk(list stmts, list out) -> list:
+    for s0 in stmts:
+        dict s = s0
+        str sk = s[k]
+        if sk == "decl":
+            out.add(s[lua])
+        elif sk == "if":
+            list brs = s[branches]
+            for b0 in brs:
+                dict b = b0
+                collect_walk(b[body], out)
+            if s.contains("else_body"):
+                collect_walk(s[else_body], out)
+        elif sk == "while" OR sk == "for" OR sk == "for_in":
+            collect_walk(s[body], out)
+    return out
+
+func collect_scope(list stmts) -> list:
+    list out = []
+    collect_walk(stmts, out)
+    return out
+
+func emit_hoist(dict st, list names):
+    if len(names) == 0:
+        return:
+    list lua = []
+    list nones = []
+    for n0 in names:
+        str n = n0
+        lua.add(n)
+        nones.add("krt.NONE")
+    emit_line(st, cat(["local ", lua.join(", "), " = ", nones.join(", ")]))
+
+# Стейтменты -> строки Lua. Рекурсивна только сама в себя.
+func emit_stmts(dict st, list stmts) -> str:
+    flint i = 0
+    while i < len(stmts):
+        dict s = stmts[i]
+        dict saved = st[cur_pos]
+        st.add("cur_pos", stmt_pos(s))
+        str sk = s[k]
+        bool wrap_ret = FALSE
+        if sk == "return" AND i < len(stmts) - 1:
+            wrap_ret = TRUE
+            emit_line(st, "do")
+            st.add("indent", st[indent] + 1)
+        if sk == "decl":
+            dict de = s[expr]
+            str dx = checked(emit_expr(st, de), de[t], e_nullable(de), s[type])
+            emit_line(st, cat([s[lua], " = ", dx]))
+        elif sk == "assign":
+            dict ae = s[expr]
+            str ax = checked(emit_expr(st, ae), ae[t], e_nullable(ae), s[type])
+            emit_line(st, cat([s[lua], " = ", ax]))
+        elif sk == "compound":
+            dict ce = s[expr]
+            str lhs = wrap_flint(s[lua], "flint", s[nullable])
+            str rhs = wrap_flint(emit_expr(st, ce), ce[t], e_nullable(ce))
+            str cop = s[op]
+            str ex = ""
+            if cop == "+":
+                ex = cat(["(", lhs, " + ", rhs, ")"])
+            elif cop == "-":
+                ex = cat(["(", lhs, " - ", rhs, ")"])
+            elif cop == "*":
+                ex = cat(["(", lhs, " * ", rhs, ")"])
+            elif cop == "/":
+                ex = cat(["krt.div(", lhs, ", ", rhs, ")"])
+            elif cop == "//":
+                ex = cat(["krt.idiv(", lhs, ", ", rhs, ")"])
+            elif cop == "%":
+                ex = cat(["krt.mod(", lhs, ", ", rhs, ")"])
+            else:
+                ex = cat(["krt.pow(", lhs, ", ", rhs, ")"])
+            emit_line(st, cat([s[lua], " = ", ex]))
+        elif sk == "exprstmt":
+            emit_line(st, emit_expr(st, s[expr]))
+        elif sk == "if":
+            list brs = s[branches]
+            flint bi = 0
+            while bi < len(brs):
+                dict br = brs[bi]
+                dict bc = br[cond]
+                str kw = "elseif"
+                if bi == 0:
+                    kw = "if"
+                emit_line(st, cat([kw, " krt.truthy(", emit_expr(st, bc), ") then"]))
+                st.add("indent", st[indent] + 1)
+                emit_stmts(st, br[body])
+                st.add("indent", st[indent] - 1)
+                bi += 1
+            if s.contains("else_body"):
+                emit_line(st, "else")
+                st.add("indent", st[indent] + 1)
+                emit_stmts(st, s[else_body])
+                st.add("indent", st[indent] - 1)
+            emit_line(st, "end")
+        elif sk == "while":
+            st.add("loop_id", st[loop_id] + 1)
+            str lid = str(st[loop_id])
+            str cont = cat(["__continue_", lid])
+            str brk = cat(["__break_", lid])
+            dict wc2 = s[cond]
+            emit_line(st, cat(["while krt.truthy(", emit_expr(st, wc2), ") do"]))
+            st.add("indent", st[indent] + 1)
+            list ls = st[loop_stack]
+            ls.add({cont: cont, brk: brk})
+            emit_stmts(st, s[body])
+            emit_line(st, cat(["::", cont, "::"]))
+            ls.del(len(ls) - 1)
+            st.add("indent", st[indent] - 1)
+            emit_line(st, "end")
+            emit_line(st, cat(["::", brk, "::"]))
+        elif sk == "break":
+            list lsb = st[loop_stack]
+            dict topb = lsb[len(lsb) - 1]
+            emit_line(st, cat(["goto ", topb[brk]]))
+        elif sk == "continue":
+            list lsc = st[loop_stack]
+            dict topc = lsc[len(lsc) - 1]
+            emit_line(st, cat(["goto ", topc[cont]]))
+        elif sk == "for":
+            st.add("loop_id", st[loop_id] + 1)
+            str fid = str(st[loop_id])
+            str fcont = cat(["__continue_", fid])
+            str fbrk = cat(["__break_", fid])
+            str fv = s[lua]
+            str fto = cat(["__to_", fid])
+            emit_line(st, "do")
+            st.add("indent", st[indent] + 1)
+            str form = s[form]
+            if form == "upto":
+                emit_line(st, cat(["local ", fv, " = 0"]))
+                dict fte = s[to]
+                emit_line(st, cat(["local ", fto, " = ", wrap_flint(emit_expr(st, fte), fte[t], e_nullable(fte))]))
+                emit_line(st, cat(["while ", fv, " < ", fto, " do"]))
+            else:
+                dict ffe = s[from]
+                dict ftte = s[to]
+                str fstep = cat(["__step_", fid])
+                emit_line(st, cat(["local ", fv, " = ", wrap_flint(emit_expr(st, ffe), ffe[t], e_nullable(ffe))]))
+                emit_line(st, cat(["local ", fto, " = ", wrap_flint(emit_expr(st, ftte), ftte[t], e_nullable(ftte))]))
+                str sx = "1"
+                if s.contains("step"):
+                    dict fse = s[step]
+                    sx = wrap_flint(emit_expr(st, fse), fse[t], e_nullable(fse))
+                emit_line(st, cat(["local ", fstep, " = ", sx]))
+                emit_line(st, cat(["while ((", fstep, " > 0) and (", fv, " < ", fto, ")) or ((", fstep, " < 0) and (", fv, " > ", fto, ")) do"]))
+            st.add("indent", st[indent] + 1)
+            list fls = st[loop_stack]
+            fls.add({cont: fcont, brk: fbrk})
+            emit_stmts(st, s[body])
+            emit_line(st, cat(["::", fcont, "::"]))
+            if form == "upto":
+                emit_line(st, cat([fv, " = ", fv, " + 1"]))
+            else:
+                emit_line(st, cat([fv, " = ", fv, " + __step_", fid]))
+            fls.del(len(fls) - 1)
+            st.add("indent", st[indent] - 1)
+            emit_line(st, "end")
+            st.add("indent", st[indent] - 1)
+            emit_line(st, "end")
+            emit_line(st, cat(["::", fbrk, "::"]))
+        elif sk == "for_in":
+            st.add("loop_id", st[loop_id] + 1)
+            str iid = str(st[loop_id])
+            str icont = cat(["__continue_", iid])
+            str ibrk = cat(["__break_", iid])
+            str icoll = cat(["__coll_", iid])
+            str iidx = cat(["__i_", iid])
+            dict ice = s[coll]
+            list inames = s[names]
+            list ilnames = s[lnames]
+            emit_line(st, "do")
+            st.add("indent", st[indent] + 1)
+            bool list_mode = FALSE
+            if ice[t] == "list":
+                list_mode = TRUE
+            elif ice[t] == "any" AND len(inames) == 1:
+                list_mode = TRUE
+            if list_mode:
+                emit_line(st, cat(["local ", icoll, " = ", wrap_list(emit_expr(st, ice), ice[t], e_nullable(ice))]))
+                emit_line(st, cat(["local ", iidx, " = 0"]))
+                emit_line(st, cat(["while ", iidx, " < #", icoll, " do"]))
+                st.add("indent", st[indent] + 1)
+                str iv = ilnames[0]
+                emit_line(st, cat(["local ", iv, " = ", icoll, "[", iidx, " + 1]"]))
+            else:
+                emit_line(st, cat(["local ", icoll, " = ", wrap_dict(emit_expr(st, ice), ice[t], e_nullable(ice))]))
+                emit_line(st, cat(["local ", iidx, " = 0"]))
+                emit_line(st, cat(["while ", iidx, " < #", icoll, ".keys do"]))
+                st.add("indent", st[indent] + 1)
+                str ivk = ilnames[0]
+                str ivv = ilnames[1]
+                emit_line(st, cat(["local ", ivk, " = ", icoll, ".keys[", iidx, " + 1]"]))
+                emit_line(st, cat(["local ", ivv, " = ", icoll, ".vals[", iidx, " + 1]"]))
+            list ils = st[loop_stack]
+            ils.add({cont: icont, brk: ibrk})
+            emit_stmts(st, s[body])
+            emit_line(st, cat(["::", icont, "::"]))
+            emit_line(st, cat([iidx, " = ", iidx, " + 1"]))
+            ils.del(len(ils) - 1)
+            st.add("indent", st[indent] - 1)
+            emit_line(st, "end")
+            st.add("indent", st[indent] - 1)
+            emit_line(st, "end")
+            emit_line(st, cat(["::", ibrk, "::"]))
+        elif sk == "return":
+            if s.contains("expr"):
+                dict re = s[expr]
+                str rv = emit_expr(st, re)
+                if re[t] == "any" AND st[current_ret] != "any":
+                    rv = checked(rv, re[t], e_nullable(re), st[current_ret])
+                st.add("ret_id", st[ret_id] + 1)
+                str tmp = cat(["__ret_", str(st[ret_id])])
+                emit_line(st, cat(["do local ", tmp, " = ", rv, "; return ", tmp, " end"]))
+            else:
+                emit_line(st, "return krt.NONE")
+        elif sk == "func":
+            list fparams = s[params]
+            list fpl = []
+            for fp0 in fparams:
+                dict fp = fp0
+                fpl.add(fp[lua])
+            emit_line(st, cat(["local function ", s[lua], "(", fpl.join(", "), ")"]))
+            st.add("indent", st[indent] + 1)
+            str saved_ret = st[current_ret]
+            st.add("current_ret", s[ret])
+            list fbody = s[body]
+            emit_hoist(st, collect_scope(fbody))
+            emit_stmts(st, fbody)
+            st.add("current_ret", saved_ret)
+            bool ends_ret = FALSE
+            if len(fbody) > 0:
+                dict flast = fbody[len(fbody) - 1]
+                if flast[k] == "return":
+                    ends_ret = TRUE
+            if NOT ends_ret:
+                emit_line(st, "return krt.NONE")
+            st.add("indent", st[indent] - 1)
+            emit_line(st, "end")
+        if wrap_ret:
+            st.add("indent", st[indent] - 1)
+            emit_line(st, "end")
+        st.add("cur_pos", saved)
+        i += 1
+    return ""
+
+# ---------- сборка Lua ----------
+
+func generate(dict ast, dict opts) -> str:
+    dict st = {out: [], indent: 0, line_map: [], cur_pos: {}, loop_stack: [], loop_id: 0, ret_id: 0, current_ret: "NONE"}
+    emit_line(st, "#!/usr/bin/env luajit")
+    emit_line(st, "-- generated by kraft")
+    emit_line(st, cat(["local __KRAFT_SOURCE = ", lua_str(opts[path])]))
+    emit_line(st, "local krt = (function()")
+    list krt_lines = split_lines(opts[krt])
+    for kl in krt_lines:
+        emit_line(st, kl)
+    emit_line(st, "end)()")
+
+    list src_lines = split_lines(opts[source])
+    list quoted = []
+    for sl in src_lines:
+        quoted.add(lua_str(sl))
+    emit_line(st, cat(["krt.SOURCE_PATH = ", lua_str(opts[path])]))
+    emit_line(st, cat(["krt.SOURCE_LINES = \{", quoted.join(", "), "\}"]))
+
+    list stdin_lines = opts[stdin]
+    list quoted_stdin = []
+    for stl in stdin_lines:
+        quoted_stdin.add(lua_str(stl))
+    emit_line(st, cat(["krt.STDIN = \{", quoted_stdin.join(", "), "\}"]))
+
+    flint map_index = len(st[out]) + 1
+    emit_line(st, "krt.LINE_MAP = \{\}")
+
+    emit_line(st, "krt.run(function()")
+    st.add("indent", 1)
+    emit_hoist(st, collect_scope(ast[stmts]))
+    emit_stmts(st, ast[stmts])
+    st.add("indent", 0)
+    emit_line(st, "end)")
+
+    list map_parts = []
+    list lm = st[line_map]
+    for m0 in lm:
+        dict m = m0
+        map_parts.add(cat(["[", str(m[gen]), "]=\{", str(m[line]), ",", str(m[col]), "\}"]))
+    list o = st[out]
+    o.replace(map_index - 1, cat(["krt.LINE_MAP = \{", map_parts.join(","), "\}"]))
+    return cat([o.join("\n"), "\n"])
+
+func extract_stdin(str src) -> list:
+    list out = []
+    list lines = split_lines(src)
+    for l0 in lines:
+        str line = l0
+        flint i = 0
+        flint n = len(line)
+        while i < n AND (line[i] == " " OR line[i] == "\t"):
+            i += 1
+        if i < n AND line[i] == "#":
+            i += 1
+            while i < n AND (line[i] == " " OR line[i] == "\t"):
+                i += 1
+            if line.part(i, i + 6) == "stdin:":
+                i += 6
+                while i < n AND (line[i] == " " OR line[i] == "\t"):
+                    i += 1
+                out.add(line.part(i, n))
+    return out
+
+func dirname(str p) -> str:
+    flint i = len(p) - 1
+    while i >= 0:
+        if p[i] == "/":
+            if i == 0:
+                return "/"
+            return p.part(0, i)
+        i -= 1
+    return "."
+
+# ---------- CLI ----------
+
+list argv = args()
+if len(argv) < 2:
+    show_err(usage: xkraft [--tokens] [-c] file.kraft)
+    exit(1)
+
+str mode = "run"
+flint ai = 1
+bool scanning = TRUE
+while scanning AND ai < len(argv):
+    str av = argv[ai]
+    if av == "--tokens":
+        mode = "tokens"
+        ai += 1
+    elif av == "-c":
+        mode = "compile"
+        ai += 1
+    elif av == "--emit-lua":
+        mode = "run"
+        ai += 1
+    else:
+        scanning = FALSE
+if ai >= len(argv):
+    show_err(usage: xkraft [--tokens] [-c] file.kraft)
+    exit(1)
+
+str path = argv[ai]
+str src = read_file(path)
+dict lx = lex(src, path)
+if lx[err]:
+    dict e = lx[err]
+    e.add("path", path)
+    report_error(e, src)
+    exit(1)
+if mode == "tokens":
+    dump_tokens(lx[tokens])
+    exit(0)
+
+dict st = {toks: lx[tokens], pos: 0, path: path, vars: {}, nullable: {}, maybe_unset: {}, for_names: {}, funcs: {}, in_func: FALSE, func_ret: "NONE", func_returns: [], block_depth: 0, loop_depth: 0, err: NONE, names: {}, fnames: {}, vcounter: 0, fcounter: 0}
+list prog = parse_block(st, TRUE)
+if st[err]:
+    dict e2 = st[err]
+    report_error(e2, src)
+    exit(1)
+dict ast = {k: "program", stmts: prog}
+
+str self_path = argv[0]
+str krt_path = cat([dirname(self_path), "/src/krt.lua"])
+if NOT file_exists(krt_path):
+    show_err(cannot read runtime: {krt_path})
+    exit(1)
+str krt_src = read_file(krt_path)
+
+str out_lua = generate(ast, {path: path, krt: krt_src, source: src, stdin: extract_stdin(src)})
+if mode == "compile":
+    str base = path
+    if path.suff(".kraft"):
+        base = path.part(0, len(path) - 6)
+    write_file(cat([base, ".lua"]), out_lua)
+    exit(0)
+
+show({out_lua.part(0, len(out_lua) - 1)})
+exit(0)
