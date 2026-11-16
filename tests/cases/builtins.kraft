@@ -1,0 +1,17 @@
+show({len("Привет")})
+show({len([1, 2, 3])})
+show({len({a: 1, b: 2})})
+show({type(1)}, {type("s")}, {type(TRUE)}, {type(NONE)}, {type([1])}, {type({a: 1})})
+show({str(42)}, {str(TRUE)}, {str(NONE)}, {str([1, "два"])}, {str({a: 1})})
+show({flint("42") + 1})
+show({flint(TRUE)}, {flint(FALSE)}, {flint(3.5)})
+show({type(args())}, {len(args())}, {args()[0]})
+show({type(time_ms())})
+show({is_tty()})
+
+str path = "/tmp/kraft_test_builtins.txt"
+show({write_file(path, "привет, файл")})
+show({file_exists(path)})
+show({read_file(path)})
+show({file_exists("/tmp/kraft_no_such_file_xyz")})
+exit(0)

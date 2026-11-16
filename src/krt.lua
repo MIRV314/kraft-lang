@@ -151,6 +151,21 @@ function krt.as_bool(v)
   return v
 end
 
+-- flint(x): число как есть, bool → 1/0, str → разбор (мусор — VALUE_ERROR).
+function krt.to_flint(v)
+  if type(v) == "number" then return v end
+  if type(v) == "boolean" then return v and 1 or 0 end
+  if type(v) == "string" then
+    local n = tonumber(v)
+    if n == nil then
+      krt.fail("VALUE_ERROR", "cannot convert str to flint: " .. v)
+    end
+    return n
+  end
+  krt.fail("TYPE_MISMATCH_ERROR",
+    "cannot convert " .. krt.typeof(v) .. " to flint")
+end
+
 -- ---------- типы и длина ----------
 
 function krt.typeof(v)
@@ -534,6 +549,35 @@ function krt.len(v)
   if krt.is_list(v) then return #v end
   if krt.is_dict(v) then return #v.keys end
   krt.fail("TYPE_MISMATCH_ERROR", "len: expected str, list or dict, found " .. krt.typeof(v))
+end
+
+-- ---------- файлы ----------
+
+function krt.read_file(path)
+  local f = io.open(path, "rb")
+  if not f then
+    krt.fail("FILE_ERROR", "cannot read file: " .. path)
+  end
+  local data = f:read("*a")
+  f:close()
+  return data
+end
+
+function krt.write_file(path, text)
+  local f = io.open(path, "wb")
+  if not f then
+    krt.fail("FILE_ERROR", "cannot write file: " .. path)
+  end
+  f:write(text)
+  f:close()
+  return true
+end
+
+function krt.file_exists(path)
+  local f = io.open(path, "rb")
+  if not f then return false end
+  f:close()
+  return true
 end
 
 -- ---------- процесс ----------

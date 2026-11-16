@@ -1,0 +1,14 @@
+6
+3
+2
+flint, str, bool, NONE, list, dict
+42, TRUE, NONE, [1, "два"], {a: 1}
+43
+1, 0, 3.5
+list, 1, tests/cases/builtins.kraft
+flint
+FALSE
+TRUE
+TRUE
+привет, файл
+FALSE

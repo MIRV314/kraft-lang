@@ -18,6 +18,43 @@ local COMPOUND = {
   ["%="] = true, ["//="] = true, ["**="] = true,
 }
 
+-- Встроенные функции ядра (D46). "any" — без статической проверки аргумента,
+-- набор типов — допустимые типы.
+local BUILTINS = {
+  len = { params = { { str = true, list = true, dict = true } }, ret = "flint" },
+  type = { params = { "any" }, ret = "str" },
+  str = { params = { "any" }, ret = "str" },
+  flint = { params = { "any" }, ret = "flint" },
+  read_file = { params = { "str" }, ret = "str" },
+  write_file = { params = { "str", "str" }, ret = "bool" },
+  file_exists = { params = { "str" }, ret = "bool" },
+  args = { params = {}, ret = "list" },
+  exit = { params = { "flint" }, ret = "NONE" },
+  time_ms = { params = {}, ret = "flint" },
+  is_tty = { params = {}, ret = "bool" },
+}
+
+local BUILTIN_NAMES = {}
+for name in pairs(BUILTINS) do BUILTIN_NAMES[name] = true end
+for _, name in ipairs({ "show", "show_err", "input" }) do BUILTIN_NAMES[name] = true end
+
+local function builtin_arg_ok(t, spec)
+  if spec == "any" then return true end
+  if t == "NONE" or t == "any" then return true end
+  if type(spec) == "string" then return t == spec end
+  return spec[t] == true
+end
+
+local function builtin_arg_desc(spec)
+  if spec == "any" then return "any value" end
+  if type(spec) == "string" then return spec end
+  local names = {}
+  for _, ty in ipairs({ "str", "flint", "bool", "list", "dict" }) do
+    if spec[ty] then names[#names + 1] = ty end
+  end
+  return table.concat(names, ", ")
+end
+
 -- "any" — внутренний тип чтения из list/dict без параметра (D56).
 local function numeric_type(t)
   return t == "flint" or t == "NONE" or t == "any"
@@ -189,6 +226,9 @@ function P:parse_for()
       if is_const(n) then
         self:fail(nt, "CONST_ERROR", "variable", "constant '" .. n .. "'")
       end
+      if BUILTIN_NAMES[n] then
+        self:fail(nt, "NAME_ERROR", "free name", "builtin '" .. n .. "'")
+      end
       if seen[n] or self.vars[n] or self.for_names[n] then
         self:fail(nt, "REDECLARE_ERROR", "unique loop variable",
           "name '" .. n .. "' is already declared")
@@ -300,6 +340,9 @@ function P:parse_func()
 
   local name_tok = self:expect("name", nil, "function name")
   local name = name_tok.value
+  if BUILTIN_NAMES[name] then
+    self:fail(name_tok, "NAME_ERROR", "free name", "builtin '" .. name .. "'")
+  end
   if is_const(name) then
     self:fail(name_tok, "CONST_ERROR", "function name", "constant '" .. name .. "'")
   end
@@ -318,6 +361,9 @@ function P:parse_func()
         self:fail(pty_tok, "TYPE_ERROR", "parameter type", "NONE")
       end
       local pn = self:expect("name", nil, "parameter name")
+      if BUILTIN_NAMES[pn.value] then
+        self:fail(pn, "NAME_ERROR", "free name", "builtin '" .. pn.value .. "'")
+      end
       for _, p in ipairs(params) do
         if p.name == pn.value then
           self:fail(pn, "REDECLARE_ERROR", "unique parameter name",
@@ -428,7 +474,12 @@ local TYPE_KEYWORDS = {
 function P:parse_stmt()
   local t = self:peek()
   if t.type == "kw" and TYPE_KEYWORDS[t.value] then
-    return self:parse_decl()
+    local nextt = self.tokens[self.pos + 1]
+    local conversion = BUILTINS[t.value] and nextt and
+      nextt.type == "op" and nextt.value == "("
+    if not conversion then
+      return self:parse_decl()
+    end
   end
   if t.type == "kw" and t.value == "if" then
     return self:parse_if()
@@ -470,6 +521,9 @@ function P:parse_decl()
   local name_tok = self:expect("name", nil, "variable name")
   local name = name_tok.value
 
+  if BUILTIN_NAMES[name] then
+    self:fail(name_tok, "NAME_ERROR", "free name", "builtin '" .. name .. "'")
+  end
   if self.vars[name] or self.funcs[name] then
     self:fail(name_tok, "REDECLARE_ERROR", "unique name", "name '" .. name .. "' is already declared")
   end
@@ -856,6 +910,37 @@ function P:parse_method(base)
   }
 end
 
+function P:parse_builtin(name, tok)
+  local b = BUILTINS[name]
+  self:expect("op", "(", "'('")
+  local args = {}
+  if not self:check_op(")") then
+    while true do
+      args[#args + 1] = self:parse_expr()
+      if self:check_op(",") then self:advance() else break end
+    end
+  end
+  self:expect("op", ")", "')'")
+
+  if #args ~= #b.params then
+    self:fail(tok, "ARGCOUNT_ERROR",
+      #b.params .. " argument(s) to '" .. name .. "'",
+      #args .. " argument(s)")
+  end
+  for i, a in ipairs(args) do
+    local spec = b.params[i]
+    if not builtin_arg_ok(a.t, spec) then
+      self:fail({ line = a.line, col = a.col }, "TYPE_ERROR",
+        "argument " .. i .. " of '" .. name .. "' to be " .. builtin_arg_desc(spec), a.t)
+    end
+  end
+
+  return {
+    k = "builtin", name = name, args = args, t = b.ret,
+    line = tok.line, col = tok.col,
+  }
+end
+
 function P:parse_atom()
   local t = self:peek()
 
@@ -884,6 +969,14 @@ function P:parse_atom()
     return { k = "none", t = "NONE", line = t.line, col = t.col }
   end
 
+  if t.type == "kw" and BUILTINS[t.value] then
+    local nextt = self.tokens[self.pos + 1]
+    if nextt and nextt.type == "op" and nextt.value == "(" then
+      self:advance()
+      return self:parse_builtin(t.value, t)
+    end
+  end
+
   if t.type == "name" and lexer.TEMPLATE_FUNCS[t.value] then
     self:advance()
     self:expect("op", "(", "'('")
@@ -899,6 +992,10 @@ function P:parse_atom()
   if t.type == "name" then
     local nextt = self.tokens[self.pos + 1]
     if nextt and nextt.type == "op" and nextt.value == "(" then
+      if BUILTINS[t.value] then
+        self:advance()
+        return self:parse_builtin(t.value, t)
+      end
       return self:parse_call()
     end
     self:advance()

@@ -173,6 +173,33 @@ function codegen.generate(ast, opts)
       else
         return "krt.input(" .. emit_parts(e.parts) .. ")"
       end
+    elseif k == "builtin" then
+      local name = e.name
+      local a = e.args
+      if name == "len" then
+        return "krt.len(" .. emit_expr(a[1]) .. ")"
+      elseif name == "type" then
+        return "krt.typeof(" .. emit_expr(a[1]) .. ")"
+      elseif name == "str" then
+        return "krt.tostr(" .. emit_expr(a[1]) .. ")"
+      elseif name == "flint" then
+        return "krt.to_flint(" .. emit_expr(a[1]) .. ")"
+      elseif name == "read_file" then
+        return "krt.read_file(" .. as_str(a[1]) .. ")"
+      elseif name == "write_file" then
+        return "krt.write_file(" .. as_str(a[1]) .. ", " .. as_str(a[2]) .. ")"
+      elseif name == "file_exists" then
+        return "krt.file_exists(" .. as_str(a[1]) .. ")"
+      elseif name == "args" then
+        return "krt.args()"
+      elseif name == "exit" then
+        return "krt.exit(" .. numeric(a[1]) .. ")"
+      elseif name == "time_ms" then
+        return "krt.time_ms()"
+      elseif name == "is_tty" then
+        return "krt.is_tty()"
+      end
+      error("codegen: unknown builtin " .. tostring(name))
     elseif k == "call_user" then
       local args = {}
       for i, a in ipairs(e.args) do
