@@ -203,17 +203,20 @@ function krt.typeof(v)
 end
 
 function krt.utf8_len(s)
-  local n = 0
-  for i = 1, #s do
-    local b = s:byte(i)
-    if not (b >= 0x80 and b < 0xC0) then n = n + 1 end
-  end
-  return n
+  return #krt.utf8_chars(s)
 end
 
 -- ---------- строки: индексы, срезы, методы ----------
 
+-- Кэш символов по значению строки. Строки в Lua неизменяемы, поэтому
+-- результат зависит только от неё. Слабые ключи: память освобождается,
+-- когда строка больше нигде не нужна. Без кэша len(s) и s[i] в цикле
+-- дают O(n^2), что делает компилятор на самом Kraft слишком медленным.
+local CHARS_CACHE = setmetatable({}, { __mode = "k" })
+
 function krt.utf8_chars(s)
+  local cached = CHARS_CACHE[s]
+  if cached ~= nil then return cached end
   local out = {}
   local i, n = 1, #s
   while i <= n do
@@ -225,6 +228,7 @@ function krt.utf8_chars(s)
     out[#out + 1] = s:sub(i, i + len - 1)
     i = i + len
   end
+  CHARS_CACHE[s] = out
   return out
 end
 
