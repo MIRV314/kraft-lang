@@ -1,0 +1,3 @@
+VALUE_ERROR: tests/cases/errret.kraft:2
+    2 |     return 10 / (n - 1)
+                      ^ division by zero

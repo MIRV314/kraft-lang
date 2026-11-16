@@ -1,0 +1,3 @@
+VALUE_ERROR: tests/cases/errindex.kraft:2
+    2 | show({xs[5]})
+        ^ list index out of range: 5

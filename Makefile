@@ -2,3 +2,4 @@
 
 check:
 	./tests/run.sh
+	./tests/cli.sh

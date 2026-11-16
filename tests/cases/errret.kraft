@@ -1,0 +1,4 @@
+func ratio(flint n) -> flint:
+    return 10 / (n - 1)
+
+show({ratio(1)})

@@ -1,0 +1,3 @@
+TYPE_ERROR: tests/cases/errcompile.kraft:1
+    1 | flint n = "x"
+                  ^ expected declaration of 'n': type flint, found str

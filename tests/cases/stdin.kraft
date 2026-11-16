@@ -1,0 +1,5 @@
+# stdin: Kraft
+# stdin: 42
+str name = input(имя: )
+flint n = flint(input(число: ))
+show({name}, {n})

@@ -75,9 +75,17 @@ function krt.show_err(s)
   return krt.NONE
 end
 
+local stdin_pos = 0
+
 function krt.input(prompt)
-  if prompt and prompt ~= "" then io.write(prompt) end
-  local line = io.read("*l")
+  if prompt and prompt ~= "" then
+    io.write(prompt)
+    io.stdout:flush()
+  end
+  stdin_pos = stdin_pos + 1
+  local line = krt.STDIN and krt.STDIN[stdin_pos]
+  if line ~= nil then return line end
+  line = io.read("*l")
   if line == nil then return "" end
   return line
 end
@@ -91,7 +99,19 @@ end
 -- ---------- арифметика с семантикой Python ----------
 
 function krt.fail(cat, msg)
-  error({ kraft_runtime = true, cat = cat, msg = msg }, 0)
+  local line, col
+  local level = 2
+  while true do
+    local info = debug.getinfo(level, "l")
+    if not info then break end
+    local p = krt.LINE_MAP and krt.LINE_MAP[info.currentline]
+    if p then
+      line, col = p[1], p[2]
+      break
+    end
+    level = level + 1
+  end
+  error({ kraft_runtime = true, cat = cat, msg = msg, line = line, col = col }, 0)
 end
 
 function krt.div(a, b)
@@ -611,10 +631,29 @@ end
 function krt.run(fn)
   local ok, err = pcall(fn)
   if ok then return end
+
+  io.stdout:flush()
+
+  local red, yellow, reset = "", "", ""
+  if krt.is_tty() then
+    red, yellow, reset = "\27[31m", "\27[33m", "\27[0m"
+  end
+
   if type(err) == "table" and err.kraft_runtime then
-    io.stderr:write(err.cat .. ": " .. err.msg .. "\n")
+    if err.line then
+      local src = krt.SOURCE_LINES and krt.SOURCE_LINES[err.line] or ""
+      local num = string.format("%5d | ", err.line)
+      local col = err.col or 1
+      io.stderr:write(red .. err.cat .. reset .. ": " ..
+        (krt.SOURCE_PATH or "?") .. ":" .. err.line .. "\n")
+      io.stderr:write(num .. src .. "\n")
+      io.stderr:write(string.rep(" ", #num + col - 1) .. "^ " ..
+        red .. err.msg .. reset .. "\n")
+    else
+      io.stderr:write(red .. err.cat .. reset .. ": " .. err.msg .. "\n")
+    end
   else
-    io.stderr:write("RUNTIME_ERROR: " .. tostring(err) .. "\n")
+    io.stderr:write(red .. "RUNTIME_ERROR" .. reset .. ": " .. tostring(err) .. "\n")
   end
   os.exit(1)
 end

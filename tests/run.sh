@@ -12,10 +12,17 @@ for f in tests/cases/*.kraft; do
   total=$((total + 1))
   name=$(basename "$f" .kraft)
   expected="tests/cases/$name.out"
+  expected_code=0
+  if [ -f "tests/cases/$name.code" ]; then
+    expected_code=$(cat "tests/cases/$name.code")
+  fi
   out=$(mktemp)
 
-  if ! ./kraft "$f" > "$out" 2>&1; then
-    echo "FAIL $name (exit code)"
+  ./kraft "$f" > "$out" 2>&1
+  actual_code=$?
+
+  if [ "$actual_code" -ne "$expected_code" ]; then
+    echo "FAIL $name (exit $actual_code, expected $expected_code)"
     sed 's/^/     /' "$out"
     fail=$((fail + 1))
   elif ! diff -u "$expected" "$out" > /dev/null 2>&1; then
