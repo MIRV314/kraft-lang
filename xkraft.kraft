@@ -1207,6 +1207,50 @@ func stmt_is_decl(dict st) -> bool:
         return FALSE
     return TRUE
 
+# Блок типов: `str:`, `flint:` и т.д. Отличается от обычного объявления
+# двоеточием сразу после типа.
+func stmt_is_decl_block(dict st) -> bool:
+    dict t = tk(st)
+    if t[type] != "kw":
+        return FALSE
+    if NOT is_type_keyword(t[value]):
+        return FALSE
+    dict nx = token_at(st, st[pos] + 1)
+    return nx[type] == "op" AND nx[value] == ":"
+
+# Объявление `имя = выражение` с заданным типом. Общее для обычного
+# объявления и для строки внутри блока типов.
+func parse_typed_decl(dict st, str dty, dict dname_tok) -> dict:
+    str dname = dname_tok[value]
+    if is_reserved(dname):
+        fail(st, dname_tok, "NAME_ERROR", "free name", cat(["builtin '", dname, "'"]))
+        return {}
+    dict dvars = st[vars]
+    dict dfuncs = st[funcs]
+    if dvars.contains(dname) OR dfuncs.contains(dname):
+        fail(st, dname_tok, "REDECLARE_ERROR", "unique name", cat(["name '", dname, "' is already declared"]))
+        return {}
+    expect(st, "op", "=", "'='")
+    if st[err]:
+        return {}
+    dict dexpr = parse_expr(st, 0)
+    if st[err]:
+        return {}
+    if NOT assignable(dexpr[t], dty):
+        fail(st, {line: dexpr[line], col: dexpr[col]}, "TYPE_ERROR", cat(["declaration of '", dname, "': type ", dty]), dexpr[t])
+        return {}
+    str dlua = mangle_var(st, dname)
+    dvars.add(dname, dty)
+    dict dnl = st[nullable]
+    if dexpr[t] == "NONE" OR e_nullable(dexpr):
+        dnl.add(dname, TRUE)
+    else:
+        dnl.remove(dname)
+    if st[block_depth] > 0:
+        dict dmu = st[maybe_unset]
+        dmu.add(dname, TRUE)
+    return {k: "decl", type: dty, name: dname, lua: dlua, expr: dexpr, line: dname_tok[line], col: dname_tok[col]}
+
 # Разбирает блок. top=TRUE — весь файл до eof; top=FALSE — после ':'.
 # Рекурсивна: тела if/while/for/func разбираются ею же.
 func parse_block(dict st, bool top) -> list:
@@ -1241,36 +1285,54 @@ func parse_block(dict st, bool top) -> list:
         if going AND NOT skip:
             dict node = {}
             bool block_stmt = FALSE
-            if stmt_is_decl(st):
-                str dty = advance(st)[value]
-                dict dname_tok = expect(st, "name", "", "variable name")
-                str dname = dname_tok[value]
-                if is_reserved(dname):
-                    fail(st, dname_tok, "NAME_ERROR", "free name", cat(["builtin '", dname, "'"]))
-                    return stmts
-                dict dvars = st[vars]
-                dict dfuncs = st[funcs]
-                if dvars.contains(dname) OR dfuncs.contains(dname):
-                    fail(st, dname_tok, "REDECLARE_ERROR", "unique name", cat(["name '", dname, "' is already declared"]))
-                    return stmts
-                expect(st, "op", "=", "'='")
-                dict dexpr = parse_expr(st, 0)
+            bool decl_block = FALSE
+            if stmt_is_decl_block(st):
+                dict dbtok = advance(st)
+                str dbty = dbtok[value]
+                advance(st)
+                expect(st, "newline", "", "end of line after ':'")
+                expect(st, "indent", "", "indented block")
                 if st[err]:
                     return stmts
-                if NOT assignable(dexpr[t], dty):
-                    fail(st, {line: dexpr[line], col: dexpr[col]}, "TYPE_ERROR", cat(["declaration of '", dname, "': type ", dty]), dexpr[t])
+                flint dcount = 0
+                bool dbgoing = TRUE
+                while dbgoing:
+                    dict dbt = tk(st)
+                    if st[err]:
+                        return stmts
+                    if dbt[type] == "dedent" OR dbt[type] == "eof":
+                        dbgoing = FALSE
+                    elif dbt[type] == "newline":
+                        advance(st)
+                    else:
+                        dict dbnt = expect(st, "name", "", "variable name")
+                        if st[err]:
+                            return stmts
+                        dict dbdecl = parse_typed_decl(st, dbty, dbnt)
+                        if st[err]:
+                            return stmts
+                        stmts.add(dbdecl)
+                        dcount += 1
+                        dict dbnxt = tk(st)
+                        if dbnxt[type] == "newline":
+                            advance(st)
+                        elif dbnxt[type] != "dedent":
+                            fail(st, dbnxt, "SYNTAX_ERROR", "end of line", describe_tok(dbnxt))
+                            return stmts
+                if tk(st)[type] == "dedent":
+                    advance(st)
+                if dcount == 0:
+                    fail(st, dbtok, "SYNTAX_ERROR", "declaration inside type block", "empty block")
                     return stmts
-                str dlua = mangle_var(st, dname)
-                dvars.add(dname, dty)
-                dict dnl = st[nullable]
-                if dexpr[t] == "NONE" OR e_nullable(dexpr):
-                    dnl.add(dname, TRUE)
-                else:
-                    dnl.remove(dname)
-                if st[block_depth] > 0:
-                    dict dmu = st[maybe_unset]
-                    dmu.add(dname, TRUE)
-                node = {k: "decl", type: dty, name: dname, lua: dlua, expr: dexpr, line: dname_tok[line], col: dname_tok[col]}
+                decl_block = TRUE
+            elif stmt_is_decl(st):
+                str dty = advance(st)[value]
+                dict dname_tok = expect(st, "name", "", "variable name")
+                if st[err]:
+                    return stmts
+                node = parse_typed_decl(st, dty, dname_tok)
+                if st[err]:
+                    return stmts
             elif t[type] == "kw" AND t[value] == "if":
                 dict iftok = advance(st)
                 list branches = []
@@ -1646,21 +1708,22 @@ func parse_block(dict st, bool top) -> list:
                 if st[err]:
                     return stmts
                 node = {k: "exprstmt", expr: e, line: e[line], col: e[col]}
-            stmts.add(node)
-            if NOT block_stmt:
-                dict nx2 = tk(st)
-                if top:
-                    if nx2[type] == "newline":
-                        advance(st)
-                    elif nx2[type] != "eof":
-                        fail(st, nx2, "SYNTAX_ERROR", "end of line", describe_tok(nx2))
-                        return stmts
-                else:
-                    if nx2[type] == "newline":
-                        advance(st)
-                    elif nx2[type] != "dedent":
-                        fail(st, nx2, "SYNTAX_ERROR", "end of line", describe_tok(nx2))
-                        return stmts
+            if NOT decl_block:
+                stmts.add(node)
+                if NOT block_stmt:
+                    dict nx2 = tk(st)
+                    if top:
+                        if nx2[type] == "newline":
+                            advance(st)
+                        elif nx2[type] != "eof":
+                            fail(st, nx2, "SYNTAX_ERROR", "end of line", describe_tok(nx2))
+                            return stmts
+                    else:
+                        if nx2[type] == "newline":
+                            advance(st)
+                        elif nx2[type] != "dedent":
+                            fail(st, nx2, "SYNTAX_ERROR", "end of line", describe_tok(nx2))
+                            return stmts
     if NOT top:
         if tk(st)[type] == "dedent":
             advance(st)
