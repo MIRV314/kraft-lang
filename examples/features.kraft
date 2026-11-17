@@ -1,0 +1,23 @@
+flint total = 0
+
+func add(flint n):
+    ext total
+    total += n
+
+str:
+    name = "Kraft"
+    line = "{name} — язык с маленьким ядром"
+
+flint:
+    a = 2
+    b = 3
+
+list xs = [b, 1, a]
+xs[0] = 9
+add(a)
+add(b)
+
+show({line})
+show({xs})
+show({sort(xs)})
+show({total})

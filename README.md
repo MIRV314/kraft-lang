@@ -70,6 +70,7 @@ Kraft — статически типизированный язык: один �
 ./kraft xkraft.kraft file.kraft           # скомпилировать и напечатать Lua
 ./kraft xkraft.kraft -c file.kraft        # собрать file.lua рядом
 ./kraft xkraft.kraft --tokens file.kraft  # посмотреть токены
+./kraft xkraft.kraft examples/features.kraft  # новые возможности ядра
 ```
 
 Сам `xkraft.kraft` написан на замороженном v0.1, но для компилируемых
