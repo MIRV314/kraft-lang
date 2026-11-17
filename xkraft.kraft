@@ -157,7 +157,7 @@ func is_keyword(str w) -> bool:
         return TRUE
     if w == "while" OR w == "break" OR w == "continue" OR w == "return":
         return TRUE
-    if w == "is" OR w == "AND" OR w == "OR" OR w == "NOT" OR w == "glob":
+    if w == "is" OR w == "AND" OR w == "OR" OR w == "NOT" OR w == "glob" OR w == "ext":
         return TRUE
     if w == "self" OR w == "try" OR w == "finally" OR w == "trigger" OR w == "panic":
         return TRUE
@@ -675,7 +675,7 @@ func template_state(dict st, dict p) -> dict:
         if t2[line] == p[line]:
             t2.add("col", t2[col] + p[col] - 1)
         i += 1
-    return {toks: ts, pos: 0, path: st[path], vars: st[vars], nullable: st[nullable], maybe_unset: st[maybe_unset], for_names: st[for_names], funcs: st[funcs], in_func: st[in_func], func_ret: st[func_ret], func_returns: st[func_returns], block_depth: st[block_depth], loop_depth: st[loop_depth], err: e0, names: st[names], fnames: st[fnames], vcounter: st[vcounter], fcounter: st[fcounter]}
+    return {toks: ts, pos: 0, path: st[path], vars: st[vars], nullable: st[nullable], maybe_unset: st[maybe_unset], gvars: st[gvars], gnullable: st[gnullable], gmaybe: st[gmaybe], exts: st[exts], for_names: st[for_names], funcs: st[funcs], in_func: st[in_func], func_ret: st[func_ret], func_returns: st[func_returns], block_depth: st[block_depth], loop_depth: st[loop_depth], err: e0, names: st[names], fnames: st[fnames], vcounter: st[vcounter], fcounter: st[fcounter]}
 
 func parse_expr(dict st, flint min_bp) -> dict:
     if st[err]:
@@ -791,19 +791,36 @@ func parse_expr(dict st, flint min_bp) -> dict:
         else:
             str vn = t[value]
             dict vars = st[vars]
-            if NOT vars.contains(vn):
-                fail(st, t, "NAME_ERROR", "declared name", cat(["undeclared '", vn, "'"]))
-                return {}
+            bool is_local = vars.contains(vn)
+            dict gv = st[gvars]
+            bool is_global = FALSE
+            if NOT is_local:
+                if gv.contains(vn):
+                    is_global = TRUE
+                else:
+                    fail(st, t, "NAME_ERROR", "declared name", cat(["undeclared '", vn, "'"]))
+                    return {}
             advance(st)
             dict names = st[names]
             bool nl = FALSE
-            dict nd = st[nullable]
-            if nd.contains(vn):
-                nl = nd.take(vn)
-            dict mu = st[maybe_unset]
-            if mu.contains(vn):
-                nl = TRUE
-            e = {k: "var", name: vn, lua: names.take(vn), t: vars.take(vn), nullable: nl, line: t[line], col: t[col]}
+            str vt = ""
+            if is_local:
+                vt = vars.take(vn)
+                dict nd = st[nullable]
+                if nd.contains(vn):
+                    nl = nd.take(vn)
+                dict mu = st[maybe_unset]
+                if mu.contains(vn):
+                    nl = TRUE
+            else:
+                vt = gv.take(vn)
+                dict gnl = st[gnullable]
+                if gnl.contains(vn):
+                    nl = gnl.take(vn)
+                dict gmu = st[gmaybe]
+                if gmu.contains(vn):
+                    nl = TRUE
+            e = {k: "var", name: vn, lua: names.take(vn), t: vt, nullable: nl, line: t[line], col: t[col]}
     elif ty == "op" AND t[value] == "(":
         advance(st)
         e = parse_expr(st, 0)
@@ -1218,6 +1235,29 @@ func stmt_is_decl_block(dict st) -> bool:
     dict nx = token_at(st, st[pos] + 1)
     return nx[type] == "op" AND nx[value] == ":"
 
+# Куда пишет присваивание: в локальную или в глобальную через `ext`.
+func resolve_write(dict st, dict tok, str n) -> dict:
+    dict vars = st[vars]
+    dict gv = st[gvars]
+    dict ex = st[exts]
+    if vars.contains(n):
+        if is_const_name(n):
+            fail(st, tok, "CONST_ERROR", "variable", cat(["constant '", n, "'"]))
+            return {}
+        dict nm = st[names]
+        return {kind: "local", type: vars.take(n), lua: nm.take(n)}
+    if gv.contains(n):
+        if is_const_name(n):
+            fail(st, tok, "CONST_ERROR", "variable", cat(["constant '", n, "'"]))
+            return {}
+        if NOT ex.contains(n):
+            fail(st, tok, "SCOPE_ERROR", "ext for global assignment", cat(["assignment to global '", n, "' without ext"]))
+            return {}
+        dict nm2 = st[names]
+        return {kind: "global", type: gv.take(n), lua: nm2.take(n)}
+    fail(st, tok, "NAME_ERROR", "declared variable", cat(["name '", n, "' is not declared"]))
+    return {}
+
 # Объявление `имя = выражение` с заданным типом. Общее для обычного
 # объявления и для строки внутри блока типов.
 func parse_typed_decl(dict st, str dty, dict dname_tok) -> dict:
@@ -1229,6 +1269,15 @@ func parse_typed_decl(dict st, str dty, dict dname_tok) -> dict:
     dict dfuncs = st[funcs]
     if dvars.contains(dname) OR dfuncs.contains(dname):
         fail(st, dname_tok, "REDECLARE_ERROR", "unique name", cat(["name '", dname, "' is already declared"]))
+        return {}
+    if st[in_func]:
+        dict dg = st[gvars]
+        if dg.contains(dname):
+            fail(st, dname_tok, "REDECLARE_ERROR", "local name", cat(["global '", dname, "' is already declared"]))
+            return {}
+    dict de = st[exts]
+    if de.contains(dname):
+        fail(st, dname_tok, "REDECLARE_ERROR", "local name", cat(["ext global '", dname, "'"]))
         return {}
     expect(st, "op", "=", "'='")
     if st[err]:
@@ -1333,6 +1382,29 @@ func parse_block(dict st, bool top) -> list:
                 node = parse_typed_decl(st, dty, dname_tok)
                 if st[err]:
                     return stmts
+            elif t[type] == "kw" AND t[value] == "ext":
+                dict extok = advance(st)
+                if NOT st[in_func]:
+                    fail(st, extok, "SCOPE_ERROR", "'ext' inside a function", "top level")
+                    return stmts
+                dict extname_tok = expect(st, "name", "", "global variable name")
+                if st[err]:
+                    return stmts
+                str extname = extname_tok[value]
+                dict egv = st[gvars]
+                if NOT egv.contains(extname):
+                    fail(st, extname_tok, "NAME_ERROR", "declared global variable", cat(["undeclared global '", extname, "'"]))
+                    return stmts
+                dict eloc = st[vars]
+                if eloc.contains(extname):
+                    fail(st, extname_tok, "REDECLARE_ERROR", "global name", cat(["local '", extname, "' is already declared"]))
+                    return stmts
+                dict eex = st[exts]
+                if eex.contains(extname):
+                    fail(st, extname_tok, "REDECLARE_ERROR", "unique ext", cat(["ext '", extname, "' is already declared"]))
+                    return stmts
+                eex.add(extname, TRUE)
+                node = {k: "ext", name: extname, line: extok[line], col: extok[col]}
             elif t[type] == "kw" AND t[value] == "if":
                 dict iftok = advance(st)
                 list branches = []
@@ -1412,7 +1484,8 @@ func parse_block(dict st, bool top) -> list:
                             return stmts
                         dict fvars = st[vars]
                         dict ffor = st[for_names]
-                        if fvars.contains(nm) OR ffor.contains(nm):
+                        dict fgv = st[gvars]
+                        if fvars.contains(nm) OR ffor.contains(nm) OR fgv.contains(nm):
                             fail(st, ntx, "REDECLARE_ERROR", "unique loop variable", cat(["name '", nm, "' is already declared"]))
                             return stmts
                         fvars.add(nm, ftypes[ni])
@@ -1445,7 +1518,8 @@ func parse_block(dict st, bool top) -> list:
                         return stmts
                     dict rvars = st[vars]
                     dict rfor = st[for_names]
-                    if rvars.contains(rname) OR rfor.contains(rname):
+                    dict rgv = st[gvars]
+                    if rvars.contains(rname) OR rfor.contains(rname) OR rgv.contains(rname):
                         fail(st, rnt, "REDECLARE_ERROR", "unique loop variable", cat(["name '", rname, "' is already declared"]))
                         return stmts
                     rvars.add(rname, "flint")
@@ -1525,6 +1599,10 @@ func parse_block(dict st, bool top) -> list:
                         if is_reserved(pnm):
                             fail(st, pn, "NAME_ERROR", "free name", cat(["builtin '", pnm, "'"]))
                             return stmts
+                        dict pgv = st[vars]
+                        if pgv.contains(pnm):
+                            fail(st, pn, "REDECLARE_ERROR", "parameter name", cat(["global '", pnm, "' is already declared"]))
+                            return stmts
                         flint di = 0
                         while di < len(params):
                             dict pp0 = params[di]
@@ -1560,10 +1638,18 @@ func parse_block(dict st, bool top) -> list:
                 dict sv_nullable = st[nullable]
                 dict sv_maybe = st[maybe_unset]
                 dict sv_for = st[for_names]
+                dict sv_gvars = st[gvars]
+                dict sv_gnullable = st[gnullable]
+                dict sv_gmaybe = st[gmaybe]
+                dict sv_exts = st[exts]
                 flint sv_loop = st[loop_depth]
                 bool sv_in = st[in_func]
                 str sv_ret = st[func_ret]
                 list sv_returns = st[func_returns]
+                st.add("gvars", st[vars])
+                st.add("gnullable", st[nullable])
+                st.add("gmaybe", st[maybe_unset])
+                st.add("exts", {})
                 st.add("vars", {})
                 st.add("nullable", {})
                 st.add("maybe_unset", {})
@@ -1585,6 +1671,10 @@ func parse_block(dict st, bool top) -> list:
                 st.add("nullable", sv_nullable)
                 st.add("maybe_unset", sv_maybe)
                 st.add("for_names", sv_for)
+                st.add("gvars", sv_gvars)
+                st.add("gnullable", sv_gnullable)
+                st.add("gmaybe", sv_gmaybe)
+                st.add("exts", sv_exts)
                 st.add("loop_depth", sv_loop)
                 st.add("in_func", sv_in)
                 st.add("func_ret", sv_ret)
@@ -1651,37 +1741,30 @@ func parse_block(dict st, bool top) -> list:
             elif t[type] == "name" AND NOT is_template_func(t[value]) AND peek_value(st) == "=":
                 dict atok = advance(st)
                 str aname = atok[value]
-                dict avars = st[vars]
-                if NOT avars.contains(aname):
-                    fail(st, atok, "NAME_ERROR", "declared variable", cat(["name '", aname, "' is not declared"]))
-                    return stmts
-                if is_const_name(aname):
-                    fail(st, atok, "CONST_ERROR", "variable", cat(["constant '", aname, "'"]))
+                dict aw = resolve_write(st, atok, aname)
+                if st[err]:
                     return stmts
                 advance(st)
                 dict aexpr = parse_expr(st, 0)
                 if st[err]:
                     return stmts
-                str avt = avars.take(aname)
+                str avt = aw[type]
                 if NOT assignable(aexpr[t], avt):
                     fail(st, {line: aexpr[line], col: aexpr[col]}, "TYPE_ERROR", cat(["assignment to '", aname, "': type ", avt]), aexpr[t])
                     return stmts
                 dict anl = st[nullable]
+                if aw[kind] == "global":
+                    anl = st[gnullable]
                 if aexpr[t] == "NONE" OR e_nullable(aexpr):
                     anl.add(aname, TRUE)
                 else:
                     anl.remove(aname)
-                dict anames = st[names]
-                node = {k: "assign", name: aname, lua: anames.take(aname), expr: aexpr, type: avt, line: atok[line], col: atok[col]}
+                node = {k: "assign", name: aname, lua: aw[lua], expr: aexpr, type: avt, line: atok[line], col: atok[col]}
             elif t[type] == "name" AND NOT is_template_func(t[value]) AND is_compound(peek_value(st)):
                 dict ctok = advance(st)
                 str cname = ctok[value]
-                dict cvars = st[vars]
-                if NOT cvars.contains(cname):
-                    fail(st, ctok, "NAME_ERROR", "declared variable", cat(["name '", cname, "' is not declared"]))
-                    return stmts
-                if is_const_name(cname):
-                    fail(st, ctok, "CONST_ERROR", "variable", cat(["constant '", cname, "'"]))
+                dict cw = resolve_write(st, ctok, cname)
+                if st[err]:
                     return stmts
                 dict cop_tok = advance(st)
                 str cop_full = cop_tok[value]
@@ -1689,20 +1772,28 @@ func parse_block(dict st, bool top) -> list:
                 dict cexpr = parse_expr(st, 0)
                 if st[err]:
                     return stmts
-                str cvt = cvars.take(cname)
+                str cvt = cw[type]
                 if cvt != "flint" OR NOT is_numeric(cexpr[t]):
                     fail(st, cop_tok, "TYPE_ERROR", cat(["numeric operands of '", cop_full, "'"]), cexpr[t])
                     return stmts
                 bool cmaybe = FALSE
-                dict cnl = st[nullable]
-                dict cmu = st[maybe_unset]
-                if cnl.contains(cname):
-                    cmaybe = TRUE
-                if cmu.contains(cname):
-                    cmaybe = TRUE
-                cnl.remove(cname)
-                dict cnames = st[names]
-                node = {k: "compound", name: cname, lua: cnames.take(cname), op: cop, expr: cexpr, nullable: cmaybe, line: ctok[line], col: ctok[col]}
+                if cw[kind] == "global":
+                    dict cgnl = st[gnullable]
+                    dict cgmu = st[gmaybe]
+                    if cgnl.contains(cname):
+                        cmaybe = TRUE
+                    if cgmu.contains(cname):
+                        cmaybe = TRUE
+                    cgnl.remove(cname)
+                else:
+                    dict cnl = st[nullable]
+                    dict cmu = st[maybe_unset]
+                    if cnl.contains(cname):
+                        cmaybe = TRUE
+                    if cmu.contains(cname):
+                        cmaybe = TRUE
+                    cnl.remove(cname)
+                node = {k: "compound", name: cname, lua: cw[lua], op: cop, expr: cexpr, nullable: cmaybe, line: ctok[line], col: ctok[col]}
             else:
                 dict e = parse_expr(st, 0)
                 if st[err]:
@@ -2476,7 +2567,7 @@ if mode == "tokens":
     dump_tokens(lx[tokens])
     exit(0)
 
-dict st = {toks: lx[tokens], pos: 0, path: path, vars: {}, nullable: {}, maybe_unset: {}, for_names: {}, funcs: {}, in_func: FALSE, func_ret: "NONE", func_returns: [], block_depth: 0, loop_depth: 0, err: NONE, names: {}, fnames: {}, vcounter: 0, fcounter: 0}
+dict st = {toks: lx[tokens], pos: 0, path: path, vars: {}, nullable: {}, maybe_unset: {}, gvars: {}, gnullable: {}, gmaybe: {}, exts: {}, for_names: {}, funcs: {}, in_func: FALSE, func_ret: "NONE", func_returns: [], block_depth: 0, loop_depth: 0, err: NONE, names: {}, fnames: {}, vcounter: 0, fcounter: 0}
 list prog = parse_block(st, TRUE)
 if st[err]:
     dict e2 = st[err]
