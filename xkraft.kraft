@@ -489,7 +489,7 @@ func fail(dict st, dict t, str ecat, str expected, str found):
         e.add("col", t[col])
     st.add("err", e)
 
-func expect(dict st, str ty, str val, str what) -> dict:
+func expect_tok(dict st, str ty, str val, str what) -> dict:
     dict t = tk(st)
     if NOT tok_is(t, ty, val):
         fail(st, t, "SYNTAX_ERROR", what, describe_tok(t))
@@ -598,6 +598,12 @@ func builtin_info(str name) -> dict:
         return {ok: TRUE, n: 2, ret: "list", a1: "list", a2: "func"}
     if name == "reduce":
         return {ok: TRUE, n: 3, ret: "any", a1: "list", a2: "func", a3: "any"}
+    if name == "system":
+        return {ok: TRUE, n: 1, ret: "flint", a1: "str"}
+    if name == "assert":
+        return {ok: TRUE, n: 2, ret: "NONE", a1: "any", a2: "str"}
+    if name == "expect":
+        return {ok: TRUE, n: 1, ret: "expect", a1: "any"}
     if name == "read_file":
         return {ok: TRUE, n: 1, ret: "str", a1: "str"}
     if name == "write_file":
@@ -674,6 +680,17 @@ func method_info(str base, str name) -> dict:
             return {ok: TRUE, min: 1, max: 1, a1: "str", a2: "any", rt: "dict_contains", ret: "bool", nullable: FALSE}
         if name == "merge":
             return {ok: TRUE, min: 1, max: 1, a1: "dict", a2: "any", rt: "dict_merge", ret: "dict", nullable: FALSE}
+    elif base == "expect":
+        if name == "equals":
+            return {ok: TRUE, min: 1, max: 1, a1: "any", a2: "any", rt: "expect_equals", ret: "NONE", nullable: FALSE}
+        if name == "is_true":
+            return {ok: TRUE, min: 0, max: 0, a1: "any", a2: "any", rt: "expect_true", ret: "NONE", nullable: FALSE}
+        if name == "is_false":
+            return {ok: TRUE, min: 0, max: 0, a1: "any", a2: "any", rt: "expect_false", ret: "NONE", nullable: FALSE}
+        if name == "is_none":
+            return {ok: TRUE, min: 0, max: 0, a1: "any", a2: "any", rt: "expect_none", ret: "NONE", nullable: FALSE}
+        if name == "contains":
+            return {ok: TRUE, min: 1, max: 1, a1: "any", a2: "any", rt: "expect_contains", ret: "NONE", nullable: FALSE}
     return {ok: FALSE}
 
 func parse_type_name(dict st) -> str:
@@ -754,17 +771,17 @@ func parse_expr(dict st, flint min_bp) -> dict:
     elif (ty == "kw" OR ty == "name") AND is_builtin(t[value]) AND peek_value(st) == "(":
         str bn = t[value]
         advance(st)
-        expect(st, "op", "(", "'('")
+        expect_tok(st, "op", "(", "'('")
         list bargs = []
         if bn == "map" OR bn == "filter" OR bn == "reduce":
             dict hcoll = parse_expr(st, 0)
             if st[err]:
                 return {}
             bargs.add(hcoll)
-            expect(st, "op", ",", "','")
+            expect_tok(st, "op", ",", "','")
             if st[err]:
                 return {}
-            dict hft = expect(st, "name", "", "function name")
+            dict hft = expect_tok(st, "name", "", "function name")
             if st[err]:
                 return {}
             str hfn = hft[value]
@@ -782,14 +799,14 @@ func parse_expr(dict st, flint min_bp) -> dict:
             dict hnames = st[fnames]
             bargs.add({k: "func_ref", name: hfn, lua: hnames.take(hfn), t: "func", line: hft[line], col: hft[col]})
             if bn == "reduce":
-                expect(st, "op", ",", "','")
+                expect_tok(st, "op", ",", "','")
                 if st[err]:
                     return {}
                 dict hstart = parse_expr(st, 0)
                 if st[err]:
                     return {}
                 bargs.add(hstart)
-            expect(st, "op", ")", "')'")
+            expect_tok(st, "op", ")", "')'")
         else:
             if NOT tok_is(tk(st), "op", ")"):
                 while TRUE:
@@ -801,7 +818,7 @@ func parse_expr(dict st, flint min_bp) -> dict:
                         advance(st)
                     else:
                         break
-            expect(st, "op", ")", "')'")
+            expect_tok(st, "op", ")", "')'")
         if st[err]:
             return {}
         dict bi = builtin_info(bn)
@@ -842,9 +859,9 @@ func parse_expr(dict st, flint min_bp) -> dict:
     elif ty == "name" AND is_template_func(t[value]):
         pfn = t[value]
         advance(st)
-        expect(st, "op", "(", "'('")
-        dict tpl = expect(st, "template", "", "template")
-        expect(st, "op", ")", "')'")
+        expect_tok(st, "op", "(", "'('")
+        dict tpl = expect_tok(st, "template", "", "template")
+        expect_tok(st, "op", ")", "')'")
         if st[err]:
             return {}
         ptok = tpl
@@ -860,7 +877,7 @@ func parse_expr(dict st, flint min_bp) -> dict:
                 fail(st, t, "TYPE_ERROR", "explicit '->' for recursion", cat(["'", fn, "' is called while its return type is inferred"]))
                 return {}
             advance(st)
-            expect(st, "op", "(", "'('")
+            expect_tok(st, "op", "(", "'('")
             list cargs = []
             if NOT tok_is(tk(st), "op", ")"):
                 while TRUE:
@@ -872,7 +889,7 @@ func parse_expr(dict st, flint min_bp) -> dict:
                         advance(st)
                     else:
                         break
-            expect(st, "op", ")", "')'")
+            expect_tok(st, "op", ")", "')'")
             if st[err]:
                 return {}
             list params = fi[params]
@@ -930,7 +947,7 @@ func parse_expr(dict st, flint min_bp) -> dict:
         e = parse_expr(st, 0)
         if st[err]:
             return {}
-        expect(st, "op", ")", "')'")
+        expect_tok(st, "op", ")", "')'")
         if st[err]:
             return {}
     elif ty == "op" AND t[value] == "[":
@@ -946,7 +963,7 @@ func parse_expr(dict st, flint min_bp) -> dict:
                     advance(st)
                 else:
                     break
-        expect(st, "op", "]", "']'")
+        expect_tok(st, "op", "]", "']'")
         if st[err]:
             return {}
         e = {k: "list", items: items, t: "list", line: t[line], col: t[col]}
@@ -974,7 +991,7 @@ func parse_expr(dict st, flint min_bp) -> dict:
                 else:
                     fail(st, dkt, "TYPE_ERROR", "dict dkey as bare name or string literal", describe_tok(dkt))
                     return {}
-                expect(st, "op", ":", "':'")
+                expect_tok(st, "op", ":", "':'")
                 dict dval = parse_expr(st, 0)
                 if st[err]:
                     return {}
@@ -983,7 +1000,7 @@ func parse_expr(dict st, flint min_bp) -> dict:
                     advance(st)
                 else:
                     break
-        expect(st, "op", "\}", "'\}'")
+        expect_tok(st, "op", "\}", "'\}'")
         if st[err]:
             return {}
         e = {k: "dict", pairs: pairs, t: "dict", line: t[line], col: t[col]}
@@ -1064,7 +1081,7 @@ func parse_expr(dict st, flint min_bp) -> dict:
                 else:
                     fail(st, pkt, "TYPE_ERROR", "dict pkey as bare name or string literal", describe_tok(pkt))
                     return {}
-                expect(st, "op", "]", "']'")
+                expect_tok(st, "op", "]", "']'")
                 if st[err]:
                     return {}
                 e = {k: "dget", base: e, key: pkey, t: "any", nullable: TRUE, line: nt[line], col: nt[col]}
@@ -1096,7 +1113,7 @@ func parse_expr(dict st, flint min_bp) -> dict:
                         if st[err]:
                             return {}
                         has_step = TRUE
-                    expect(st, "op", "]", "']'")
+                    expect_tok(st, "op", "]", "']'")
                     if st[err]:
                         return {}
                     list bounds = []
@@ -1131,7 +1148,7 @@ func parse_expr(dict st, flint min_bp) -> dict:
                         node.add("step", NONE)
                     e = node
                 else:
-                    expect(st, "op", "]", "']'")
+                    expect_tok(st, "op", "]", "']'")
                     if st[err]:
                         return {}
                     if from[t] != "flint" AND from[t] != "NONE" AND from[t] != "any":
@@ -1151,7 +1168,7 @@ func parse_expr(dict st, flint min_bp) -> dict:
             else:
                 fail(st, mt, "SYNTAX_ERROR", "method name", describe_tok(mt))
                 return {}
-            expect(st, "op", "(", "'('")
+            expect_tok(st, "op", "(", "'('")
             list margs = []
             if NOT tok_is(tk(st), "op", ")"):
                 while TRUE:
@@ -1163,7 +1180,7 @@ func parse_expr(dict st, flint min_bp) -> dict:
                         advance(st)
                     else:
                         break
-            expect(st, "op", ")", "')'")
+            expect_tok(st, "op", ")", "')'")
             if st[err]:
                 return {}
             str mbt = e[t]
@@ -1383,7 +1400,7 @@ func parse_typed_decl(dict st, str dty, dict dname_tok) -> dict:
     if de.contains(dname):
         fail(st, dname_tok, "REDECLARE_ERROR", "local name", cat(["ext global '", dname, "'"]))
         return {}
-    expect(st, "op", "=", "'='")
+    expect_tok(st, "op", "=", "'='")
     if st[err]:
         return {}
     dict dexpr = parse_expr(st, 0)
@@ -1409,8 +1426,8 @@ func parse_typed_decl(dict st, str dty, dict dname_tok) -> dict:
 func parse_block(dict st, bool top) -> list:
     list stmts = []
     if NOT top:
-        expect(st, "newline", "", "end of line after ':'")
-        expect(st, "indent", "", "indented block")
+        expect_tok(st, "newline", "", "end of line after ':'")
+        expect_tok(st, "indent", "", "indented block")
         st.add("block_depth", st[block_depth] + 1)
     bool going = TRUE
     while going:
@@ -1443,8 +1460,8 @@ func parse_block(dict st, bool top) -> list:
                 dict dbtok = advance(st)
                 str dbty = dbtok[value]
                 advance(st)
-                expect(st, "newline", "", "end of line after ':'")
-                expect(st, "indent", "", "indented block")
+                expect_tok(st, "newline", "", "end of line after ':'")
+                expect_tok(st, "indent", "", "indented block")
                 if st[err]:
                     return stmts
                 flint dcount = 0
@@ -1458,7 +1475,7 @@ func parse_block(dict st, bool top) -> list:
                     elif dbt[type] == "newline":
                         advance(st)
                     else:
-                        dict dbnt = expect(st, "name", "", "variable name")
+                        dict dbnt = expect_tok(st, "name", "", "variable name")
                         if st[err]:
                             return stmts
                         dict dbdecl = parse_typed_decl(st, dbty, dbnt)
@@ -1480,7 +1497,7 @@ func parse_block(dict st, bool top) -> list:
                 decl_block = TRUE
             elif stmt_is_decl(st):
                 str dty = advance(st)[value]
-                dict dname_tok = expect(st, "name", "", "variable name")
+                dict dname_tok = expect_tok(st, "name", "", "variable name")
                 if st[err]:
                     return stmts
                 node = parse_typed_decl(st, dty, dname_tok)
@@ -1491,7 +1508,7 @@ func parse_block(dict st, bool top) -> list:
                 if NOT st[in_func]:
                     fail(st, extok, "SCOPE_ERROR", "'ext' inside a function", "top level")
                     return stmts
-                dict extname_tok = expect(st, "name", "", "global variable name")
+                dict extname_tok = expect_tok(st, "name", "", "global variable name")
                 if st[err]:
                     return stmts
                 str extname = extname_tok[value]
@@ -1513,26 +1530,26 @@ func parse_block(dict st, bool top) -> list:
                 dict iftok = advance(st)
                 list branches = []
                 dict cond = parse_expr(st, 0)
-                expect(st, "op", ":", "':'")
+                expect_tok(st, "op", ":", "':'")
                 list ibody = parse_block(st, FALSE)
                 branches.add({cond: cond, body: ibody})
                 while tok_is(tk(st), "kw", "elif"):
                     advance(st)
                     dict c2 = parse_expr(st, 0)
-                    expect(st, "op", ":", "':'")
+                    expect_tok(st, "op", ":", "':'")
                     list b2 = parse_block(st, FALSE)
                     branches.add({cond: c2, body: b2})
                 node = {k: "if", branches: branches, block_stmt: TRUE, line: iftok[line], col: iftok[col]}
                 if tok_is(tk(st), "kw", "else"):
                     advance(st)
-                    expect(st, "op", ":", "':'")
+                    expect_tok(st, "op", ":", "':'")
                     list eb = parse_block(st, FALSE)
                     node.add("else_body", eb)
                 block_stmt = TRUE
             elif t[type] == "kw" AND t[value] == "while":
                 dict wtok = advance(st)
                 dict wcond = parse_expr(st, 0)
-                expect(st, "op", ":", "':'")
+                expect_tok(st, "op", ":", "':'")
                 st.add("loop_depth", st[loop_depth] + 1)
                 list wbody = parse_block(st, FALSE)
                 st.add("loop_depth", st[loop_depth] - 1)
@@ -1541,11 +1558,11 @@ func parse_block(dict st, bool top) -> list:
             elif t[type] == "kw" AND t[value] == "for":
                 dict ftok = advance(st)
                 list nts = []
-                dict nt1 = expect(st, "name", "", "loop variable")
+                dict nt1 = expect_tok(st, "name", "", "loop variable")
                 nts.add(nt1)
                 if tok_is(tk(st), "op", ","):
                     advance(st)
-                    dict nt2 = expect(st, "name", "", "loop variable")
+                    dict nt2 = expect_tok(st, "name", "", "loop variable")
                     nts.add(nt2)
                 if tok_is(tk(st), "kw", "in"):
                     advance(st)
@@ -1597,7 +1614,7 @@ func parse_block(dict st, bool top) -> list:
                         fnames_k.add(nm)
                         fnames_l.add(mangle_var(st, nm))
                         ni += 1
-                    expect(st, "op", ":", "':'")
+                    expect_tok(st, "op", ":", "':'")
                     st.add("loop_depth", st[loop_depth] + 1)
                     list fibody = parse_block(st, FALSE)
                     st.add("loop_depth", st[loop_depth] - 1)
@@ -1659,7 +1676,7 @@ func parse_block(dict st, bool top) -> list:
                     else:
                         ftnode.add("form", "upto")
                         ftnode.add("to", first)
-                    expect(st, "op", ":", "':'")
+                    expect_tok(st, "op", ":", "':'")
                     st.add("loop_depth", st[loop_depth] + 1)
                     list rbody = parse_block(st, FALSE)
                     st.add("loop_depth", st[loop_depth] - 1)
@@ -1674,7 +1691,7 @@ func parse_block(dict st, bool top) -> list:
                 if st[in_func] OR st[block_depth] > 0:
                     fail(st, funtok, "SYNTAX_ERROR", "function at top level", "nested function")
                     return stmts
-                dict fntok = expect(st, "name", "", "function name")
+                dict fntok = expect_tok(st, "name", "", "function name")
                 str fn_name = fntok[value]
                 if is_reserved(fn_name):
                     fail(st, fntok, "NAME_ERROR", "free name", cat(["builtin '", fn_name, "'"]))
@@ -1687,7 +1704,7 @@ func parse_block(dict st, bool top) -> list:
                 if gfuncs.contains(fn_name) OR gvars.contains(fn_name):
                     fail(st, fntok, "REDECLARE_ERROR", "unique name", cat(["name '", fn_name, "' is already declared"]))
                     return stmts
-                expect(st, "op", "(", "'('")
+                expect_tok(st, "op", "(", "'('")
                 list params = []
                 if NOT tok_is(tk(st), "op", ")"):
                     while TRUE:
@@ -1698,7 +1715,7 @@ func parse_block(dict st, bool top) -> list:
                         if pty == "NONE":
                             fail(st, pty_tok, "TYPE_ERROR", "parameter type", "NONE")
                             return stmts
-                        dict pn = expect(st, "name", "", "parameter name")
+                        dict pn = expect_tok(st, "name", "", "parameter name")
                         str pnm = pn[value]
                         if is_reserved(pnm):
                             fail(st, pn, "NAME_ERROR", "free name", cat(["builtin '", pnm, "'"]))
@@ -1719,7 +1736,7 @@ func parse_block(dict st, bool top) -> list:
                             advance(st)
                         else:
                             break
-                expect(st, "op", ")", "')'")
+                expect_tok(st, "op", ")", "')'")
                 str fret = "NONE"
                 bool fhas_ret = FALSE
                 if tok_is(tk(st), "op", "->"):
@@ -1732,7 +1749,7 @@ func parse_block(dict st, bool top) -> list:
                         fail(st, rtok, "SYNTAX_ERROR", "return type (omit '->' for NONE)", "NONE")
                         return stmts
                     fhas_ret = TRUE
-                expect(st, "op", ":", "':'")
+                expect_tok(st, "op", ":", "':'")
                 dict fninfo = {params: params, ret: NONE, ret_nullable: FALSE, inferring: TRUE}
                 if fhas_ret:
                     fninfo.add("ret", fret)
@@ -2152,6 +2169,13 @@ func emit_expr(dict st, dict e) -> str:
             dict rf = ba[1]
             dict rs = ba[2]
             return cat(["krt.coll_reduce(", wrap_list(emit_expr(st, a0), a0[t], e_nullable(a0)), ", ", emit_expr(st, rf), ", ", emit_expr(st, rs), ")"])
+        if bn == "system":
+            return cat(["krt.system(", wrap_str(emit_expr(st, a0), a0[t], e_nullable(a0)), ")"])
+        if bn == "assert":
+            dict amsg = ba[1]
+            return cat(["krt.do_assert(", emit_expr(st, a0), ", ", wrap_str(emit_expr(st, amsg), amsg[t], e_nullable(amsg)), ")"])
+        if bn == "expect":
+            return cat(["krt.expect_new(", emit_expr(st, a0), ")"])
         if bn == "read_file":
             return cat(["krt.read_file(", wrap_str(emit_expr(st, a0), a0[t], e_nullable(a0)), ")"])
         if bn == "write_file":

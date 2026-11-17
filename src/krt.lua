@@ -863,6 +863,90 @@ function krt.coll_reduce(xs, f, start)
   return acc
 end
 
+-- ---------- assert и expect ----------
+
+function krt.do_assert(cond, msg)
+  if not krt.truthy(cond) then
+    krt.fail("ASSERT_ERROR", msg)
+  end
+  return krt.NONE
+end
+
+local EXPECT_MT = { __kraft = "expect" }
+
+function krt.expect_new(v)
+  return setmetatable({ value = v }, EXPECT_MT)
+end
+
+local function deep_eq(a, b)
+  if a == b then return true end
+  if krt.is_list(a) and krt.is_list(b) then
+    if #a ~= #b then return false end
+    for i = 1, #a do
+      if not deep_eq(a[i], b[i]) then return false end
+    end
+    return true
+  end
+  if krt.is_dict(a) and krt.is_dict(b) then
+    if #a.keys ~= #b.keys then return false end
+    for i = 1, #a.keys do
+      local p = dict_pos(b, a.keys[i])
+      if not p then return false end
+      if not deep_eq(a.vals[i], b.vals[p]) then return false end
+    end
+    return true
+  end
+  return false
+end
+
+function krt.expect_equals(e, x)
+  if not deep_eq(e.value, x) then
+    krt.fail("EXPECT_ERROR", "expected equals " .. krt.tostr_inner(x) ..
+      ", found " .. krt.tostr_inner(e.value))
+  end
+  return krt.NONE
+end
+
+function krt.expect_true(e)
+  if e.value ~= true then
+    krt.fail("EXPECT_ERROR", "expected TRUE, found " .. krt.tostr_inner(e.value))
+  end
+  return krt.NONE
+end
+
+function krt.expect_false(e)
+  if e.value ~= false then
+    krt.fail("EXPECT_ERROR", "expected FALSE, found " .. krt.tostr_inner(e.value))
+  end
+  return krt.NONE
+end
+
+function krt.expect_none(e)
+  if e.value ~= krt.NONE then
+    krt.fail("EXPECT_ERROR", "expected NONE, found " .. krt.tostr_inner(e.value))
+  end
+  return krt.NONE
+end
+
+function krt.expect_contains(e, x)
+  local v = e.value
+  local ok = false
+  if type(v) == "string" then
+    ok = krt.str_contains(v, krt.as_str(x))
+  elseif krt.is_list(v) then
+    ok = krt.list_contains(v, x)
+  elseif krt.is_dict(v) then
+    ok = krt.dict_contains(v, krt.as_str(x))
+  else
+    krt.fail("TYPE_MISMATCH_ERROR", "contains: expected str, list or dict, found " .. krt.typeof(v))
+  end
+  if not ok then
+    krt.fail("EXPECT_ERROR", "expected " .. krt.tostr_inner(v) ..
+      " to contain " .. krt.tostr_inner(x))
+  end
+  return krt.NONE
+end
+
 -- ---------- сравнение значений неизвестного типа ----------
 
 local function order_pair(a, b)
@@ -933,6 +1017,14 @@ end
 
 function krt.time_ms()
   return os.clock() * 1000
+end
+
+function krt.system(cmd)
+  local st = os.execute(cmd)
+  if st == nil then return -1 end
+  local sig = st % 256
+  if sig ~= 0 then return 128 + sig end
+  return math.floor(st / 256)
 end
 
 function krt.is_tty()
