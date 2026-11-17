@@ -418,6 +418,15 @@ function krt.index(v, i)
   krt.fail("TYPE_MISMATCH_ERROR", "expected list or str, found " .. krt.typeof(v))
 end
 
+-- Запись по индексу значения внутреннего типа any: только список.
+function krt.index_set(v, i, x)
+  if krt.is_list(v) then return krt.list_replace(v, i, x) end
+  if type(v) == "string" then
+    krt.fail("TYPE_ERROR", "str is immutable")
+  end
+  krt.fail("TYPE_MISMATCH_ERROR", "expected list, found " .. krt.typeof(v))
+end
+
 function krt.slice(v, from, to, step)
   if krt.is_list(v) then return krt.list_slice(v, from, to, step) end
   if type(v) == "string" then return krt.str_slice(v, from, to, step) end

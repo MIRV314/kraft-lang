@@ -1798,7 +1798,23 @@ func parse_block(dict st, bool top) -> list:
                 dict e = parse_expr(st, 0)
                 if st[err]:
                     return stmts
-                node = {k: "exprstmt", expr: e, line: e[line], col: e[col]}
+                if tok_is(tk(st), "op", "="):
+                    str ek = e[k]
+                    if ek != "index" AND ek != "dget":
+                        fail(st, {line: e[line], col: e[col]}, "TYPE_ERROR", "variable or index as assignment target", ek)
+                        return stmts
+                    if ek == "index":
+                        dict seb = e[base]
+                        if seb[t] == "str":
+                            fail(st, {line: e[line], col: e[col]}, "TYPE_ERROR", "mutable index target", "str is immutable")
+                            return stmts
+                    dict eq = advance(st)
+                    dict eval2 = parse_expr(st, 0)
+                    if st[err]:
+                        return stmts
+                    node = {k: "setindex", target: e, expr: eval2, line: eq[line], col: eq[col]}
+                else:
+                    node = {k: "exprstmt", expr: e, line: e[line], col: e[col]}
             if NOT decl_block:
                 stmts.add(node)
                 if NOT block_stmt:
@@ -2280,6 +2296,23 @@ func emit_stmts(dict st, list stmts) -> str:
             else:
                 ex = cat(["krt.pow(", lhs, ", ", rhs, ")"])
             emit_line(st, cat([s[lua], " = ", ex]))
+        elif sk == "setindex":
+            dict tg = s[target]
+            dict tv = s[expr]
+            str tvx = emit_expr(st, tv)
+            if tg[k] == "dget":
+                dict tb = tg[base]
+                str tdx = wrap_dict(emit_expr(st, tb), tb[t], e_nullable(tb))
+                emit_line(st, cat(["krt.dict_set(", tdx, ", ", lua_str(tg[key]), ", ", tvx, ")"]))
+            else:
+                dict tib = tg[base]
+                dict tii = tg[index]
+                str tbx = emit_expr(st, tib)
+                str tix = wrap_flint(emit_expr(st, tii), tii[t], e_nullable(tii))
+                if tib[t] == "list":
+                    emit_line(st, cat(["krt.list_replace(", wrap_list(tbx, tib[t], e_nullable(tib)), ", ", tix, ", ", tvx, ")"]))
+                else:
+                    emit_line(st, cat(["krt.index_set(", tbx, ", ", tix, ", ", tvx, ")"]))
         elif sk == "exprstmt":
             emit_line(st, emit_expr(st, s[expr]))
         elif sk == "if":
