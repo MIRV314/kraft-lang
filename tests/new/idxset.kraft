@@ -1,0 +1,17 @@
+list xs = [10, 20, 30]
+xs[0] = 99
+xs[-1] = 77
+show({xs})
+
+dict d = {a: 1, b: 2}
+d[a] = 5
+d["c"] = 6
+show({d})
+
+list nested = [[1, 2], [3, 4]]
+nested[1][0] = 9
+show({nested})
+
+list box = [xs]
+box[0][1] = 55
+show({xs})

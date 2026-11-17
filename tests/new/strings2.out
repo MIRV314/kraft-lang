@@ -1,0 +1,16 @@
+[ABC]
+[abc]
+[Hello World]
+[Hello, World]
+[Hello, World  ]
+[  Hello, World]
+[Hello, World]
+9
+TRUE
+["a", "b", "c"]
+["a", "b,c"]
+["a", "b", "c"]
+["a", "", "b"]
+ba
+bana
+banana

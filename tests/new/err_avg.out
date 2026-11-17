@@ -1,0 +1,3 @@
+VALUE_ERROR: tests/new/err_avg.kraft:1
+    1 | show({avg([])})
+        ^ avg of empty list

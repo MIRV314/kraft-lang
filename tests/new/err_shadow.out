@@ -1,0 +1,3 @@
+REDECLARE_ERROR: tests/new/err_shadow.kraft:2
+    2 | func f(flint total):
+                     ^ expected parameter name, found global 'total' is already declared

@@ -1,0 +1,3 @@
+TYPE_ERROR: tests/new/err_indexstr.kraft:2
+    2 | s[0] = "x"
+         ^ expected mutable index target, found str is immutable

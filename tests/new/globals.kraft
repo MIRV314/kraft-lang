@@ -1,0 +1,20 @@
+flint total = 0
+str label = "sum"
+
+func add(flint n):
+    ext total
+    total += n
+
+func view() -> str:
+    return "{label}: {total}"
+
+add(5)
+add(7)
+show({view()})
+label = "total"
+show({label})
+
+if TRUE:
+    bool:
+        ready = TRUE
+show({ready})

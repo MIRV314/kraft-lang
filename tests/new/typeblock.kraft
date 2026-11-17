@@ -1,0 +1,19 @@
+str:
+    a = "one"
+    b = "two"
+    c = "{a} {b}"
+show({c})
+
+flint:
+    x = 1
+    y = x + 2
+show({y})
+
+list:
+    xs = [1, 2]
+xs.add(3)
+show({xs})
+
+dict:
+    d = {k: "v"}
+show({d})
