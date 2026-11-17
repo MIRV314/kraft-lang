@@ -75,6 +75,24 @@ check "self-contained" $?
 [ $? -eq 1 ]
 check "usage" $?
 
+# 7. Обёртка ./xkraft запускает компилятор на Kraft с новыми возможностями.
+cat > "$tmp/feat.kraft" <<'EOF'
+flint total = 0
+func add(flint n):
+    ext total
+    total += n
+add(2)
+show({total})
+EOF
+out=$(./xkraft "$tmp/feat.kraft")
+[ "$out" = "2" ]
+check "xkraft-wrapper" $?
+
+./xkraft -c "$tmp/feat.kraft"
+out=$("$tmp/feat.lua")
+[ "$out" = "2" ]
+check "xkraft-compile-c" $?
+
 echo "---"
 echo "$((total - fail))/$total passed"
 [ "$fail" -eq 0 ]

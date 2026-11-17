@@ -14,12 +14,12 @@ Kraft — статически типизированный язык: один �
 Никакого C, никакой сборки: одна команда — один запуск.
 
 ```sh
-./kraft examples/hello.kraft          # скомпилировать и запустить
+./kraft examples/hello.kraft          # эталон v0.1: скомпилировать и запустить
 ./kraft -c examples/hello.kraft       # собрать examples/hello.lua рядом
 ./kraft examples/hello.kraft один два # аргументы программы
 
-./kraft xkraft.kraft examples/hello.kraft    # то же самое через xkraft
-./kraft xkraft.kraft -c examples/hello.kraft # .lua рядом с исходником
+./xkraft examples/features.kraft      # xkraft: новые возможности ядра
+./xkraft -c examples/features.kraft   # .lua рядом с исходником
 ```
 
 ## Почему Kraft
@@ -42,18 +42,19 @@ Kraft — статически типизированный язык: один �
   встроенных. Сам `xkraft.kraft` остаётся на синтаксисе v0.1.
 - Дальше — стандартная библиотека на Kraft и публикация на GitHub.
 
-Важно: новые возможности доступны через `./kraft xkraft.kraft file.kraft`.
+Важно: новые возможности доступны через `./xkraft file.kraft`.
 Эталонный `./kraft file.kraft` остаётся компилятором v0.1.
 
 Структура репозитория:
 
-- `kraft` — обёртка: компилирует `.kraft` во временный Lua и запускает
-  `luajit`. `-c` пишет самодостаточный `.lua` с шебангом рядом с исходником,
-  скрытый `--emit-lua` печатает сгенерированный Lua.
+- `kraft` — обёртка эталонного v0.1: компилирует `.kraft` во временный Lua и
+  запускает `luajit`. `-c` пишет самодостаточный `.lua` с шебангом рядом с
+  исходником, скрытый `--emit-lua` печатает сгенерированный Lua.
 - `src/` — эталонный компилятор: `lexer.lua`, `parser.lua`, `codegen.lua`
   и рантайм `krt.lua`, который вшивается в каждую программу.
 - `xkraft.kraft` — компилятор на самом Kraft: лексер, парсер, проверки и
   кодогенератор. Собирается эталонным `kraft` и компилирует себя.
+- `xkraft` — обёртка `./xkraft file.kraft` для компилятора на Kraft.
 - `examples/` — примеры.
 - `tests/` — `run.sh` (поведение v0.1 и ошибки), `cli.sh` (`-c`, аргументы,
   stdin), `xkraft.sh` (xkraft против эталона и самокомпиляция) и `new.sh`
@@ -67,11 +68,15 @@ Kraft — статически типизированный язык: один �
 только замороженный v0.1 и рантайм `src/krt.lua`.
 
 ```sh
-./kraft xkraft.kraft file.kraft           # скомпилировать и напечатать Lua
-./kraft xkraft.kraft -c file.kraft        # собрать file.lua рядом
-./kraft xkraft.kraft --tokens file.kraft  # посмотреть токены
-./kraft xkraft.kraft examples/features.kraft  # новые возможности ядра
+./xkraft file.kraft                # скомпилировать и запустить
+./xkraft -c file.kraft             # собрать file.lua рядом
+./xkraft --tokens file.kraft       # посмотреть токены
+./xkraft examples/features.kraft   # новые возможности ядра
 ```
+
+Внутри обёртка собирает `xkraft.kraft` эталонным `kraft`, запускает
+полученный Lua на LuaJIT и передаёт программе её аргументы. `-c` собирает
+`.lua` рядом с исходником и делает его исполняемым.
 
 Сам `xkraft.kraft` написан на замороженном v0.1, но для компилируемых
 программ реализует новые возможности ядра: глобальные и `ext`, блоки типов,
