@@ -842,6 +842,27 @@ function krt.coll_clear(coll)
   krt.fail("TYPE_MISMATCH_ERROR", "expected list or dict, found " .. krt.typeof(coll))
 end
 
+function krt.coll_map(xs, f)
+  local out = krt.list({})
+  for i = 1, #xs do out[i] = f(xs[i]) end
+  return out
+end
+
+function krt.coll_filter(xs, f)
+  local out = krt.list({})
+  for i = 1, #xs do
+    local v = xs[i]
+    if krt.truthy(f(v)) then out[#out + 1] = v end
+  end
+  return out
+end
+
+function krt.coll_reduce(xs, f, start)
+  local acc = start
+  for i = 1, #xs do acc = f(acc, xs[i]) end
+  return acc
+end
+
 -- ---------- сравнение значений неизвестного типа ----------
 
 local function order_pair(a, b)

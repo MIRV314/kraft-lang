@@ -592,6 +592,12 @@ func builtin_info(str name) -> dict:
         return {ok: TRUE, n: 1, ret: "list", a1: "list"}
     if name == "clear":
         return {ok: TRUE, n: 1, ret: "NONE", a1: "listdict"}
+    if name == "map":
+        return {ok: TRUE, n: 2, ret: "list", a1: "list", a2: "func"}
+    if name == "filter":
+        return {ok: TRUE, n: 2, ret: "list", a1: "list", a2: "func"}
+    if name == "reduce":
+        return {ok: TRUE, n: 3, ret: "any", a1: "list", a2: "func", a3: "any"}
     if name == "read_file":
         return {ok: TRUE, n: 1, ret: "str", a1: "str"}
     if name == "write_file":
@@ -750,17 +756,52 @@ func parse_expr(dict st, flint min_bp) -> dict:
         advance(st)
         expect(st, "op", "(", "'('")
         list bargs = []
-        if NOT tok_is(tk(st), "op", ")"):
-            while TRUE:
-                dict ba1 = parse_expr(st, 0)
+        if bn == "map" OR bn == "filter" OR bn == "reduce":
+            dict hcoll = parse_expr(st, 0)
+            if st[err]:
+                return {}
+            bargs.add(hcoll)
+            expect(st, "op", ",", "','")
+            if st[err]:
+                return {}
+            dict hft = expect(st, "name", "", "function name")
+            if st[err]:
+                return {}
+            str hfn = hft[value]
+            dict hfuncs = st[funcs]
+            if NOT hfuncs.contains(hfn):
+                fail(st, hft, "NAME_ERROR", "declared function", cat(["undeclared function '", hfn, "'"]))
+                return {}
+            dict hfi = hfuncs.take(hfn)
+            flint hwant = 1
+            if bn == "reduce":
+                hwant = 2
+            if len(hfi[params]) != hwant:
+                fail(st, hft, "ARGCOUNT_ERROR", cat([str(hwant), " parameter(s) in '", hfn, "'"]), cat([str(len(hfi[params])), " parameter(s)"]))
+                return {}
+            dict hnames = st[fnames]
+            bargs.add({k: "func_ref", name: hfn, lua: hnames.take(hfn), t: "func", line: hft[line], col: hft[col]})
+            if bn == "reduce":
+                expect(st, "op", ",", "','")
                 if st[err]:
                     return {}
-                bargs.add(ba1)
-                if tok_is(tk(st), "op", ","):
-                    advance(st)
-                else:
-                    break
-        expect(st, "op", ")", "')'")
+                dict hstart = parse_expr(st, 0)
+                if st[err]:
+                    return {}
+                bargs.add(hstart)
+            expect(st, "op", ")", "')'")
+        else:
+            if NOT tok_is(tk(st), "op", ")"):
+                while TRUE:
+                    dict ba1 = parse_expr(st, 0)
+                    if st[err]:
+                        return {}
+                    bargs.add(ba1)
+                    if tok_is(tk(st), "op", ","):
+                        advance(st)
+                    else:
+                        break
+            expect(st, "op", ")", "')'")
         if st[err]:
             return {}
         dict bi = builtin_info(bn)
@@ -791,6 +832,8 @@ func parse_expr(dict st, flint min_bp) -> dict:
                 str bspec = bi[a1]
                 if bai == 1:
                     bspec = bi[a2]
+                elif bai == 2:
+                    bspec = bi[a3]
                 if NOT builtin_arg_ok(bspec, ba2[t]):
                     fail(st, {line: ba2[line], col: ba2[col]}, "TYPE_ERROR", cat(["argument ", str(bai + 1), " of '", bn, "' to be ", builtin_arg_desc(bspec)]), ba2[t])
                     return {}
@@ -2012,6 +2055,9 @@ func emit_expr(dict st, dict e) -> str:
     if k == "var":
         return e[lua]
 
+    if k == "func_ref":
+        return e[lua]
+
     if k == "str" OR k == "call":
         list parts = e[parts]
         list pieces = []
@@ -2099,6 +2145,13 @@ func emit_expr(dict st, dict e) -> str:
             if a0[t] == "dict":
                 return cat(["krt.coll_clear(", wrap_dict(emit_expr(st, a0), a0[t], e_nullable(a0)), ")"])
             return cat(["krt.coll_clear(", wrap_list(emit_expr(st, a0), a0[t], e_nullable(a0)), ")"])
+        if bn == "map" OR bn == "filter":
+            dict hf = ba[1]
+            return cat(["krt.coll_", bn, "(", wrap_list(emit_expr(st, a0), a0[t], e_nullable(a0)), ", ", emit_expr(st, hf), ")"])
+        if bn == "reduce":
+            dict rf = ba[1]
+            dict rs = ba[2]
+            return cat(["krt.coll_reduce(", wrap_list(emit_expr(st, a0), a0[t], e_nullable(a0)), ", ", emit_expr(st, rf), ", ", emit_expr(st, rs), ")"])
         if bn == "read_file":
             return cat(["krt.read_file(", wrap_str(emit_expr(st, a0), a0[t], e_nullable(a0)), ")"])
         if bn == "write_file":
