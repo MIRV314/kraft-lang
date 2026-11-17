@@ -534,6 +534,8 @@ func builtin_arg_ok(str spec, str t) -> bool:
         return TRUE
     if spec == "strlistdict":
         return t == "str" OR t == "list" OR t == "dict"
+    if spec == "listdict":
+        return t == "list" OR t == "dict"
     return t == spec
 
 func builtin_arg_desc(str spec) -> str:
@@ -541,6 +543,8 @@ func builtin_arg_desc(str spec) -> str:
         return "any value"
     if spec == "strlistdict":
         return "str, list, dict"
+    if spec == "listdict":
+        return "list, dict"
     return spec
 
 func builtin_info(str name) -> dict:
@@ -572,6 +576,22 @@ func builtin_info(str name) -> dict:
         return {ok: TRUE, variadic: TRUE, min: 1, max: 9, ret: "flint", a1: "flint"}
     if name == "max":
         return {ok: TRUE, variadic: TRUE, min: 1, max: 9, ret: "flint", a1: "flint"}
+    if name == "sum":
+        return {ok: TRUE, n: 1, ret: "flint", a1: "list"}
+    if name == "avg":
+        return {ok: TRUE, n: 1, ret: "flint", a1: "list"}
+    if name == "keys":
+        return {ok: TRUE, n: 1, ret: "list", a1: "dict"}
+    if name == "values":
+        return {ok: TRUE, n: 1, ret: "list", a1: "dict"}
+    if name == "upk":
+        return {ok: TRUE, n: 1, ret: "str", a1: "listdict"}
+    if name == "sort":
+        return {ok: TRUE, n: 1, ret: "list", a1: "list"}
+    if name == "reverse":
+        return {ok: TRUE, n: 1, ret: "list", a1: "list"}
+    if name == "clear":
+        return {ok: TRUE, n: 1, ret: "NONE", a1: "listdict"}
     if name == "read_file":
         return {ok: TRUE, n: 1, ret: "str", a1: "str"}
     if name == "write_file":
@@ -620,13 +640,15 @@ func method_info(str base, str name) -> dict:
             return {ok: TRUE, min: 1, max: 1, a1: "str", a2: "any", rt: "str_count", ret: "flint", nullable: FALSE}
     elif base == "list":
         if name == "add":
-            return {ok: TRUE, min: 1, max: 1, a1: "any", a2: "any", rt: "list_add", ret: "NONE", nullable: FALSE}
+            return {ok: TRUE, min: 1, max: 2, a1: "any", a2: "any", rt: "list_add", ret: "NONE", nullable: FALSE}
         if name == "del":
-            return {ok: TRUE, min: 1, max: 1, a1: "flint", a2: "any", rt: "list_del", ret: "NONE", nullable: FALSE}
+            return {ok: TRUE, min: 0, max: 1, a1: "flint", a2: "any", rt: "list_del", ret: "NONE", nullable: FALSE}
         if name == "remove":
-            return {ok: TRUE, min: 1, max: 1, a1: "any", a2: "any", rt: "list_remove", ret: "bool", nullable: FALSE}
+            return {ok: TRUE, min: 1, max: 2, a1: "any", a2: "flint", rt: "list_remove", ret: "bool", nullable: FALSE}
         if name == "replace":
             return {ok: TRUE, min: 2, max: 2, a1: "flint", a2: "any", rt: "list_replace", ret: "NONE", nullable: FALSE}
+        if name == "replace_value":
+            return {ok: TRUE, min: 2, max: 2, a1: "any", a2: "any", rt: "list_replace_value", ret: "bool", nullable: FALSE}
         if name == "contains":
             return {ok: TRUE, min: 1, max: 1, a1: "any", a2: "any", rt: "list_contains", ret: "bool", nullable: FALSE}
         if name == "count":
@@ -645,7 +667,7 @@ func method_info(str base, str name) -> dict:
         if name == "contains":
             return {ok: TRUE, min: 1, max: 1, a1: "str", a2: "any", rt: "dict_contains", ret: "bool", nullable: FALSE}
         if name == "merge":
-            return {ok: TRUE, min: 1, max: 1, a1: "dict", a2: "any", rt: "dict_merge", ret: "NONE", nullable: FALSE}
+            return {ok: TRUE, min: 1, max: 1, a1: "dict", a2: "any", rt: "dict_merge", ret: "dict", nullable: FALSE}
     return {ok: FALSE}
 
 func parse_type_name(dict st) -> str:
@@ -2057,6 +2079,26 @@ func emit_expr(dict st, dict e) -> str:
                 else:
                     mvals.add(wrap_flint(emit_expr(st, mnode), mnode[t], e_nullable(mnode)))
             return cat(["krt.num_", bn, "(", mvals.join(", "), ")"])
+        if bn == "sum":
+            return cat(["krt.coll_sum(", wrap_list(emit_expr(st, a0), a0[t], e_nullable(a0)), ")"])
+        if bn == "avg":
+            return cat(["krt.coll_avg(", wrap_list(emit_expr(st, a0), a0[t], e_nullable(a0)), ")"])
+        if bn == "keys":
+            return cat(["krt.coll_keys(", wrap_dict(emit_expr(st, a0), a0[t], e_nullable(a0)), ")"])
+        if bn == "values":
+            return cat(["krt.coll_values(", wrap_dict(emit_expr(st, a0), a0[t], e_nullable(a0)), ")"])
+        if bn == "upk":
+            if a0[t] == "dict":
+                return cat(["krt.coll_upk(", wrap_dict(emit_expr(st, a0), a0[t], e_nullable(a0)), ")"])
+            return cat(["krt.coll_upk(", wrap_list(emit_expr(st, a0), a0[t], e_nullable(a0)), ")"])
+        if bn == "sort":
+            return cat(["krt.coll_sort(", wrap_list(emit_expr(st, a0), a0[t], e_nullable(a0)), ")"])
+        if bn == "reverse":
+            return cat(["krt.coll_reverse(", wrap_list(emit_expr(st, a0), a0[t], e_nullable(a0)), ")"])
+        if bn == "clear":
+            if a0[t] == "dict":
+                return cat(["krt.coll_clear(", wrap_dict(emit_expr(st, a0), a0[t], e_nullable(a0)), ")"])
+            return cat(["krt.coll_clear(", wrap_list(emit_expr(st, a0), a0[t], e_nullable(a0)), ")"])
         if bn == "read_file":
             return cat(["krt.read_file(", wrap_str(emit_expr(st, a0), a0[t], e_nullable(a0)), ")"])
         if bn == "write_file":

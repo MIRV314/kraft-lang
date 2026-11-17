@@ -608,13 +608,29 @@ function krt.slice(v, from, to, step)
   krt.fail("TYPE_MISMATCH_ERROR", "expected list or str, found " .. krt.typeof(v))
 end
 
-function krt.list_add(xs, v)
-  xs[#xs + 1] = v
+function krt.list_add(xs, a, b)
+  if b == nil then
+    xs[#xs + 1] = a
+    return krt.NONE
+  end
+  local n = #xs
+  local i = math.floor(krt.as_flint(a))
+  if i < 0 then i = i + n end
+  if i < 0 then i = 0 end
+  if i > n then i = n end
+  table.insert(xs, i + 1, b)
   return krt.NONE
 end
 
 function krt.list_del(xs, i)
   local n = #xs
+  if i == nil then
+    if n == 0 then
+      krt.fail("VALUE_ERROR", "del from empty list")
+    end
+    table.remove(xs, n)
+    return krt.NONE
+  end
   i = math.floor(i)
   if i < 0 then i = i + n end
   if i < 0 or i >= n then
@@ -624,10 +640,26 @@ function krt.list_del(xs, i)
   return krt.NONE
 end
 
-function krt.list_remove(xs, v)
-  for i = 1, #xs do
-    if xs[i] == v then
+function krt.list_remove(xs, v, count)
+  if count == nil then count = -1 end
+  count = math.floor(krt.as_flint(count))
+  local removed = 0
+  local i = 1
+  while i <= #xs do
+    if xs[i] == v and (count < 0 or removed < count) then
       table.remove(xs, i)
+      removed = removed + 1
+    else
+      i = i + 1
+    end
+  end
+  return removed > 0
+end
+
+function krt.list_replace_value(xs, a, b)
+  for i = 1, #xs do
+    if xs[i] == a then
+      xs[i] = b
       return true
     end
   end
@@ -728,10 +760,86 @@ function krt.dict_contains(d, k)
 end
 
 function krt.dict_merge(d, other)
-  for i = 1, #other.keys do
-    krt.dict_set(d, other.keys[i], other.vals[i])
+  local out = krt.dict()
+  for i = 1, #d.keys do
+    krt.dict_set(out, d.keys[i], d.vals[i])
   end
-  return krt.NONE
+  for i = 1, #other.keys do
+    krt.dict_set(out, other.keys[i], other.vals[i])
+  end
+  return out
+end
+
+-- ---------- коллекции: сводки и копии ----------
+
+function krt.coll_sum(xs)
+  local total = 0
+  for i = 1, #xs do
+    total = total + krt.as_flint(xs[i])
+  end
+  return total
+end
+
+function krt.coll_avg(xs)
+  local n = #xs
+  if n == 0 then krt.fail("VALUE_ERROR", "avg of empty list") end
+  return krt.coll_sum(xs) / n
+end
+
+function krt.coll_keys(d)
+  local out = krt.list({})
+  for i = 1, #d.keys do out[i] = d.keys[i] end
+  return out
+end
+
+function krt.coll_values(d)
+  local out = krt.list({})
+  for i = 1, #d.vals do out[i] = d.vals[i] end
+  return out
+end
+
+function krt.coll_upk(coll)
+  local out = {}
+  if krt.is_dict(coll) then
+    for i = 1, #coll.keys do
+      out[#out + 1] = coll.keys[i] .. ": " .. krt.tostr_inner(coll.vals[i])
+    end
+    return table.concat(out, ", ")
+  end
+  if krt.is_list(coll) then
+    for i = 1, #coll do out[#out + 1] = krt.tostr_inner(coll[i]) end
+    return table.concat(out, ", ")
+  end
+  krt.fail("TYPE_MISMATCH_ERROR", "expected list or dict, found " .. krt.typeof(coll))
+end
+
+function krt.coll_sort(xs)
+  local out = krt.list({})
+  for i = 1, #xs do out[i] = krt.as_flint(xs[i]) end
+  table.sort(out)
+  return out
+end
+
+function krt.coll_reverse(xs)
+  local out = krt.list({})
+  local n = #xs
+  for i = 1, n do out[i] = xs[n - i + 1] end
+  return out
+end
+
+function krt.coll_clear(coll)
+  if krt.is_list(coll) then
+    for i = #coll, 1, -1 do table.remove(coll, i) end
+    return krt.NONE
+  end
+  if krt.is_dict(coll) then
+    for i = #coll.keys, 1, -1 do
+      table.remove(coll.keys, i)
+      table.remove(coll.vals, i)
+    end
+    return krt.NONE
+  end
+  krt.fail("TYPE_MISMATCH_ERROR", "expected list or dict, found " .. krt.typeof(coll))
 end
 
 -- ---------- сравнение значений неизвестного типа ----------

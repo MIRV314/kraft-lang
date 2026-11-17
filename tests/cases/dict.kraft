@@ -10,8 +10,8 @@ show({user})
 user.remove("возраст")
 show({user})
 dict extra = {страна: "РФ"}
-user.merge(extra)
-show({user})
+dict merged = user.merge(extra)
+show({merged})
 show({user is dict})
 show({user is list})
 list missing = user[нет]
