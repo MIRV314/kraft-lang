@@ -558,6 +558,20 @@ func builtin_info(str name) -> dict:
         return {ok: TRUE, n: 1, ret: "str", a1: "str"}
     if name == "title":
         return {ok: TRUE, n: 1, ret: "str", a1: "str"}
+    if name == "abs":
+        return {ok: TRUE, n: 1, ret: "flint", a1: "flint"}
+    if name == "round":
+        return {ok: TRUE, n: 1, ret: "flint", a1: "flint"}
+    if name == "floor":
+        return {ok: TRUE, n: 1, ret: "flint", a1: "flint"}
+    if name == "ceil":
+        return {ok: TRUE, n: 1, ret: "flint", a1: "flint"}
+    if name == "sqrt":
+        return {ok: TRUE, n: 1, ret: "flint", a1: "flint"}
+    if name == "min":
+        return {ok: TRUE, variadic: TRUE, min: 1, max: 9, ret: "flint", a1: "flint"}
+    if name == "max":
+        return {ok: TRUE, variadic: TRUE, min: 1, max: 9, ret: "flint", a1: "flint"}
     if name == "read_file":
         return {ok: TRUE, n: 1, ret: "str", a1: "str"}
     if name == "write_file":
@@ -728,20 +742,37 @@ func parse_expr(dict st, flint min_bp) -> dict:
         if st[err]:
             return {}
         dict bi = builtin_info(bn)
-        flint np = bi[n]
-        if len(bargs) != np:
-            fail(st, t, "ARGCOUNT_ERROR", cat([str(np), " argument(s) to '", bn, "'"]), cat([str(len(bargs)), " argument(s)"]))
-            return {}
+        bool bvari = FALSE
+        if bi.contains("variadic"):
+            bvari = bi[variadic]
+        if bvari:
+            if len(bargs) < bi[min] OR len(bargs) > bi[max]:
+                fail(st, t, "ARGCOUNT_ERROR", cat([str(bi[min]), "..", str(bi[max]), " argument(s) to '", bn, "'"]), cat([str(len(bargs)), " argument(s)"]))
+                return {}
+        else:
+            flint np = bi[n]
+            if len(bargs) != np:
+                fail(st, t, "ARGCOUNT_ERROR", cat([str(np), " argument(s) to '", bn, "'"]), cat([str(len(bargs)), " argument(s)"]))
+                return {}
         flint bai = 0
         while bai < len(bargs):
             dict ba2 = bargs[bai]
-            str bspec = bi[a1]
-            if bai == 1:
-                bspec = bi[a2]
-            if NOT builtin_arg_ok(bspec, ba2[t]):
-                fail(st, {line: ba2[line], col: ba2[col]}, "TYPE_ERROR", cat(["argument ", str(bai + 1), " of '", bn, "' to be ", builtin_arg_desc(bspec)]), ba2[t])
-                return {}
-            bai += 1
+            if bvari:
+                if len(bargs) == 1 AND (ba2[t] == "list" OR ba2[t] == "any" OR ba2[t] == "NONE"):
+                    bai += 1
+                else:
+                    if NOT builtin_arg_ok(bi[a1], ba2[t]):
+                        fail(st, {line: ba2[line], col: ba2[col]}, "TYPE_ERROR", cat(["argument ", str(bai + 1), " of '", bn, "' to be flint"]), ba2[t])
+                        return {}
+                    bai += 1
+            else:
+                str bspec = bi[a1]
+                if bai == 1:
+                    bspec = bi[a2]
+                if NOT builtin_arg_ok(bspec, ba2[t]):
+                    fail(st, {line: ba2[line], col: ba2[col]}, "TYPE_ERROR", cat(["argument ", str(bai + 1), " of '", bn, "' to be ", builtin_arg_desc(bspec)]), ba2[t])
+                    return {}
+                bai += 1
         e = {k: "builtin", name: bn, args: bargs, t: bi[ret], line: t[line], col: t[col]}
     elif ty == "name" AND is_template_func(t[value]):
         pfn = t[value]
@@ -2007,6 +2038,25 @@ func emit_expr(dict st, dict e) -> str:
             return cat(["krt.str_low(", wrap_str(emit_expr(st, a0), a0[t], e_nullable(a0)), ")"])
         if bn == "title":
             return cat(["krt.str_title(", wrap_str(emit_expr(st, a0), a0[t], e_nullable(a0)), ")"])
+        if bn == "abs":
+            return cat(["krt.num_abs(", wrap_flint(emit_expr(st, a0), a0[t], e_nullable(a0)), ")"])
+        if bn == "round":
+            return cat(["krt.num_round(", wrap_flint(emit_expr(st, a0), a0[t], e_nullable(a0)), ")"])
+        if bn == "floor":
+            return cat(["krt.num_floor(", wrap_flint(emit_expr(st, a0), a0[t], e_nullable(a0)), ")"])
+        if bn == "ceil":
+            return cat(["krt.num_ceil(", wrap_flint(emit_expr(st, a0), a0[t], e_nullable(a0)), ")"])
+        if bn == "sqrt":
+            return cat(["krt.num_sqrt(", wrap_flint(emit_expr(st, a0), a0[t], e_nullable(a0)), ")"])
+        if bn == "min" OR bn == "max":
+            list mvals = []
+            for mn0 in ba:
+                dict mnode = mn0
+                if mnode[t] == "list":
+                    mvals.add(wrap_list(emit_expr(st, mnode), mnode[t], e_nullable(mnode)))
+                else:
+                    mvals.add(wrap_flint(emit_expr(st, mnode), mnode[t], e_nullable(mnode)))
+            return cat(["krt.num_", bn, "(", mvals.join(", "), ")"])
         if bn == "read_file":
             return cat(["krt.read_file(", wrap_str(emit_expr(st, a0), a0[t], e_nullable(a0)), ")"])
         if bn == "write_file":

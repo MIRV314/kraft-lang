@@ -148,6 +148,71 @@ function krt.pow(a, b)
   return a ^ b
 end
 
+-- ---------- числа ----------
+
+function krt.num_abs(n)
+  return math.abs(krt.as_flint(n))
+end
+
+function krt.num_round(n)
+  n = krt.as_flint(n)
+  if n >= 0 then return math.floor(n + 0.5) end
+  return math.ceil(n - 0.5)
+end
+
+function krt.num_floor(n)
+  return math.floor(krt.as_flint(n))
+end
+
+function krt.num_ceil(n)
+  return math.ceil(krt.as_flint(n))
+end
+
+function krt.num_sqrt(n)
+  n = krt.as_flint(n)
+  if n < 0 then
+    krt.fail("VALUE_ERROR", "sqrt of negative number")
+  end
+  return math.sqrt(n)
+end
+
+local function extrema(args, count, want_max)
+  local m
+  if count == 1 and krt.is_list(args[1]) then
+    local xs = args[1]
+    if #xs == 0 then krt.fail("VALUE_ERROR", "min/max of empty list") end
+    m = krt.as_flint(xs[1])
+    for i = 2, #xs do
+      local v = krt.as_flint(xs[i])
+      if want_max then
+        if v > m then m = v end
+      else
+        if v < m then m = v end
+      end
+    end
+    return m
+  end
+  if count == 0 then krt.fail("VALUE_ERROR", "min/max needs a value") end
+  m = krt.as_flint(args[1])
+  for i = 2, count do
+    local v = krt.as_flint(args[i])
+    if want_max then
+      if v > m then m = v end
+    else
+      if v < m then m = v end
+    end
+  end
+  return m
+end
+
+function krt.num_min(...)
+  return extrema({...}, select('#', ...), false)
+end
+
+function krt.num_max(...)
+  return extrema({...}, select('#', ...), true)
+end
+
 -- ---------- проверки типов в рантайме ----------
 
 function krt.as_flint(v)
