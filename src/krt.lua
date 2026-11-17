@@ -279,8 +279,41 @@ function krt.str_slice(s, from, to, step)
   return table.concat(out)
 end
 
-function krt.str_part(s, from, to)
-  return krt.str_slice(s, from, to, 1)
+function krt.str_part(s, sep, maxsplit)
+  if maxsplit == nil then maxsplit = -1 end
+  maxsplit = math.floor(maxsplit)
+  local out = krt.list({})
+  if sep == nil then
+    local chars = krt.utf8_chars(s)
+    local n = #chars
+    local i = 1
+    local splits = 0
+    while i <= n do
+      while i <= n and chars[i]:match("%s") do i = i + 1 end
+      if i > n then break end
+      if maxsplit >= 0 and splits >= maxsplit then
+        out[#out + 1] = table.concat(chars, "", i, n)
+        return out
+      end
+      local start = i
+      while i <= n and not chars[i]:match("%s") do i = i + 1 end
+      out[#out + 1] = table.concat(chars, "", start, i - 1)
+      splits = splits + 1
+    end
+    return out
+  end
+  if sep == "" then krt.fail("VALUE_ERROR", "empty separator") end
+  local start = 1
+  local splits = 0
+  while maxsplit < 0 or splits < maxsplit do
+    local a, b = s:find(sep, start, true)
+    if not a then break end
+    out[#out + 1] = s:sub(start, a - 1)
+    start = b + 1
+    splits = splits + 1
+  end
+  out[#out + 1] = s:sub(start)
+  return out
 end
 
 function krt.str_find(s, sub)
@@ -309,16 +342,93 @@ function krt.str_suff(s, p)
   return p == "" or s:sub(-#p) == p
 end
 
-function krt.str_trim(s)
-  return (s:gsub("^%s+", ""):gsub("%s+$", ""))
+local function trim_set(chars)
+  local set = {}
+  local cs = krt.utf8_chars(chars)
+  for i = 1, #cs do set[cs[i]] = true end
+  return set
 end
 
-function krt.str_triml(s)
-  return (s:gsub("^%s+", ""))
+function krt.str_trim(s, chars)
+  if chars == nil then
+    return (s:gsub("^%s+", ""):gsub("%s+$", ""))
+  end
+  local set = trim_set(chars)
+  local cs = krt.utf8_chars(s)
+  local a, b = 1, #cs
+  while a <= b and set[cs[a]] do a = a + 1 end
+  while b >= a and set[cs[b]] do b = b - 1 end
+  return table.concat(cs, "", a, b)
 end
 
-function krt.str_trimr(s)
-  return (s:gsub("%s+$", ""))
+function krt.str_triml(s, chars)
+  if chars == nil then
+    return (s:gsub("^%s+", ""))
+  end
+  local set = trim_set(chars)
+  local cs = krt.utf8_chars(s)
+  local a, b = 1, #cs
+  while a <= b and set[cs[a]] do a = a + 1 end
+  return table.concat(cs, "", a, b)
+end
+
+function krt.str_trimr(s, chars)
+  if chars == nil then
+    return (s:gsub("%s+$", ""))
+  end
+  local set = trim_set(chars)
+  local cs = krt.utf8_chars(s)
+  local a, b = 1, #cs
+  while b >= a and set[cs[b]] do b = b - 1 end
+  return table.concat(cs, "", a, b)
+end
+
+function krt.str_up(s)
+  return string.upper(s)
+end
+
+function krt.str_low(s)
+  return string.lower(s)
+end
+
+function krt.str_title(s)
+  local chars = krt.utf8_chars(s)
+  local out = {}
+  local in_word = false
+  for i = 1, #chars do
+    local c = chars[i]
+    if c:match("%w") then
+      if in_word then
+        out[#out + 1] = string.lower(c)
+      else
+        out[#out + 1] = string.upper(c)
+      end
+      in_word = true
+    else
+      out[#out + 1] = c
+      in_word = false
+    end
+  end
+  return table.concat(out)
+end
+
+function krt.str_remove(s, sub, count)
+  if sub == "" then return s end
+  if count == nil then count = -1 end
+  count = math.floor(count)
+  if count == 0 then return s end
+  local out = {}
+  local i = 1
+  local removed = 0
+  while count < 0 or removed < count do
+    local a, b = s:find(sub, i, true)
+    if not a then break end
+    out[#out + 1] = s:sub(i, a - 1)
+    i = b + 1
+    removed = removed + 1
+  end
+  out[#out + 1] = s:sub(i)
+  return table.concat(out)
 end
 
 function krt.str_replace(s, old, new)

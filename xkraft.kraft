@@ -29,15 +29,15 @@ func split_lines(str s) -> list:
     flint n = len(s)
     while i < n:
         if s[i] == "\n":
-            str line = s.part(start, i)
+            str line = s[start..i]
             if line.suff("\r"):
-                line = line.part(0, len(line) - 1)
+                line = line[..len(line) - 1]
             out.add(line)
             start = i + 1
         i += 1
-    str last = s.part(start, n)
+    str last = s[start..n]
     if last.suff("\r"):
-        last = last.part(0, len(last) - 1)
+        last = last[..len(last) - 1]
     out.add(last)
     return out
 
@@ -269,7 +269,7 @@ func scan_parts(str line, flint i, flint lineno, bool quoted, str quote) -> dict
                     j += 1
             if j >= n:
                 return {parts: parts, close: i, err: {msg: "unclosed '\{'", col: i + 1}}
-            str inner = line.part(start, j)
+            str inner = line[start..j]
             if inner.trim() == "":
                 return {parts: parts, close: i, err: {msg: "empty substitution '\{\}'", col: i + 1}}
             parts.add({kind: "expr", src: inner, line: lineno, col: start + 1})
@@ -320,14 +320,14 @@ func scan_line(str line, flint i, flint lineno, list tokens) -> dict:
                 j += 1
                 while j < n AND is_digit(line[j]):
                     j += 1
-            str raw = line.part(i, j)
+            str raw = line[i..j]
             tokens.add({type: "number", value: flint(raw), raw: raw, line: lineno, col: i + 1})
             i = j
         elif is_name_start(c):
             flint j2 = i + 1
             while j2 < n AND is_name_char(line[j2]):
                 j2 += 1
-            str word = line.part(i, j2)
+            str word = line[i..j2]
             flint col = i + 1
 
             if is_template_func(word):
@@ -355,8 +355,8 @@ func scan_line(str line, flint i, flint lineno, list tokens) -> dict:
                 tokens.add({type: "name", value: word, line: lineno, col: col})
                 i = j2
         else:
-            str three = line.part(i, i + 3)
-            str two = line.part(i, i + 2)
+            str three = line[i..i + 3]
+            str two = line[i..i + 2]
             if is_op3(three):
                 tokens.add({type: "op", value: three, line: lineno, col: i + 1})
                 i += 3
@@ -385,26 +385,26 @@ func lex(str src, str path) -> dict:
 
         bool skip = FALSE
         if in_block:
-            if trimmed.part(0, 3) == "---":
+            if trimmed[..3] == "---":
                 in_block = FALSE
             skip = TRUE
-        elif trimmed.part(0, 3) == "---":
+        elif trimmed[..3] == "---":
             in_block = TRUE
             skip = TRUE
-        elif trimmed == "" OR trimmed.part(0, 1) == "#":
+        elif trimmed == "" OR trimmed[..1] == "#":
             skip = TRUE
         if NOT skip:
             flint k = 0
             flint ln = len(line)
             while k < ln AND (line[k] == " " OR line[k] == "\t"):
                 k += 1
-            str indent = line.part(0, k)
+            str indent = line[..k]
             if indent.contains(" ") AND indent.contains("\t"):
                 return {tokens: tokens, err: {msg: "mixed tabs and spaces in indentation", line: lineno, col: 1}}
 
             str top = indent_stack[len(indent_stack) - 1]
             if indent != top:
-                if indent.part(0, len(top)) == top:
+                if indent[..len(top)] == top:
                     indent_stack.add(indent)
                     tokens.add({type: "indent", line: lineno, col: 1})
                 else:
@@ -552,6 +552,12 @@ func builtin_info(str name) -> dict:
         return {ok: TRUE, n: 1, ret: "str", a1: "any"}
     if name == "flint":
         return {ok: TRUE, n: 1, ret: "flint", a1: "any"}
+    if name == "up":
+        return {ok: TRUE, n: 1, ret: "str", a1: "str"}
+    if name == "low":
+        return {ok: TRUE, n: 1, ret: "str", a1: "str"}
+    if name == "title":
+        return {ok: TRUE, n: 1, ret: "str", a1: "str"}
     if name == "read_file":
         return {ok: TRUE, n: 1, ret: "str", a1: "str"}
     if name == "write_file":
@@ -577,7 +583,7 @@ func is_reserved(str name) -> bool:
 func method_info(str base, str name) -> dict:
     if base == "str":
         if name == "part":
-            return {ok: TRUE, min: 1, max: 2, a1: "flint", a2: "flint", rt: "str_part", ret: "str", nullable: FALSE}
+            return {ok: TRUE, min: 0, max: 2, a1: "str", a2: "flint", rt: "str_part", ret: "list", nullable: FALSE}
         if name == "find":
             return {ok: TRUE, min: 1, max: 1, a1: "str", a2: "any", rt: "str_find", ret: "flint", nullable: TRUE}
         if name == "contains":
@@ -587,11 +593,13 @@ func method_info(str base, str name) -> dict:
         if name == "suff":
             return {ok: TRUE, min: 1, max: 1, a1: "str", a2: "any", rt: "str_suff", ret: "bool", nullable: FALSE}
         if name == "trim":
-            return {ok: TRUE, min: 0, max: 0, a1: "any", a2: "any", rt: "str_trim", ret: "str", nullable: FALSE}
+            return {ok: TRUE, min: 0, max: 1, a1: "str", a2: "any", rt: "str_trim", ret: "str", nullable: FALSE}
         if name == "triml":
-            return {ok: TRUE, min: 0, max: 0, a1: "any", a2: "any", rt: "str_triml", ret: "str", nullable: FALSE}
+            return {ok: TRUE, min: 0, max: 1, a1: "str", a2: "any", rt: "str_triml", ret: "str", nullable: FALSE}
         if name == "trimr":
-            return {ok: TRUE, min: 0, max: 0, a1: "any", a2: "any", rt: "str_trimr", ret: "str", nullable: FALSE}
+            return {ok: TRUE, min: 0, max: 1, a1: "str", a2: "any", rt: "str_trimr", ret: "str", nullable: FALSE}
+        if name == "remove":
+            return {ok: TRUE, min: 1, max: 2, a1: "str", a2: "flint", rt: "str_remove", ret: "str", nullable: FALSE}
         if name == "replace":
             return {ok: TRUE, min: 2, max: 2, a1: "str", a2: "str", rt: "str_replace", ret: "str", nullable: FALSE}
         if name == "count":
@@ -1768,7 +1776,7 @@ func parse_block(dict st, bool top) -> list:
                     return stmts
                 dict cop_tok = advance(st)
                 str cop_full = cop_tok[value]
-                str cop = cop_full.part(0, len(cop_full) - 1)
+                str cop = cop_full[..len(cop_full) - 1]
                 dict cexpr = parse_expr(st, 0)
                 if st[err]:
                     return stmts
@@ -1993,6 +2001,12 @@ func emit_expr(dict st, dict e) -> str:
             return cat(["krt.tostr(", emit_expr(st, a0), ")"])
         if bn == "flint":
             return cat(["krt.to_flint(", emit_expr(st, a0), ")"])
+        if bn == "up":
+            return cat(["krt.str_up(", wrap_str(emit_expr(st, a0), a0[t], e_nullable(a0)), ")"])
+        if bn == "low":
+            return cat(["krt.str_low(", wrap_str(emit_expr(st, a0), a0[t], e_nullable(a0)), ")"])
+        if bn == "title":
+            return cat(["krt.str_title(", wrap_str(emit_expr(st, a0), a0[t], e_nullable(a0)), ")"])
         if bn == "read_file":
             return cat(["krt.read_file(", wrap_str(emit_expr(st, a0), a0[t], e_nullable(a0)), ")"])
         if bn == "write_file":
@@ -2544,11 +2558,11 @@ func extract_stdin(str src) -> list:
             i += 1
             while i < n AND (line[i] == " " OR line[i] == "\t"):
                 i += 1
-            if line.part(i, i + 6) == "stdin:":
+            if line[i..i + 6] == "stdin:":
                 i += 6
                 while i < n AND (line[i] == " " OR line[i] == "\t"):
                     i += 1
-                out.add(line.part(i, n))
+                out.add(line[i..n])
     return out
 
 func dirname(str p) -> str:
@@ -2557,7 +2571,7 @@ func dirname(str p) -> str:
         if p[i] == "/":
             if i == 0:
                 return "/"
-            return p.part(0, i)
+            return p[..i]
         i -= 1
     return "."
 
@@ -2619,9 +2633,9 @@ str out_lua = generate(ast, {path: path, krt: krt_src, source: src, stdin: extra
 if mode == "compile":
     str base = path
     if path.suff(".kraft"):
-        base = path.part(0, len(path) - 6)
+        base = path[..len(path) - 6]
     write_file(cat([base, ".lua"]), out_lua)
     exit(0)
 
-show({out_lua.part(0, len(out_lua) - 1)})
+show({out_lua[..len(out_lua) - 1]})
 exit(0)
