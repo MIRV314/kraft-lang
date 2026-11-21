@@ -1,4 +1,5 @@
 # const-top
 flint x = 0
-for i 1:
+if TRUE:
     x = 5
+show({x})

@@ -1582,8 +1582,8 @@ func resolve_write(dict st, dict tok, str n) -> dict:
         if is_const_name(n):
             fail(st, tok, "CONST_ERROR", "variable", cat(["constant '", n, "'"]))
             return {}
-        if st[const_top] AND NOT st[in_func] AND gv.contains(n):
-            fail(st, tok, "TOPLEVEL_ERROR", "assignment inside a function", cat(["assignment to top-level variable '", n, "'"]))
+        if st[const_top] AND st[block_depth] == 0 AND gv.contains(n):
+            fail(st, tok, "TOPLEVEL_ERROR", "assignment inside a nested block", cat(["assignment to top-level variable '", n, "'"]))
             return {}
         dict nm = st[names]
         return {kind: "local", type: vars.take(n), lua: nm.take(n)}
@@ -1712,10 +1712,9 @@ func parse_typed_decl(dict st, str dty, dict dname_tok) -> dict:
             return {}
     str dlua = mangle_var(st, dname)
     dvars.add(dname, dty)
-    # В # const-top объявления вне циклов — верхнеуровневые константы.
-    # Отмечаем их в gvars: запись в них на верхнем уровне запрещена,
-    # а внутри функций они остаются обычными глобалами.
-    if st[const_top] AND NOT st[in_func] AND st[loop_depth] == 0:
+    # В # const-top любое объявление вне функции — глобальная («верх файла»).
+    # Писать в неё можно только внутри вложенного блока (отступа).
+    if st[const_top] AND NOT st[in_func]:
         dict dtg = st[gvars]
         dtg.add(dname, dty)
     dict dnl = st[nullable]

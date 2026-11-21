@@ -1,3 +1,0 @@
-TOPLEVEL_ERROR: tests/new/err_toplevel_loop.kraft:4
-    4 |     x = 5
-            ^ expected assignment inside a function, found assignment to top-level variable 'x'
