@@ -1,0 +1,3 @@
+NAME_ERROR: tests/new/err_reserved_var.kraft:1
+    1 | flint add = 1
+              ^ expected free name, found reserved 'add'

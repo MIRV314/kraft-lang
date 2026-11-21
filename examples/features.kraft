@@ -1,7 +1,7 @@
 # const-top
 flint total = 0
 
-func add(flint n):
+func add_points(flint n):
     total += n
 
 str:
@@ -14,8 +14,8 @@ flint:
 
 list xs = [b, 1, a]
 xs[0] = 9
-add(a)
-add(b)
+add_points(a)
+add_points(b)
 
 show({line})
 show({xs})

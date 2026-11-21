@@ -173,13 +173,13 @@ flint:
 # const-top
 flint total = 0
 
-func add(flint n):
+func add_points(flint n):
     total += n              # писать в глобальную можно без ext
 
 func show_total():
     show({total})           # чтение напрямую
 
-add(5)
+add_points(5)
 show_total()
 ```
 
@@ -340,7 +340,9 @@ show({summ(2, 3)})       # 5
 
 **Встроенное переименовать нельзя.** Ни функция, ни переменная (включая
 константу, аргумент, поле), ни метод, ни имя модели не могут совпадать со
-встроенным. Ошибка выдаётся при объявлении и перечисляет занятые имена.
+встроенным. Заняты и имена методов всех типов — `add`, `take`, `contains`,
+`count`, `text` и остальные: даже если вы пишете обычную функцию. Ошибка
+выдаётся при объявлении и перечисляет занятые имена.
 
 ```kraft
 func len(flint n) -> flint:       # ошибка: имя занято глобальной функцией
@@ -356,7 +358,7 @@ flint show = 5                    # ошибка: show — встроенная 
 | Типы | `str`, `flint`, `bool`, `list`, `dict`, `froz` |
 | Значения | `TRUE`, `FALSE`, `NONE` |
 | Глобальные функции | `show`, `show_err`, `input`, `len`, `type`, `str`, `flint`, `up`, `low`, `title`, `abs`, `round`, `floor`, `ceil`, `sqrt`, `min`, `max`, `sum`, `avg`, `keys`, `values`, `upk`, `sort`, `reverse`, `clear`, `map`, `filter`, `reduce`, `read_file`, `write_file`, `file_exists`, `args`, `exit`, `time_ms`, `is_tty`, `system`, `assert`, `expect` |
-| Методы по типам | list: `add`, `del`, `remove`, `replace`, `replace_value`, `contains`, `count`, `index`, `join`; dict: `add`, `take`, `remove`, `contains`, `merge`; строка: `part`, `find`, `contains`, `preff`, `suff`, `trim`, `triml`, `trimr`, `replace`, `remove`, `count`; expect: `equals`, `is_true`, `is_false`, `is_none`, `contains` |
+| Методы по типам | list: `add`, `del`, `remove`, `replace`, `replace_value`, `contains`, `count`, `index`, `join`; dict: `add`, `take`, `remove`, `contains`, `merge`; строка: `part`, `find`, `contains`, `preff`, `suff`, `trim`, `triml`, `trimr`, `replace`, `remove`, `count`; expect: `equals`, `is_true`, `is_false`, `is_none`, `contains`; Error: `text` |
 
 Имя модели тоже проверяется. По конвенции модели — `CapWords`, поэтому
 практически ошибка возможна только для имени в нижнем регистре:

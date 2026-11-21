@@ -4,12 +4,12 @@ func double(flint x) -> flint:
 func is_big(flint x) -> bool:
     return x > 2
 
-func add(flint a, flint b) -> flint:
+func plus(flint a, flint b) -> flint:
     return a + b
 
 list xs = [1, 2, 3]
 show({map(xs, double)})
 show({filter(xs, is_big)})
-show({reduce(xs, add, 0)})
-show({reduce(xs, add, 10)})
+show({reduce(xs, plus, 0)})
+show({reduce(xs, plus, 10)})
 show({map([], double)})

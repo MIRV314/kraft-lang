@@ -2,14 +2,14 @@
 flint total = 0
 str label = "sum"
 
-func add(flint n):
+func add_points(flint n):
     total += n
 
 func view() -> str:
     return "{label}: {total}"
 
-add(5)
-add(7)
+add_points(5)
+add_points(7)
 show({view()})
 show({label})
 

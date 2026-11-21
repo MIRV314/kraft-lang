@@ -1,4 +1,4 @@
-func add(flint a, flint b) -> flint:
+func plus(flint a, flint b) -> flint:
     return a + b
 
 func fib(flint n) -> flint:
@@ -15,7 +15,7 @@ func greet(str who):
     show(Привет, {who})
 
 greet("Kraft")
-show({add(2, 3)})
+show({plus(2, 3)})
 show({fib(10)})
 show({kind(5)} {kind(-5)})
-show({add(fib(5), 1)})
+show({plus(fib(5), 1)})

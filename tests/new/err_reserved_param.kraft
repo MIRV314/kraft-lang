@@ -1,0 +1,2 @@
+func f(flint count):
+    show({count})

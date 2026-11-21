@@ -1,0 +1,3 @@
+NAME_ERROR: tests/new/err_reserved_model.kraft:1
+    1 | model add:
+              ^ expected free model name, found reserved 'add'

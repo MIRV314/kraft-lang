@@ -1,0 +1,3 @@
+NAME_ERROR: tests/new/err_reserved_func.kraft:1
+    1 | func take(flint n):
+             ^ expected free name, found reserved 'take'

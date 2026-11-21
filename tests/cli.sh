@@ -79,9 +79,9 @@ check "usage" $?
 cat > "$tmp/feat.kraft" <<'EOF'
 # const-top
 flint total = 0
-func add(flint n):
+func add_points(flint n):
     total += n
-add(2)
+add_points(2)
 show({total})
 EOF
 out=$(./xkraft "$tmp/feat.kraft")

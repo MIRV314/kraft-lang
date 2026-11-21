@@ -1,0 +1,2 @@
+func take(flint n):
+    show({n})
