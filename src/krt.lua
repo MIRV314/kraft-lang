@@ -8,11 +8,178 @@ krt.NONE = setmetatable({}, { __tostring = function() return "NONE" end })
 
 local LIST_MT = { __kraft = "list" }
 local DICT_MT = { __kraft = "dict" }
+local MODEL_MT = { __kraft = "model" }
 
 function krt.list(t) return setmetatable(t or {}, LIST_MT) end
 function krt.dict() return setmetatable({ keys = {}, vals = {} }, DICT_MT) end
 function krt.is_list(v) return type(v) == "table" and getmetatable(v) == LIST_MT end
 function krt.is_dict(v) return type(v) == "table" and getmetatable(v) == DICT_MT end
+function krt.is_model_table(v)
+  return type(v) == "table" and getmetatable(v) == MODEL_MT
+end
+function krt.is_model(v, name)
+  return krt.is_model_table(v) and v.__kraft_model == name
+end
+
+-- ---------- модели ----------
+
+krt.MODELS = {}
+
+function krt.model_define(name, model_fields, field_types, consts, init_fields, params, param_types)
+  krt.MODELS[name] = {
+    name = name,
+    model_fields = model_fields,
+    field_types = field_types,
+    consts = consts,
+    init_fields = init_fields,
+    params = params,
+    param_types = param_types,
+    values = {},
+    methods = {},
+    construct = nil,
+  }
+end
+
+function krt.model_set_value(name, field, value)
+  local m = krt.MODELS[name]
+  if not m then krt.fail("NAME_ERROR", "unknown model '" .. name .. "'") end
+  m.values[field] = value
+end
+
+function krt.model_construct(name, fn)
+  local m = krt.MODELS[name]
+  if not m then krt.fail("NAME_ERROR", "unknown model '" .. name .. "'") end
+  m.construct = fn
+end
+
+function krt.model_method(name, method, fn)
+  local m = krt.MODELS[name]
+  if not m then krt.fail("NAME_ERROR", "unknown model '" .. name .. "'") end
+  m.methods[method] = fn
+end
+
+local function check_value(ty, v, where)
+  local got = krt.typeof(v)
+  if ty == "any" or ty == "NONE" then return v end
+  if ty == "str" or ty == "flint" or ty == "bool" or ty == "list" or ty == "dict" then
+    if got ~= ty then
+      krt.fail("TYPE_MISMATCH_ERROR", where .. ": expected " .. ty .. ", found " .. got)
+    end
+    return v
+  end
+  if got ~= ty then
+    krt.fail("TYPE_MISMATCH_ERROR", where .. ": expected " .. ty .. ", found " .. got)
+  end
+  return v
+end
+
+function krt.as_model(v, name)
+  if not krt.is_model(v, name) then
+    krt.fail("TYPE_MISMATCH_ERROR", "expected " .. name .. ", found " .. krt.typeof(v))
+  end
+  return v
+end
+
+function krt.model_new(name, ...)
+  local m = krt.MODELS[name]
+  if not m then krt.fail("NAME_ERROR", "unknown model '" .. name .. "'") end
+  local n = select("#", ...)
+  local want = #m.params
+  if n ~= want then
+    krt.fail("ARGCOUNT_ERROR", "expected " .. want .. " argument(s) to '" .. name .. "', got " .. n)
+  end
+  local args = { ... }
+  for i = 1, want do
+    check_value(m.param_types[m.params[i]], args[i], name .. "(" .. m.params[i] .. ")")
+  end
+  local obj = setmetatable({ __kraft_model = name }, MODEL_MT)
+  m.construct(obj, unpack(args, 1, want))
+  return obj
+end
+
+function krt.model_init(name, named)
+  local m = krt.MODELS[name]
+  if not m then krt.fail("NAME_ERROR", "unknown model '" .. name .. "'") end
+  local args = {}
+  local seen = {}
+  for i = 1, #m.params do
+    local p = m.params[i]
+    local v = named[p]
+    if v == nil then
+      krt.fail("ARGCOUNT_ERROR", "missing init argument '" .. p .. "' for '" .. name .. "'")
+    end
+    seen[p] = true
+    args[i] = check_value(m.param_types[p], v, name .. ".init(" .. p .. ")")
+  end
+  local obj = krt.model_new(name, unpack(args, 1, #m.params))
+  for k, v in pairs(named) do
+    if not seen[k] then
+      if m.model_fields[k] then
+        krt.fail("CONST_ERROR", "model field '" .. k .. "' is read-only")
+      elseif m.consts[k] then
+        krt.fail("CONST_ERROR", "constant '" .. k .. "' is read-only")
+      elseif m.init_fields[k] then
+        obj[k] = check_value(m.field_types[k], v, name .. ".init(" .. k .. ")")
+      else
+        krt.fail("NAME_ERROR", "unknown init field '" .. k .. "' of '" .. name .. "'")
+      end
+    end
+  end
+  return obj
+end
+
+function krt.model_get(obj, field)
+  if not krt.is_model_table(obj) then
+    krt.fail("TYPE_MISMATCH_ERROR", "expected a model instance, found " .. krt.typeof(obj))
+  end
+  local m = krt.MODELS[obj.__kraft_model]
+  if not m then krt.fail("NAME_ERROR", "unknown model '" .. tostring(obj.__kraft_model) .. "'") end
+  local v = obj[field]
+  if v ~= nil then return v end
+  v = m.values[field]
+  if v ~= nil then return v end
+  krt.fail("NAME_ERROR", "unknown field '" .. field .. "' of '" .. m.name .. "'")
+end
+
+function krt.model_set(obj, field, value)
+  if not krt.is_model_table(obj) then
+    krt.fail("TYPE_MISMATCH_ERROR", "expected a model instance, found " .. krt.typeof(obj))
+  end
+  local m = krt.MODELS[obj.__kraft_model]
+  if not m then krt.fail("NAME_ERROR", "unknown model '" .. tostring(obj.__kraft_model) .. "'") end
+  if m.model_fields[field] then
+    krt.fail("CONST_ERROR", "model field '" .. field .. "' is read-only")
+  end
+  if m.consts[field] then
+    krt.fail("CONST_ERROR", "constant '" .. field .. "' is read-only")
+  end
+  if m.field_types[field] == nil then
+    krt.fail("NAME_ERROR", "unknown field '" .. field .. "' of '" .. m.name .. "'")
+  end
+  obj[field] = check_value(m.field_types[field], value, m.name .. "." .. field)
+  return value
+end
+
+function krt.model_create_field(obj, field, value, is_const, ty)
+  if not krt.is_model_table(obj) then
+    krt.fail("TYPE_MISMATCH_ERROR", "expected a model instance, found " .. krt.typeof(obj))
+  end
+  obj[field] = check_value(ty, value, obj.__kraft_model .. "." .. field)
+  return value
+end
+
+function krt.model_call(obj, method, ...)
+  if not krt.is_model_table(obj) then
+    krt.fail("TYPE_MISMATCH_ERROR", "expected a model instance, found " .. krt.typeof(obj))
+  end
+  local m = krt.MODELS[obj.__kraft_model]
+  if not m then krt.fail("NAME_ERROR", "unknown model '" .. tostring(obj.__kraft_model) .. "'") end
+  local fn = m.methods[method]
+  if not fn then
+    krt.fail("NAME_ERROR", "unknown method '" .. method .. "' of '" .. m.name .. "'")
+  end
+  return fn(obj, ...)
+end
 
 -- ---------- числа ----------
 
@@ -42,6 +209,9 @@ function krt.tostr(v)
   if t == "number" then return krt.num_to_str(v) end
   if t == "boolean" then return v and "TRUE" or "FALSE" end
   if t == "table" then
+    if krt.is_model_table(v) then
+      krt.fail("TYPE_MISMATCH_ERROR", "cannot print a model instance; use its fields or methods")
+    end
     if krt.is_list(v) then
       local out = {}
       for i = 1, #v do out[i] = krt.tostr_inner(v[i]) end
@@ -260,6 +430,7 @@ function krt.typeof(v)
   if t == "string" then return "str" end
   if t == "boolean" then return "bool" end
   if t == "table" then
+    if krt.is_model_table(v) then return v.__kraft_model end
     if krt.is_list(v) then return "list" end
     if krt.is_dict(v) then return "dict" end
     return "dict"
@@ -1033,6 +1204,50 @@ function krt.is_tty()
   pcall(ffi.cdef, "int isatty(int);")
   local ok2, r = pcall(function() return ffi.C.isatty(2) end)
   return ok2 and r == 1
+end
+
+-- ---------- встроенная модель Error ----------
+
+do
+  local fields = { cat = "str", msg = "str", file = "str", line = "flint", col = "flint" }
+  local consts = { cat = true, msg = true, file = true, line = true, col = true }
+  krt.MODELS["Error"] = {
+    name = "Error",
+    model_fields = {},
+    field_types = fields,
+    consts = consts,
+    init_fields = {},
+    params = {},
+    param_types = {},
+    values = {},
+    methods = {},
+    construct = nil,
+  }
+  krt.MODELS["Error"].methods.text = function(self)
+    local where = ""
+    if self.line and self.line > 0 then
+      where = " (" .. self.file .. ":" .. self.line .. ":" .. self.col .. ")"
+    end
+    return self.cat .. ": " .. self.msg .. where
+  end
+end
+
+function krt.error_new(err)
+  local e = setmetatable({ __kraft_model = "Error" }, MODEL_MT)
+  if type(err) == "table" and err.kraft_runtime then
+    e.cat = err.cat or "RUNTIME_ERROR"
+    e.msg = err.msg or ""
+    e.file = err.path or err.file or krt.SOURCE_PATH or "?"
+    e.line = err.line or 0
+    e.col = err.col or 0
+  else
+    e.cat = "RUNTIME_ERROR"
+    e.msg = tostring(err)
+    e.file = krt.SOURCE_PATH or "?"
+    e.line = 0
+    e.col = 0
+  end
+  return e
 end
 
 -- ---------- запуск программы ----------

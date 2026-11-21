@@ -1,0 +1,3 @@
+REDECLARE_ERROR: tests/new/err_model_param_shadow.kraft:4
+    4 |     method m(flint a) -> flint:
+                           ^ expected parameter name, found model member 'a'

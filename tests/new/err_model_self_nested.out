@@ -1,0 +1,3 @@
+SYNTAX_ERROR: tests/new/err_model_self_nested.kraft:4
+    4 |             self(a)
+                    ^ expected self(...) as the first statement of construct, found nested or later self(...)

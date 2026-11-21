@@ -1,0 +1,3 @@
+ARGCOUNT_ERROR: tests/new/err_model_arg_count.kraft:4
+    4 | Box x = Box(1)
+                ^ expected 2 argument(s) to 'Box', found 1 argument(s)

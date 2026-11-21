@@ -1,0 +1,3 @@
+TYPE_ERROR: tests/new/err_model_arg_type.kraft:4
+    4 | Box x = Box("one")
+                    ^ expected argument 1 of 'Box' to be flint, found str

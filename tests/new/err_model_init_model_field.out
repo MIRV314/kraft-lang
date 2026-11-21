@@ -1,0 +1,3 @@
+CONST_ERROR: tests/new/err_model_init_model_field.kraft:5
+    5 | Box x = init(a: 1, kind: "cube")
+                           ^ expected init argument for a mutable field, found read-only 'kind'

@@ -157,7 +157,7 @@ func is_keyword(str w) -> bool:
         return TRUE
     if w == "while" OR w == "break" OR w == "continue" OR w == "return":
         return TRUE
-    if w == "is" OR w == "AND" OR w == "OR" OR w == "NOT" OR w == "glob" OR w == "ext":
+    if w == "is" OR w == "AND" OR w == "OR" OR w == "NOT" OR w == "glob":
         return TRUE
     if w == "self" OR w == "try" OR w == "finally" OR w == "trigger" OR w == "panic":
         return TRUE
@@ -624,7 +624,7 @@ func is_builtin(str name) -> bool:
     return builtin_info(name)[ok]
 
 func is_reserved(str name) -> bool:
-    return is_builtin(name) OR name == "show" OR name == "show_err" OR name == "input"
+    return is_builtin(name) OR name == "show" OR name == "show_err" OR name == "input" OR name == "Error"
 
 func method_info(str base, str name) -> dict:
     if base == "str":
@@ -693,6 +693,53 @@ func method_info(str base, str name) -> dict:
             return {ok: TRUE, min: 1, max: 1, a1: "any", a2: "any", rt: "expect_contains", ret: "NONE", nullable: FALSE}
     return {ok: FALSE}
 
+# Встроенная модель Error: схема известна компилятору, объект создаёт рантайм.
+func error_schema() -> dict:
+    dict fields = {cat: "str", msg: "str", file: "str", line: "flint", col: "flint"}
+    dict consts = {}
+    consts.add("cat", TRUE)
+    consts.add("msg", TRUE)
+    consts.add("file", TRUE)
+    consts.add("line", TRUE)
+    consts.add("col", TRUE)
+    dict meth = {}
+    meth.add("text", {params: [], ret: "str", ret_nullable: FALSE, line: 1, col: 1})
+    return {name: "Error", model_fields: {}, field_types: fields, consts: consts, init_fields: {}, params: [], param_types: {}, methods: meth, method_order: ["text"], ctor: NONE, order: [], field_order: []}
+
+func is_scalar_type(str t) -> bool:
+    return t == "str" OR t == "flint" OR t == "bool"
+
+func is_model_type(dict st, str t) -> bool:
+    dict ms = st[models]
+    return ms.contains(t)
+
+func model_schema(dict st, str t) -> dict:
+    dict ms = st[models]
+    return ms.take(t)
+
+func check_field_name(dict st, dict tok, str nm):
+    if is_reserved(nm):
+        fail(st, tok, "NAME_ERROR", "free field name", cat(["builtin '", nm, "'"]))
+        return:
+
+# Регистрирует экземплярное поле в схеме. new=FALSE — поле уже было.
+func add_model_field(dict st, dict m, dict tok, str nm, str fty, bool computed):
+    dict mf = m[model_fields]
+    dict ft = m[field_types]
+    dict cs = m[consts]
+    dict initf = m[init_fields]
+    dict methods = m[methods]
+    if mf.contains(nm) OR ft.contains(nm) OR methods.contains(nm):
+        fail(st, tok, "REDECLARE_ERROR", "unique field/method name", cat(["name '", nm, "' is already declared"]))
+        return:
+    ft.add(nm, fty)
+    list fo = m[field_order]
+    fo.add(nm)
+    if is_const_name(nm):
+        cs.add(nm, TRUE)
+    if computed AND NOT is_const_name(nm):
+        initf.add(nm, TRUE)
+
 func parse_type_name(dict st) -> str:
     dict t = tk(st)
     if t[type] == "kw":
@@ -700,6 +747,9 @@ func parse_type_name(dict st) -> str:
         if v == "str" OR v == "flint" OR v == "bool" OR v == "list" OR v == "dict" OR v == "NONE":
             advance(st)
             return v
+    if t[type] == "name" AND is_model_type(st, t[value]):
+        advance(st)
+        return t[value]
     fail(st, t, "TYPE_ERROR", "type name", describe_tok(t))
     return ""
 
@@ -724,6 +774,21 @@ func e_nullable(dict e) -> bool:
 
 # ---------- парсер: выражения ----------
 
+func shift_token_pos(dict t, flint dl, flint dc) -> bool:
+    if NOT t.contains("line"):
+        return TRUE
+    flint old = t[line]
+    t.add("line", old + dl)
+    if old == 1:
+        t.add("col", t[col] + dc)
+    if t.contains("parts"):
+        list ps = t[parts]
+        flint pi = 0
+        while pi < len(ps):
+            shift_token_pos(ps[pi], dl, dc)
+            pi += 1
+    return TRUE
+
 func template_state(dict st, dict p) -> dict:
     dict lx = lex(p[src], st[path])
     list ts = lx[tokens]
@@ -738,11 +803,9 @@ func template_state(dict st, dict p) -> dict:
     flint i = 0
     while i < len(ts):
         dict t2 = ts[i]
-        t2.add("line", t2[line] + p[line] - 1)
-        if t2[line] == p[line]:
-            t2.add("col", t2[col] + p[col] - 1)
+        shift_token_pos(t2, p[line] - 1, p[col] - 1)
         i += 1
-    return {toks: ts, pos: 0, path: st[path], vars: st[vars], nullable: st[nullable], maybe_unset: st[maybe_unset], gvars: st[gvars], gnullable: st[gnullable], gmaybe: st[gmaybe], exts: st[exts], for_names: st[for_names], funcs: st[funcs], in_func: st[in_func], func_ret: st[func_ret], func_returns: st[func_returns], block_depth: st[block_depth], loop_depth: st[loop_depth], err: e0, names: st[names], fnames: st[fnames], vcounter: st[vcounter], fcounter: st[fcounter]}
+    return {toks: ts, pos: 0, path: st[path], const_top: st[const_top], vars: st[vars], nullable: st[nullable], maybe_unset: st[maybe_unset], gvars: st[gvars], gnullable: st[gnullable], gmaybe: st[gmaybe], for_names: st[for_names], funcs: st[funcs], in_func: st[in_func], func_ret: st[func_ret], func_returns: st[func_returns], block_depth: st[block_depth], loop_depth: st[loop_depth], err: e0, names: st[names], fnames: st[fnames], vcounter: st[vcounter], fcounter: st[fcounter], models: st[models], model_ctx: st[model_ctx]}
 
 func parse_expr(dict st, flint min_bp) -> dict:
     if st[err]:
@@ -768,6 +831,69 @@ func parse_expr(dict st, flint min_bp) -> dict:
     elif ty == "kw" AND t[value] == "NONE":
         advance(st)
         e = {k: "none", t: "NONE", line: t[line], col: t[col]}
+    elif ty == "kw" AND t[value] == "self":
+        dict mctx = st[model_ctx]
+        if mctx is NONE:
+            fail(st, t, "SCOPE_ERROR", "'self' inside a model", "'self' outside a model")
+            return {}
+        advance(st)
+        if tok_is(tk(st), "op", "("):
+            advance(st)
+            list snames = []
+            if NOT tok_is(tk(st), "op", ")"):
+                while TRUE:
+                    dict snt = expect_tok(st, "name", "", "parameter name in self(...)")
+                    if st[err]:
+                        return {}
+                    snames.add(snt)
+                    if tok_is(tk(st), "op", ","):
+                        advance(st)
+                    else:
+                        break
+            expect_tok(st, "op", ")", "')'")
+            if st[err]:
+                return {}
+            e = {k: "self_init", names: snames, t: "NONE", line: t[line], col: t[col]}
+        else:
+            e = {k: "var", name: "self", lua: "self", t: mctx[model_name], line: t[line], col: t[col]}
+    elif ty == "name" AND is_model_type(st, t[value]) AND peek_value(st) == "(":
+        str cmn = t[value]
+        dict cms = model_schema(st, cmn)
+        dict ccons = cms[ctor]
+        if ccons is NONE:
+            fail(st, t, "NAME_ERROR", cat(["declared construct of '", cmn, "'"]), "model without construct")
+            return {}
+        advance(st)
+        expect_tok(st, "op", "(", "'('")
+        list cmargs = []
+        if NOT tok_is(tk(st), "op", ")"):
+            while TRUE:
+                dict cma = parse_expr(st, 0)
+                if st[err]:
+                    return {}
+                cmargs.add(cma)
+                if tok_is(tk(st), "op", ","):
+                    advance(st)
+                else:
+                    break
+        expect_tok(st, "op", ")", "')'")
+        if st[err]:
+            return {}
+        list cmparams = ccons[params]
+        if len(cmargs) != len(cmparams):
+            fail(st, t, "ARGCOUNT_ERROR", cat([str(len(cmparams)), " argument(s) to '", cmn, "'"]), cat([str(len(cmargs)), " argument(s)"]))
+            return {}
+        list cmpt = []
+        flint cmi = 0
+        while cmi < len(cmargs):
+            dict cma2 = cmargs[cmi]
+            dict cmp = cmparams[cmi]
+            cmpt.add(cmp[type])
+            if NOT assignable(cma2[t], cmp[type]):
+                fail(st, {line: cma2[line], col: cma2[col]}, "TYPE_ERROR", cat(["argument ", str(cmi + 1), " of '", cmn, "' to be ", cmp[type]]), cma2[t])
+                return {}
+            cmi += 1
+        e = {k: "model_new", mname: cmn, args: cmargs, ptypes: cmpt, t: cmn, line: t[line], col: t[col]}
     elif (ty == "kw" OR ty == "name") AND is_builtin(t[value]) AND peek_value(st) == "(":
         str bn = t[value]
         advance(st)
@@ -855,6 +981,11 @@ func parse_expr(dict st, flint min_bp) -> dict:
                     fail(st, {line: ba2[line], col: ba2[col]}, "TYPE_ERROR", cat(["argument ", str(bai + 1), " of '", bn, "' to be ", builtin_arg_desc(bspec)]), ba2[t])
                     return {}
                 bai += 1
+        if bn == "str" AND len(bargs) == 1:
+            dict barg0 = bargs[0]
+            if is_model_type(st, barg0[t]):
+                fail(st, barg0, "TYPE_ERROR", "a field or method inside str(...), not a model instance", barg0[t])
+                return {}
         e = {k: "builtin", name: bn, args: bargs, t: bi[ret], line: t[line], col: t[col]}
     elif ty == "name" AND is_template_func(t[value]):
         pfn = t[value]
@@ -867,6 +998,9 @@ func parse_expr(dict st, flint min_bp) -> dict:
         ptok = tpl
     elif ty == "name":
         str fn = t[value]
+        if is_model_type(st, fn):
+            fail(st, t, "TYPE_ERROR", "a value, not a model name", cat(["model '", fn, "'"]))
+            return {}
         if peek_value(st) == "(":
             dict funcs = st[funcs]
             if NOT funcs.contains(fn):
@@ -915,9 +1049,19 @@ func parse_expr(dict st, flint min_bp) -> dict:
             bool is_local = vars.contains(vn)
             dict gv = st[gvars]
             bool is_global = FALSE
+            bool is_mfield = FALSE
+            dict mctxv = st[model_ctx]
             if NOT is_local:
                 if gv.contains(vn):
                     is_global = TRUE
+                elif NOT (mctxv is NONE):
+                    dict ms0 = mctxv[schema]
+                    dict mf0 = ms0[model_fields]
+                    if mf0.contains(vn):
+                        is_mfield = TRUE
+                    else:
+                        fail(st, t, "NAME_ERROR", "declared name", cat(["undeclared '", vn, "'"]))
+                        return {}
                 else:
                     fail(st, t, "NAME_ERROR", "declared name", cat(["undeclared '", vn, "'"]))
                     return {}
@@ -925,23 +1069,29 @@ func parse_expr(dict st, flint min_bp) -> dict:
             dict names = st[names]
             bool nl = FALSE
             str vt = ""
-            if is_local:
-                vt = vars.take(vn)
-                dict nd = st[nullable]
-                if nd.contains(vn):
-                    nl = nd.take(vn)
-                dict mu = st[maybe_unset]
-                if mu.contains(vn):
-                    nl = TRUE
+            if is_mfield:
+                dict ms1 = mctxv[schema]
+                dict mf1 = ms1[model_fields]
+                vt = mf1.take(vn)
+                e = {k: "model_field", name: vn, mname: mctxv[model_name], t: vt, line: t[line], col: t[col]}
             else:
-                vt = gv.take(vn)
-                dict gnl = st[gnullable]
-                if gnl.contains(vn):
-                    nl = gnl.take(vn)
-                dict gmu = st[gmaybe]
-                if gmu.contains(vn):
-                    nl = TRUE
-            e = {k: "var", name: vn, lua: names.take(vn), t: vt, nullable: nl, line: t[line], col: t[col]}
+                if is_local:
+                    vt = vars.take(vn)
+                    dict nd = st[nullable]
+                    if nd.contains(vn):
+                        nl = nd.take(vn)
+                    dict mu = st[maybe_unset]
+                    if mu.contains(vn):
+                        nl = TRUE
+                else:
+                    vt = gv.take(vn)
+                    dict gnl = st[gnullable]
+                    if gnl.contains(vn):
+                        nl = gnl.take(vn)
+                    dict gmu = st[gmaybe]
+                    if gmu.contains(vn):
+                        nl = TRUE
+                e = {k: "var", name: vn, lua: names.take(vn), t: vt, nullable: nl, line: t[line], col: t[col]}
     elif ty == "op" AND t[value] == "(":
         advance(st)
         e = parse_expr(st, 0)
@@ -1043,6 +1193,9 @@ func parse_expr(dict st, flint min_bp) -> dict:
                 if rest[type] != "newline" AND rest[type] != "eof":
                     fail(sub, rest, "SYNTAX_ERROR", "end of expression", describe_tok(rest))
                     st.add("err", sub[err])
+                    return {}
+                if is_model_type(st, ex[t]):
+                    fail(st, {line: ex[line], col: ex[col]}, "TYPE_ERROR", "a field or method inside interpolation, not a model instance", ex[t])
                     return {}
                 parts.add({kind: "expr", expr: ex})
             pi += 1
@@ -1166,53 +1319,112 @@ func parse_expr(dict st, flint min_bp) -> dict:
                 advance(st)
                 mname = mt[value]
             else:
-                fail(st, mt, "SYNTAX_ERROR", "method name", describe_tok(mt))
-                return {}
-            expect_tok(st, "op", "(", "'('")
-            list margs = []
-            if NOT tok_is(tk(st), "op", ")"):
-                while TRUE:
-                    dict ma = parse_expr(st, 0)
-                    if st[err]:
-                        return {}
-                    margs.add(ma)
-                    if tok_is(tk(st), "op", ","):
-                        advance(st)
-                    else:
-                        break
-            expect_tok(st, "op", ")", "')'")
-            if st[err]:
+                fail(st, mt, "SYNTAX_ERROR", "field or method name", describe_tok(mt))
                 return {}
             str mbt = e[t]
-            if mbt == "any":
-                fail(st, mt, "TYPE_ERROR", cat(["typed receiver of method '", mname, "' (bind the value to a type first)"]), "any")
-                return {}
-            dict mi = method_info(mbt, mname)
-            if NOT mi[ok]:
-                if mbt == "str" OR mbt == "list" OR mbt == "dict":
-                    fail(st, mt, "NAME_ERROR", cat([mbt, " method"]), cat(["unknown method '", mname, "'"]))
+            if is_model_type(st, mbt):
+                dict ms = model_schema(st, mbt)
+                dict mms = ms[methods]
+                if tok_is(tk(st), "op", "("):
+                    if NOT mms.contains(mname):
+                        fail(st, mt, "NAME_ERROR", cat([mbt, " method"]), cat(["unknown method '", mname, "'"]))
+                        return {}
+                    dict mm = mms.take(mname)
+                    advance(st)
+                    list margs = []
+                    if NOT tok_is(tk(st), "op", ")"):
+                        while TRUE:
+                            dict ma = parse_expr(st, 0)
+                            if st[err]:
+                                return {}
+                            margs.add(ma)
+                            if tok_is(tk(st), "op", ","):
+                                advance(st)
+                            else:
+                                break
+                    expect_tok(st, "op", ")", "')'")
+                    if st[err]:
+                        return {}
+                    list mparams = mm[params]
+                    if len(margs) != len(mparams):
+                        fail(st, mt, "ARGCOUNT_ERROR", cat([str(len(mparams)), " argument(s) to '", mname, "'"]), cat([str(len(margs)), " argument(s)"]))
+                        return {}
+                    list mpt = []
+                    flint mai = 0
+                    while mai < len(margs):
+                        dict mma = margs[mai]
+                        dict mmp = mparams[mai]
+                        mpt.add(mmp[type])
+                        if NOT assignable(mma[t], mmp[type]):
+                            fail(st, {line: mma[line], col: mma[col]}, "TYPE_ERROR", cat(["argument ", str(mai + 1), " of '", mname, "' to be ", mmp[type]]), mma[t])
+                            return {}
+                        mai += 1
+                    e = {k: "model_method", base: e, mname: mbt, name: mname, args: margs, ptypes: mpt, t: mm[ret], nullable: mm[ret_nullable], line: mt[line], col: mt[col]}
                 else:
-                    fail(st, mt, "TYPE_ERROR", cat(["str, list or dict receiver of '", mname, "'"]), mbt)
-                return {}
-            flint mn = mi[min]
-            flint mx = mi[max]
-            if len(margs) < mn OR len(margs) > mx:
-                str want = str(mn)
-                if mn != mx:
-                    want = cat([str(mn), "..", str(mx)])
-                fail(st, mt, "ARGCOUNT_ERROR", cat([want, " argument(s) to '", mname, "'"]), cat([str(len(margs)), " argument(s)"]))
-                return {}
-            flint ai2 = 0
-            while ai2 < len(margs):
-                dict mma = margs[ai2]
-                str mspec = mi[a1]
-                if ai2 == 1:
-                    mspec = mi[a2]
-                if mspec != "any" AND mma[t] != "NONE" AND mma[t] != "any" AND mma[t] != mspec:
-                    fail(st, {line: mma[line], col: mma[col]}, "TYPE_ERROR", cat(["argument ", str(ai2 + 1), " of '", mname, "' to be ", mspec]), mma[t])
+                    dict mfs = ms[model_fields]
+                    dict fts = ms[field_types]
+                    if mfs.contains(mname):
+                        e = {k: "field", base: e, name: mname, mname: mbt, model_field: TRUE, is_const: TRUE, t: mfs.take(mname), line: mt[line], col: mt[col]}
+                    elif fts.contains(mname):
+                        dict mcs = ms[consts]
+                        bool fconst = mcs.contains(mname)
+                        e = {k: "field", base: e, name: mname, mname: mbt, model_field: FALSE, is_const: fconst, t: fts.take(mname), line: mt[line], col: mt[col]}
+                    else:
+                        dict mctxf = st[model_ctx]
+                        bool self_new = FALSE
+                        if NOT (mctxf is NONE):
+                            if mctxf[in_construct] AND st[block_depth] == mctxf[level] AND mctxf[self_done] AND e[k] == "var" AND e[name] == "self" AND tok_is(tk(st), "op", "="):
+                                self_new = TRUE
+                        if self_new:
+                            e = {k: "field", base: e, name: mname, mname: mbt, model_field: FALSE, is_const: FALSE, new_field: TRUE, t: "NONE", line: mt[line], col: mt[col]}
+                        else:
+                            fail(st, mt, "NAME_ERROR", cat([mbt, " field or method"]), cat(["unknown field '", mname, "'"]))
+                            return {}
+            else:
+                expect_tok(st, "op", "(", "'('")
+                list bmargs = []
+                if NOT tok_is(tk(st), "op", ")"):
+                    while TRUE:
+                        dict ma2 = parse_expr(st, 0)
+                        if st[err]:
+                            return {}
+                        bmargs.add(ma2)
+                        if tok_is(tk(st), "op", ","):
+                            advance(st)
+                        else:
+                            break
+                expect_tok(st, "op", ")", "')'")
+                if st[err]:
                     return {}
-                ai2 += 1
-            e = {k: "method", base: e, name: mname, rt: mi[rt], args: margs, a1: mi[a1], a2: mi[a2], t: mi[ret], nullable: mi[nullable], line: mt[line], col: mt[col]}
+                if mbt == "any":
+                    fail(st, mt, "TYPE_ERROR", cat(["typed receiver of method '", mname, "' (bind the value to a type first)"]), "any")
+                    return {}
+                dict mi = method_info(mbt, mname)
+                if NOT mi[ok]:
+                    if mbt == "str" OR mbt == "list" OR mbt == "dict" OR mbt == "expect":
+                        fail(st, mt, "NAME_ERROR", cat([mbt, " method"]), cat(["unknown method '", mname, "'"]))
+                    else:
+                        fail(st, mt, "TYPE_ERROR", cat(["str, list or dict receiver of '", mname, "'"]), mbt)
+                    return {}
+                flint mn = mi[min]
+                flint mx = mi[max]
+                if len(bmargs) < mn OR len(bmargs) > mx:
+                    str want = str(mn)
+                    if mn != mx:
+                        want = cat([str(mn), "..", str(mx)])
+                    fail(st, mt, "ARGCOUNT_ERROR", cat([want, " argument(s) to '", mname, "'"]), cat([str(len(bmargs)), " argument(s)"]))
+                    return {}
+                flint ai2 = 0
+                while ai2 < len(bmargs):
+                    dict mma2 = bmargs[ai2]
+                    str mspec = mi[a1]
+                    if ai2 == 1:
+                        mspec = mi[a2]
+                    if mspec != "any" AND mma2[t] != "NONE" AND mma2[t] != "any" AND mma2[t] != mspec:
+                        fail(st, {line: mma2[line], col: mma2[col]}, "TYPE_ERROR", cat(["argument ", str(ai2 + 1), " of '", mname, "' to be ", mspec]), mma2[t])
+                        return {}
+                    ai2 += 1
+                e = {k: "method", base: e, name: mname, rt: mi[rt], args: bmargs, a1: mi[a1], a2: mi[a2], t: mi[ret], nullable: mi[nullable], line: mt[line], col: mt[col]}
         else:
             more = FALSE
 
@@ -1335,12 +1547,14 @@ func parse_expr(dict st, flint min_bp) -> dict:
 
 func stmt_is_decl(dict st) -> bool:
     dict t = tk(st)
+    dict nx = token_at(st, st[pos] + 1)
+    if t[type] == "name" AND is_model_type(st, t[value]):
+        return nx[type] == "name"
     if t[type] != "kw":
         return FALSE
     str v = t[value]
     if NOT is_type_keyword(v):
         return FALSE
-    dict nx = token_at(st, st[pos] + 1)
     if nx[type] == "op" AND nx[value] == "(" AND (v == "str" OR v == "flint"):
         return FALSE
     return TRUE
@@ -1356,23 +1570,23 @@ func stmt_is_decl_block(dict st) -> bool:
     dict nx = token_at(st, st[pos] + 1)
     return nx[type] == "op" AND nx[value] == ":"
 
-# Куда пишет присваивание: в локальную или в глобальную через `ext`.
+# Куда пишет присваивание: в локальную (или верхнеуровневую) или в глобальную.
+# В режиме # const-top верхний уровень — только объявления.
 func resolve_write(dict st, dict tok, str n) -> dict:
     dict vars = st[vars]
     dict gv = st[gvars]
-    dict ex = st[exts]
     if vars.contains(n):
         if is_const_name(n):
             fail(st, tok, "CONST_ERROR", "variable", cat(["constant '", n, "'"]))
+            return {}
+        if st[const_top] AND NOT st[in_func] AND gv.contains(n):
+            fail(st, tok, "TOPLEVEL_ERROR", "assignment inside a function", cat(["assignment to top-level variable '", n, "'"]))
             return {}
         dict nm = st[names]
         return {kind: "local", type: vars.take(n), lua: nm.take(n)}
     if gv.contains(n):
         if is_const_name(n):
             fail(st, tok, "CONST_ERROR", "variable", cat(["constant '", n, "'"]))
-            return {}
-        if NOT ex.contains(n):
-            fail(st, tok, "SCOPE_ERROR", "ext for global assignment", cat(["assignment to global '", n, "' without ext"]))
             return {}
         dict nm2 = st[names]
         return {kind: "global", type: gv.take(n), lua: nm2.take(n)}
@@ -1396,21 +1610,111 @@ func parse_typed_decl(dict st, str dty, dict dname_tok) -> dict:
         if dg.contains(dname):
             fail(st, dname_tok, "REDECLARE_ERROR", "local name", cat(["global '", dname, "' is already declared"]))
             return {}
-    dict de = st[exts]
-    if de.contains(dname):
-        fail(st, dname_tok, "REDECLARE_ERROR", "local name", cat(["ext global '", dname, "'"]))
-        return {}
+    dict dctx = st[model_ctx]
+    if NOT (dctx is NONE):
+        dict dms = dctx[schema]
+        dict dft = dms[field_types]
+        dict dmeth = dms[methods]
+        if dft.contains(dname) OR dmeth.contains(dname):
+            fail(st, dname_tok, "REDECLARE_ERROR", "local name", cat(["model member '", dname, "'"]))
+            return {}
     expect_tok(st, "op", "=", "'='")
     if st[err]:
         return {}
-    dict dexpr = parse_expr(st, 0)
-    if st[err]:
-        return {}
-    if NOT assignable(dexpr[t], dty):
-        fail(st, {line: dexpr[line], col: dexpr[col]}, "TYPE_ERROR", cat(["declaration of '", dname, "': type ", dty]), dexpr[t])
-        return {}
+    dict dexpr = {}
+    if is_model_type(st, dty) AND tok_is(tk(st), "kw", "init"):
+        dict inittok = advance(st)
+        expect_tok(st, "op", "(", "'('")
+        dict ms = model_schema(st, dty)
+        dict cons = ms[ctor]
+        if cons is NONE:
+            fail(st, inittok, "NAME_ERROR", cat(["declared construct of '", dty, "'"]), "model without construct")
+            return {}
+        list iparams = cons[params]
+        dict iparm = {}
+        flint ii = 0
+        while ii < len(iparams):
+            dict ipp = iparams[ii]
+            iparm.add(ipp[name], TRUE)
+            ii += 1
+        list iargs = []
+        dict iseen = {}
+        if NOT tok_is(tk(st), "op", ")"):
+            while TRUE:
+                dict iat = expect_tok(st, "name", "", "init argument name")
+                if st[err]:
+                    return {}
+                str ian = iat[value]
+                if iseen.contains(ian):
+                    fail(st, iat, "REDECLARE_ERROR", "unique init argument", cat(["duplicate '", ian, "'"]))
+                    return {}
+                iseen.add(ian, TRUE)
+                expect_tok(st, "op", ":", "':'")
+                dict iav = parse_expr(st, 0)
+                if st[err]:
+                    return {}
+                bool iok = FALSE
+                str iwant = "any"
+                if iparm.contains(ian):
+                    flint ij = 0
+                    while ij < len(iparams):
+                        dict ipj = iparams[ij]
+                        if ipj[name] == ian:
+                            iwant = ipj[type]
+                            iok = TRUE
+                        ij += 1
+                else:
+                    dict iinit = ms[init_fields]
+                    dict ift = ms[field_types]
+                    dict imf = ms[model_fields]
+                    dict icons = ms[consts]
+                    if iinit.contains(ian):
+                        iwant = ift.take(ian)
+                        iok = TRUE
+                    elif imf.contains(ian) OR icons.contains(ian):
+                        fail(st, iat, "CONST_ERROR", "init argument for a mutable field", cat(["read-only '", ian, "'"]))
+                        return {}
+                    elif ift.contains(ian):
+                        fail(st, iat, "CONST_ERROR", "init argument for a computed field", cat(["field '", ian, "' is set from construct parameters"]))
+                        return {}
+                    else:
+                        fail(st, iat, "NAME_ERROR", cat(["field or construct parameter of '", dty, "'"]), cat(["unknown '", ian, "'"]))
+                        return {}
+                if NOT assignable(iav[t], iwant):
+                    fail(st, {line: iav[line], col: iav[col]}, "TYPE_ERROR", cat(["init argument '", ian, "': type ", iwant]), iav[t])
+                    return {}
+                iargs.add({name: ian, expr: iav, type: iwant})
+                if tok_is(tk(st), "op", ","):
+                    advance(st)
+                else:
+                    break
+        expect_tok(st, "op", ")", "')'")
+        if st[err]:
+            return {}
+        flint mi2 = 0
+        while mi2 < len(iparams):
+            dict ipm = iparams[mi2]
+            str need = ipm[name]
+            if NOT iseen.contains(need):
+                fail(st, inittok, "ARGCOUNT_ERROR", cat(["argument '", need, "' in init"]), "missing")
+                return {}
+            mi2 += 1
+        dexpr = {k: "model_init", mname: dty, args: iargs, t: dty, line: inittok[line], col: inittok[col]}
+    else:
+        dexpr = parse_expr(st, 0)
+        if st[err]:
+            return {}
+        if NOT assignable(dexpr[t], dty):
+            fail(st, {line: dexpr[line], col: dexpr[col]}, "TYPE_ERROR", cat(["declaration of '", dname, "': type ", dty]), dexpr[t])
+            return {}
     str dlua = mangle_var(st, dname)
     dvars.add(dname, dty)
+    # В # const-top объявления вне циклов — верхнеуровневые константы.
+    # Отмечаем их в gvars: запись в них на верхнем уровне запрещена,
+    # а внутри функций они остаются обычными глобалами.
+    if st[const_top] AND NOT st[in_func] AND st[loop_depth] == 0:
+        dict dtg = st[gvars]
+        dtg.add(dname, dty)
     dict dnl = st[nullable]
     if dexpr[t] == "NONE" OR e_nullable(dexpr):
         dnl.add(dname, TRUE)
@@ -1420,6 +1724,195 @@ func parse_typed_decl(dict st, str dty, dict dname_tok) -> dict:
         dict dmu = st[maybe_unset]
         dmu.add(dname, TRUE)
     return {k: "decl", type: dty, name: dname, lua: dlua, expr: dexpr, line: dname_tok[line], col: dname_tok[col]}
+
+func snapshot_parser(dict st) -> dict:
+    return {vars: st[vars], nullable: st[nullable], maybe_unset: st[maybe_unset], for_names: st[for_names], gvars: st[gvars], gnullable: st[gnullable], gmaybe: st[gmaybe], loop_depth: st[loop_depth], in_func: st[in_func], func_ret: st[func_ret], func_returns: st[func_returns], model_ctx: st[model_ctx]}
+
+func restore_parser(dict st, dict sv):
+    st.add("vars", sv[vars])
+    st.add("nullable", sv[nullable])
+    st.add("maybe_unset", sv[maybe_unset])
+    st.add("for_names", sv[for_names])
+    st.add("gvars", sv[gvars])
+    st.add("gnullable", sv[gnullable])
+    st.add("gmaybe", sv[gmaybe])
+    st.add("loop_depth", sv[loop_depth])
+    st.add("in_func", sv[in_func])
+    st.add("func_ret", sv[func_ret])
+    st.add("func_returns", sv[func_returns])
+    st.add("model_ctx", sv[model_ctx])
+
+# Заголовок модели: поле до construct. Тело не разбирает.
+func parse_model_field_decl(dict st, dict m) -> dict:
+    str mfty = advance(st)[value]
+    dict mfnt = expect_tok(st, "name", "", "field name")
+    if st[err]:
+        return {}
+    str mfname = mfnt[value]
+    check_field_name(st, mfnt, mfname)
+    if st[err]:
+        return {}
+    dict mf = m[model_fields]
+    dict ft = m[field_types]
+    dict meth = m[methods]
+    if mf.contains(mfname) OR ft.contains(mfname) OR meth.contains(mfname):
+        fail(st, mfnt, "REDECLARE_ERROR", "unique field name", cat(["name '", mfname, "' is already declared"]))
+        return {}
+    expect_tok(st, "op", "=", "'='")
+    dict sv = st[model_ctx]
+    st.add("model_ctx", NONE)
+    dict mfexpr = parse_expr(st, 0)
+    st.add("model_ctx", sv)
+    if st[err]:
+        return {}
+    if NOT assignable(mfexpr[t], mfty):
+        fail(st, {line: mfexpr[line], col: mfexpr[col]}, "TYPE_ERROR", cat(["field '", mfname, "': type ", mfty]), mfexpr[t])
+        return {}
+    mf.add(mfname, mfty)
+    ft.add(mfname, mfty)
+    list mo = m[order]
+    mo.add(mfname)
+    list fo = m[field_order]
+    fo.add(mfname)
+    return {name: mfname, type: mfty, expr: mfexpr, line: mfnt[line], col: mfnt[col]}
+
+# Параметры construct (construct=TRUE) или метода. Скобки уже открыты.
+func parse_model_params(dict st, dict m, bool is_cons) -> list:
+    list out = []
+    if NOT tok_is(tk(st), "op", ")"):
+        while TRUE:
+            dict pty_tok = tk(st)
+            str pty = parse_type_name(st)
+            if st[err]:
+                return out
+            if pty == "NONE":
+                fail(st, pty_tok, "TYPE_ERROR", "parameter type", "NONE")
+                return out
+            dict pnt = expect_tok(st, "name", "", "parameter name")
+            if st[err]:
+                return out
+            str pnm = pnt[value]
+            if is_reserved(pnm) OR is_const_name(pnm):
+                fail(st, pnt, "NAME_ERROR", "free parameter name", cat(["reserved '", pnm, "'"]))
+                return out
+            dict mf = m[model_fields]
+            dict ft = m[field_types]
+            dict meth = m[methods]
+            if mf.contains(pnm) OR meth.contains(pnm) OR (NOT is_cons AND ft.contains(pnm)):
+                fail(st, pnt, "REDECLARE_ERROR", "parameter name", cat(["model member '", pnm, "'"]))
+                return out
+            flint pi = 0
+            while pi < len(out):
+                dict po = out[pi]
+                if po[name] == pnm:
+                    fail(st, pnt, "REDECLARE_ERROR", "unique parameter name", cat(["duplicate '", pnm, "'"]))
+                    return out
+                pi += 1
+            out.add({name: pnm, type: pty, line: pnt[line], col: pnt[col]})
+            if tok_is(tk(st), "op", ","):
+                advance(st)
+            else:
+                break
+    expect_tok(st, "op", ")", "')'")
+    return out
+
+func parse_construct_header(dict st, dict m) -> dict:
+    advance(st)
+    expect_tok(st, "op", "(", "'('")
+    list params = parse_model_params(st, m, TRUE)
+    if st[err]:
+        return {}
+    expect_tok(st, "op", ":", "':'")
+    if st[err]:
+        return {}
+    m.add("ctor", {params: params, body: []})
+    list mparams = m[params]
+    dict mptypes = m[param_types]
+    for p0 in params:
+        dict p = p0
+        mparams.add(p[name])
+        mptypes.add(p[name], p[type])
+    dict mctx = {model_name: m[name], schema: m, in_construct: TRUE, level: st[block_depth] + 1, self_seen: FALSE, self_done: FALSE, param_set: {}}
+    dict ps = mctx[param_set]
+    for p1 in params:
+        dict p1d = p1
+        ps.add(p1d[name], TRUE)
+    return {params: params, mctx: mctx}
+
+func parse_method_header(dict st, dict m) -> dict:
+    advance(st)
+    dict mtok = expect_tok(st, "name", "", "method name")
+    if st[err]:
+        return {}
+    str mn = mtok[value]
+    if is_reserved(mn) OR is_const_name(mn):
+        fail(st, mtok, "NAME_ERROR", "free method name", cat(["reserved '", mn, "'"]))
+        return {}
+    dict mf = m[model_fields]
+    dict ft = m[field_types]
+    dict meth = m[methods]
+    if ft.contains(mn) OR mf.contains(mn) OR meth.contains(mn):
+        fail(st, mtok, "REDECLARE_ERROR", "unique method name", cat(["name '", mn, "' is already declared"]))
+        return {}
+    expect_tok(st, "op", "(", "'('")
+    list params = parse_model_params(st, m, FALSE)
+    if st[err]:
+        return {}
+    str mret = "NONE"
+    bool mhas = FALSE
+    if tok_is(tk(st), "op", "->"):
+        advance(st)
+        dict mrt = tk(st)
+        mret = parse_type_name(st)
+        if st[err]:
+            return {}
+        if mret == "NONE":
+            fail(st, mrt, "SYNTAX_ERROR", "return type (omit '->' for NONE)", "NONE")
+            return {}
+        mhas = TRUE
+    expect_tok(st, "op", ":", "':'")
+    if st[err]:
+        return {}
+    dict info = {params: params, ret: NONE, ret_nullable: FALSE, inferring: TRUE}
+    if mhas:
+        info.add("ret", mret)
+    meth.add(mn, info)
+    list mo = m[method_order]
+    mo.add(mn)
+    return {name: mn, info: info, params: params, ret: mret, has_ret: mhas, line: mtok[line], col: mtok[col]}
+
+func finish_method(dict st, dict info, list body, str declared, bool has_ret, list rets):
+    bool fall = TRUE
+    if len(body) > 0:
+        dict last = body[len(body) - 1]
+        if last[k] == "return":
+            fall = FALSE
+    bool nullable = fall
+    str seen = ""
+    flint ri = 0
+    while ri < len(rets):
+        dict rr = rets[ri]
+        if rr[empty] OR rr[type] == "NONE" OR e_nullable(rr):
+            nullable = TRUE
+        elif has_ret:
+            if rr[type] != declared AND rr[type] != "any":
+                fail(st, rr, "TYPE_ERROR", cat(["return type ", declared]), rr[type])
+                return:
+        else:
+            if seen != "" AND seen != rr[type]:
+                fail(st, rr, "TYPE_ERROR", "all returns of a method to have one type", cat([seen, " and ", rr[type]]))
+                return:
+            seen = rr[type]
+        ri += 1
+    str final = declared
+    if NOT has_ret:
+        final = seen
+        if final == "":
+            final = "NONE"
+    info.add("ret", final)
+    info.add("ret_nullable", nullable)
+    info.add("inferring", FALSE)
+    info.add("body", body)
 
 # Разбирает блок. top=TRUE — весь файл до eof; top=FALSE — после ':'.
 # Рекурсивна: тела if/while/for/func разбираются ею же.
@@ -1503,29 +1996,6 @@ func parse_block(dict st, bool top) -> list:
                 node = parse_typed_decl(st, dty, dname_tok)
                 if st[err]:
                     return stmts
-            elif t[type] == "kw" AND t[value] == "ext":
-                dict extok = advance(st)
-                if NOT st[in_func]:
-                    fail(st, extok, "SCOPE_ERROR", "'ext' inside a function", "top level")
-                    return stmts
-                dict extname_tok = expect_tok(st, "name", "", "global variable name")
-                if st[err]:
-                    return stmts
-                str extname = extname_tok[value]
-                dict egv = st[gvars]
-                if NOT egv.contains(extname):
-                    fail(st, extname_tok, "NAME_ERROR", "declared global variable", cat(["undeclared global '", extname, "'"]))
-                    return stmts
-                dict eloc = st[vars]
-                if eloc.contains(extname):
-                    fail(st, extname_tok, "REDECLARE_ERROR", "global name", cat(["local '", extname, "' is already declared"]))
-                    return stmts
-                dict eex = st[exts]
-                if eex.contains(extname):
-                    fail(st, extname_tok, "REDECLARE_ERROR", "unique ext", cat(["ext '", extname, "' is already declared"]))
-                    return stmts
-                eex.add(extname, TRUE)
-                node = {k: "ext", name: extname, line: extok[line], col: extok[col]}
             elif t[type] == "kw" AND t[value] == "if":
                 dict iftok = advance(st)
                 list branches = []
@@ -1762,7 +2232,6 @@ func parse_block(dict st, bool top) -> list:
                 dict sv_gvars = st[gvars]
                 dict sv_gnullable = st[gnullable]
                 dict sv_gmaybe = st[gmaybe]
-                dict sv_exts = st[exts]
                 flint sv_loop = st[loop_depth]
                 bool sv_in = st[in_func]
                 str sv_ret = st[func_ret]
@@ -1770,7 +2239,6 @@ func parse_block(dict st, bool top) -> list:
                 st.add("gvars", st[vars])
                 st.add("gnullable", st[nullable])
                 st.add("gmaybe", st[maybe_unset])
-                st.add("exts", {})
                 st.add("vars", {})
                 st.add("nullable", {})
                 st.add("maybe_unset", {})
@@ -1795,7 +2263,6 @@ func parse_block(dict st, bool top) -> list:
                 st.add("gvars", sv_gvars)
                 st.add("gnullable", sv_gnullable)
                 st.add("gmaybe", sv_gmaybe)
-                st.add("exts", sv_exts)
                 st.add("loop_depth", sv_loop)
                 st.add("in_func", sv_in)
                 st.add("func_ret", sv_ret)
@@ -1831,6 +2298,143 @@ func parse_block(dict st, bool top) -> list:
                 fninfo.add("ret_nullable", fnullable)
                 fninfo.add("inferring", FALSE)
                 node = {k: "func", name: fn_name, lua: flua, params: params, ret: final_ret, body: fnbody, block_stmt: TRUE, line: funtok[line], col: funtok[col]}
+                block_stmt = TRUE
+            elif t[type] == "kw" AND t[value] == "model":
+                dict mtok = advance(st)
+                if st[in_func] OR st[block_depth] > 0:
+                    fail(st, mtok, "SCOPE_ERROR", "model at top level", "nested model")
+                    return stmts
+                dict mnt = expect_tok(st, "name", "", "model name")
+                if st[err]:
+                    return stmts
+                str mname = mnt[value]
+                if is_reserved(mname) OR is_const_name(mname):
+                    fail(st, mnt, "NAME_ERROR", "free model name", cat(["reserved '", mname, "'"]))
+                    return stmts
+                dict mall = st[models]
+                dict mgv = st[vars]
+                dict mfnc = st[funcs]
+                if mall.contains(mname) OR mgv.contains(mname) OR mfnc.contains(mname):
+                    fail(st, mnt, "REDECLARE_ERROR", "unique model name", cat(["name '", mname, "' is already declared"]))
+                    return stmts
+                dict mschema = {name: mname, model_fields: {}, field_types: {}, consts: {}, init_fields: {}, params: [], param_types: {}, methods: {}, method_order: [], ctor: NONE, order: [], field_order: []}
+                mall.add(mname, mschema)
+                expect_tok(st, "op", ":", "':'")
+                expect_tok(st, "newline", "", "end of line after ':'")
+                expect_tok(st, "indent", "", "indented block")
+                if st[err]:
+                    return stmts
+                list mfield_nodes = []
+                bool mseen_construct = FALSE
+                bool mseen_method = FALSE
+                bool mgoing = TRUE
+                while mgoing:
+                    dict mbt = tk(st)
+                    if st[err]:
+                        return stmts
+                    if mbt[type] == "dedent" OR mbt[type] == "eof":
+                        mgoing = FALSE
+                    elif mbt[type] == "newline":
+                        advance(st)
+                    elif mbt[type] == "kw" AND mbt[value] == "construct":
+                        if mseen_construct:
+                            fail(st, mbt, "REDECLARE_ERROR", "one construct per model", "second construct")
+                            return stmts
+                        if mseen_method:
+                            fail(st, mbt, "SYNTAX_ERROR", "construct before methods", "construct after method")
+                            return stmts
+                        dict mch = parse_construct_header(st, mschema)
+                        if st[err]:
+                            return stmts
+                        list mparams = mch[params]
+                        dict mctx = mch[mctx]
+                        dict sv = snapshot_parser(st)
+                        st.add("gvars", st[vars])
+                        st.add("gnullable", st[nullable])
+                        st.add("gmaybe", st[maybe_unset])
+                        st.add("vars", {})
+                        st.add("nullable", {})
+                        st.add("maybe_unset", {})
+                        st.add("for_names", {})
+                        st.add("loop_depth", 0)
+                        st.add("in_func", TRUE)
+                        st.add("func_ret", "NONE")
+                        st.add("func_returns", [])
+                        st.add("model_ctx", mctx)
+                        for p0 in mparams:
+                            dict p = p0
+                            p.add("lua", mangle_var(st, p[name]))
+                            dict pv = st[vars]
+                            pv.add(p[name], p[type])
+                        list mbody = parse_block(st, FALSE)
+                        restore_parser(st, sv)
+                        if st[err]:
+                            return stmts
+                        if NOT mctx[self_seen]:
+                            fail(st, mtok, "SYNTAX_ERROR", "self(...) as the first statement of construct", "missing self(...)")
+                            return stmts
+                        dict mcons = mschema[ctor]
+                        mcons.add("body", mbody)
+                        mseen_construct = TRUE
+                    elif mbt[type] == "kw" AND mbt[value] == "method":
+                        if NOT mseen_construct:
+                            fail(st, mbt, "SYNTAX_ERROR", "construct before methods", "method before construct")
+                            return stmts
+                        dict mmh = parse_method_header(st, mschema)
+                        if st[err]:
+                            return stmts
+                        dict mctx2 = {model_name: mname, schema: mschema, in_construct: FALSE, level: 0, self_seen: TRUE, self_done: TRUE, param_set: {}}
+                        dict sv2 = snapshot_parser(st)
+                        st.add("gvars", st[vars])
+                        st.add("gnullable", st[nullable])
+                        st.add("gmaybe", st[maybe_unset])
+                        st.add("vars", {})
+                        st.add("nullable", {})
+                        st.add("maybe_unset", {})
+                        st.add("for_names", {})
+                        st.add("loop_depth", 0)
+                        st.add("in_func", TRUE)
+                        st.add("func_ret", mmh[ret])
+                        st.add("func_returns", [])
+                        st.add("model_ctx", mctx2)
+                        list mparams2 = mmh[params]
+                        for p3 in mparams2:
+                            dict p3d = p3
+                            p3d.add("lua", mangle_var(st, p3d[name]))
+                            dict pv2 = st[vars]
+                            pv2.add(p3d[name], p3d[type])
+                        list mbody2 = parse_block(st, FALSE)
+                        list mrets = st[func_returns]
+                        restore_parser(st, sv2)
+                        if st[err]:
+                            return stmts
+                        finish_method(st, mmh[info], mbody2, mmh[ret], mmh[has_ret], mrets)
+                        if st[err]:
+                            return stmts
+                        mseen_method = TRUE
+                    elif mbt[type] == "kw" AND is_scalar_type(mbt[value]):
+                        if mseen_construct OR mseen_method:
+                            fail(st, mbt, "SYNTAX_ERROR", "model fields before construct", "field after construct")
+                            return stmts
+                        dict mfnode = parse_model_field_decl(st, mschema)
+                        if st[err]:
+                            return stmts
+                        mfield_nodes.add(mfnode)
+                        dict mfnx = tk(st)
+                        if mfnx[type] == "newline":
+                            advance(st)
+                        elif mfnx[type] != "dedent":
+                            fail(st, mfnx, "SYNTAX_ERROR", "end of line", describe_tok(mfnx))
+                            return stmts
+                    else:
+                        fail(st, mbt, "SYNTAX_ERROR", "model field, construct or method", describe_tok(mbt))
+                        return stmts
+                if tk(st)[type] == "dedent":
+                    advance(st)
+                if NOT mseen_construct:
+                    fail(st, mtok, "SYNTAX_ERROR", "construct in model", "missing construct")
+                    return stmts
+                node = {k: "model", name: mname, schema: mschema, fields: mfield_nodes, line: mtok[line], col: mtok[col]}
                 block_stmt = TRUE
             elif t[type] == "kw" AND t[value] == "return":
                 dict rtok2 = advance(st)
@@ -1919,21 +2523,114 @@ func parse_block(dict st, bool top) -> list:
                 dict e = parse_expr(st, 0)
                 if st[err]:
                     return stmts
-                if tok_is(tk(st), "op", "="):
-                    str ek = e[k]
-                    if ek != "index" AND ek != "dget":
-                        fail(st, {line: e[line], col: e[col]}, "TYPE_ERROR", "variable or index as assignment target", ek)
+                if e[k] == "self_init":
+                    dict sctx = st[model_ctx]
+                    if sctx is NONE OR NOT sctx[in_construct]:
+                        fail(st, e, "SCOPE_ERROR", "self(...) in construct", "self(...) outside construct")
                         return stmts
-                    if ek == "index":
-                        dict seb = e[base]
-                        if seb[t] == "str":
-                            fail(st, {line: e[line], col: e[col]}, "TYPE_ERROR", "mutable index target", "str is immutable")
+                    if st[block_depth] != sctx[level] OR len(stmts) != 0:
+                        fail(st, e, "SYNTAX_ERROR", "self(...) as the first statement of construct", "nested or later self(...)")
+                        return stmts
+                    if sctx[self_seen]:
+                        fail(st, e, "REDECLARE_ERROR", "one self(...) per construct", "second self(...)")
+                        return stmts
+                    list sargs = e[names]
+                    dict ssch = sctx[schema]
+                    dict scons = ssch[ctor]
+                    list sps = []
+                    if NOT (scons is NONE):
+                        sps = scons[params]
+                    flint slast = -1
+                    list sfields = []
+                    flint si = 0
+                    while si < len(sargs):
+                        dict sat = sargs[si]
+                        str san = sat[value]
+                        flint sfound = -1
+                        flint sj = 0
+                        while sj < len(sps):
+                            dict ssp = sps[sj]
+                            if ssp[name] == san:
+                                sfound = sj
+                            sj += 1
+                        if sfound < 0:
+                            fail(st, sat, "NAME_ERROR", "construct parameter in self(...)", cat(["unknown '", san, "'"]))
                             return stmts
-                    dict eq = advance(st)
-                    dict eval2 = parse_expr(st, 0)
-                    if st[err]:
-                        return stmts
-                    node = {k: "setindex", target: e, expr: eval2, line: eq[line], col: eq[col]}
+                        if sfound <= slast:
+                            fail(st, sat, "SYNTAX_ERROR", "construct parameters in declaration order", cat(["out of order '", san, "'"]))
+                            return stmts
+                        slast = sfound
+                        dict sp = sps[sfound]
+                        add_model_field(st, sctx[schema], sat, san, sp[type], FALSE)
+                        if st[err]:
+                            return stmts
+                        sfields.add({name: san, type: sp[type], lua: sp[lua], line: sat[line], col: sat[col]})
+                        si += 1
+                    sctx.add("self_seen", TRUE)
+                    sctx.add("self_done", TRUE)
+                    node = {k: "self_init", fields: sfields, line: e[line], col: e[col]}
+                elif tok_is(tk(st), "op", "="):
+                    str ek = e[k]
+                    if ek == "field":
+                        dict fb = e[base]
+                        dict fschema = model_schema(st, e[mname])
+                        str fld = e[name]
+                        dict mctx6 = st[model_ctx]
+                        bool in_con = FALSE
+                        if NOT (mctx6 is NONE) AND mctx6[in_construct] AND fb[k] == "var" AND fb[name] == "self":
+                            if st[block_depth] == mctx6[level]:
+                                in_con = TRUE
+                        if e[model_field]:
+                            fail(st, e, "CONST_ERROR", "mutable field", cat(["model field '", fld, "' is read-only"]))
+                            return stmts
+                        if e[is_const]:
+                            fail(st, e, "CONST_ERROR", "mutable field", cat(["constant '", fld, "' is read-only"]))
+                            return stmts
+                        dict ftypes6 = fschema[field_types]
+                        if NOT ftypes6.contains(fld):
+                            if NOT in_con OR NOT mctx6[self_done]:
+                                fail(st, e, "NAME_ERROR", cat(["declared field of '", e[mname], "'"]), cat(["unknown '", fld, "'"]))
+                                return stmts
+                            dict mctx6ps = mctx6[param_set]
+                            if mctx6ps.contains(fld):
+                                fail(st, e, "REDECLARE_ERROR", "new field name", cat(["construct parameter '", fld, "'"]))
+                                return stmts
+                            dict mcvar = st[vars]
+                            if mcvar.contains(fld):
+                                fail(st, e, "REDECLARE_ERROR", "new field name", cat(["local '", fld, "'"]))
+                                return stmts
+                        dict eq = advance(st)
+                        dict fexpr = parse_expr(st, 0)
+                        if st[err]:
+                            return stmts
+                        str fexpty = fexpr[t]
+                        if ftypes6.contains(fld):
+                            if NOT assignable(fexpty, ftypes6.take(fld)):
+                                fail(st, {line: fexpr[line], col: fexpr[col]}, "TYPE_ERROR", cat(["field '", fld, "': type ", ftypes6.take(fld)]), fexpty)
+                                return stmts
+                            node = {k: "field_assign", base: fb, mname: e[mname], name: fld, expr: fexpr, type: ftypes6.take(fld), line: eq[line], col: eq[col]}
+                        else:
+                            if NOT is_scalar_type(fexpty):
+                                fail(st, {line: fexpr[line], col: fexpr[col]}, "TYPE_ERROR", "scalar instance field (str, flint, bool)", fexpty)
+                                return stmts
+                            add_model_field(st, fschema, e, fld, fexpty, TRUE)
+                            if st[err]:
+                                return stmts
+                            node = {k: "field_create", base: fb, mname: e[mname], name: fld, expr: fexpr, type: fexpty, line: eq[line], col: eq[col]}
+                    else:
+                        if ek != "index" AND ek != "dget":
+                            fail(st, {line: e[line], col: e[col]}, "TYPE_ERROR", "variable, field or index as assignment target", ek)
+                            return stmts
+                        if ek == "index":
+                            dict seb = e[base]
+                            if seb[t] == "str":
+                                fail(st, {line: e[line], col: e[col]}, "TYPE_ERROR", "mutable index target", "str is immutable")
+                                return stmts
+                        dict eq2 = advance(st)
+                        dict eval2 = parse_expr(st, 0)
+                        if st[err]:
+                            return stmts
+                        node = {k: "setindex", target: e, expr: eval2, line: eq2[line], col: eq2[col]}
                 else:
                     node = {k: "exprstmt", expr: e, line: e[line], col: e[col]}
             if NOT decl_block:
@@ -1997,6 +2694,7 @@ func checked(str x, str ety, bool nullable, str target) -> str:
             return cat(["krt.as_list(", x, ")"])
         if target == "dict":
             return cat(["krt.as_dict(", x, ")"])
+        return cat(["krt.as_model(", x, lua_str(target), ")"])
     return x
 
 func wrap_to(str x, str ety, bool nullable, str target) -> str:
@@ -2011,6 +2709,7 @@ func wrap_to(str x, str ety, bool nullable, str target) -> str:
             return cat(["krt.as_list(", x, ")"])
         if target == "dict":
             return cat(["krt.as_dict(", x, ")"])
+        return cat(["krt.as_model(", x, lua_str(target), ")"])
     return x
 
 func ordered_x(str x, dict e, dict other) -> str:
@@ -2071,6 +2770,40 @@ func emit_expr(dict st, dict e) -> str:
         return "krt.NONE"
     if k == "var":
         return e[lua]
+
+    if k == "model_field":
+        return cat(["krt.model_get(self, ", lua_str(e[name]), ")"])
+    if k == "field":
+        return cat(["krt.model_get(", emit_expr(st, e[base]), ", ", lua_str(e[name]), ")"])
+    if k == "model_new":
+        list mna = e[args]
+        list mnp = [lua_str(e[mname])]
+        flint mni = 0
+        while mni < len(mna):
+            dict mnarg = mna[mni]
+            mnp.add(emit_expr(st, mnarg))
+            mni += 1
+        return cat(["krt.model_new(", mnp.join(", "), ")"])
+    if k == "model_init":
+        list mia = e[args]
+        list mip = []
+        for mia0 in mia:
+            dict mian = mia0
+            mip.add(cat(["[", lua_str(mian[name]), "] = ", emit_expr(st, mian[expr])]))
+        return cat(["krt.model_init(", lua_str(e[mname]), ", \{", mip.join(", "), "\})"])
+    if k == "model_method":
+        list mma2 = e[args]
+        list mmp2 = [emit_expr(st, e[base]), lua_str(e[name])]
+        list mmpt2 = e[ptypes]
+        flint mmi2 = 0
+        while mmi2 < len(mma2):
+            dict mmarg = mma2[mmi2]
+            str mmtgt = mmpt2[mmi2]
+            mmp2.add(wrap_to(emit_expr(st, mmarg), mmarg[t], e_nullable(mmarg), mmtgt))
+            mmi2 += 1
+        return cat(["krt.model_call(", mmp2.join(", "), ")"])
+    if k == "self_init":
+        return "krt.NONE"
 
     if k == "func_ref":
         return e[lua]
@@ -2305,6 +3038,8 @@ func emit_expr(dict st, dict e) -> str:
             return cat(["krt.is_list(", ix2, ")"])
         if ty2 == "dict":
             return cat(["krt.is_dict(", ix2, ")"])
+        if is_model_type(st, ty2):
+            return cat(["krt.is_model(", ix2, ", ", lua_str(ty2), ")"])
         return cat(["(", ix2, " == krt.NONE or ", ix2, " == nil)"])
 
     if k == "bin":
@@ -2437,6 +3172,38 @@ func emit_hoist(dict st, list names):
         nones.add("krt.NONE")
     emit_line(st, cat(["local ", lua.join(", "), " = ", nones.join(", ")]))
 
+func lua_str_map_keys(dict d, list ks) -> str:
+    list parts = []
+    for k in ks:
+        if d.contains(k):
+            parts.add(cat(["[", lua_str(k), "] = ", lua_str(d.take(k))]))
+    if len(parts) == 0:
+        return "\{\}"
+    return cat(["\{", parts.join(", "), "\}"])
+
+func lua_true_map_keys(dict d, list ks) -> str:
+    list parts = []
+    for k in ks:
+        if d.contains(k):
+            parts.add(cat(["[", lua_str(k), "] = true"]))
+    if len(parts) == 0:
+        return "\{\}"
+    return cat(["\{", parts.join(", "), "\}"])
+
+func cat_lists(list a, list b) -> list:
+    list out = []
+    for x in a:
+        out.add(x)
+    for y in b:
+        out.add(y)
+    return out
+
+func lua_str_list(list xs) -> str:
+    list parts = []
+    for x in xs:
+        parts.add(lua_str(x))
+    return cat(["\{", parts.join(", "), "\}"])
+
 # Стейтменты -> строки Lua. Рекурсивна только сама в себя.
 func emit_stmts(dict st, list stmts) -> str:
     flint i = 0
@@ -2450,7 +3217,83 @@ func emit_stmts(dict st, list stmts) -> str:
             wrap_ret = TRUE
             emit_line(st, "do")
             st.add("indent", st[indent] + 1)
-        if sk == "decl":
+        if sk == "model":
+            dict msc = s[schema]
+            str mn2 = s[name]
+            dict msc_mf = msc[model_fields]
+            dict msc_ft = msc[field_types]
+            dict msc_cs = msc[consts]
+            dict msc_if = msc[init_fields]
+            dict msc_pt = msc[param_types]
+            list msc_ord = msc[order]
+            list msc_fo = msc[field_order]
+            list msc_pl = msc[params]
+            list msc_all = msc_fo
+            emit_line(st, cat(["krt.model_define(", lua_str(mn2), ", ", lua_str_map_keys(msc_mf, msc_ord), ", ", lua_str_map_keys(msc_ft, msc_all), ", ", lua_true_map_keys(msc_cs, msc_all), ", ", lua_true_map_keys(msc_if, msc_fo), ", ", lua_str_list(msc_pl), ", ", lua_str_map_keys(msc_pt, msc_pl), ")"]))
+            list mflds = s[fields]
+            for mf0 in mflds:
+                dict mfn2 = mf0
+                emit_line(st, cat(["krt.model_set_value(", lua_str(mn2), ", ", lua_str(mfn2[name]), ", ", emit_expr(st, mfn2[expr]), ")"]))
+            dict mcons2 = msc[ctor]
+            list mcps = mcons2[params]
+            list mcpl = ["self"]
+            for mcp0 in mcps:
+                dict mcp = mcp0
+                mcpl.add(mcp[lua])
+            emit_line(st, cat(["krt.model_construct(", lua_str(mn2), ", function(", mcpl.join(", "), ")"]))
+            st.add("indent", st[indent] + 1)
+            str msv = st[current_ret]
+            st.add("current_ret", "NONE")
+            list mcbody = mcons2[body]
+            emit_hoist(st, collect_scope(mcbody))
+            emit_stmts(st, mcbody)
+            st.add("current_ret", msv)
+            st.add("indent", st[indent] - 1)
+            emit_line(st, "end)")
+            list mmorder = msc[method_order]
+            for mmn2 in mmorder:
+                dict msmeth6 = msc[methods]
+                dict mmi2 = msmeth6.take(mmn2)
+                list mmps = [ "self" ]
+                list mmpl = mmi2[params]
+                for mmp0 in mmpl:
+                    dict mmp = mmp0
+                    mmps.add(mmp[lua])
+                emit_line(st, cat(["krt.model_method(", lua_str(mn2), ", ", lua_str(mmn2), ", function(", mmps.join(", "), ")"]))
+                st.add("indent", st[indent] + 1)
+                str msv2 = st[current_ret]
+                st.add("current_ret", mmi2[ret])
+                list mmbody = mmi2[body]
+                emit_hoist(st, collect_scope(mmbody))
+                emit_stmts(st, mmbody)
+                st.add("current_ret", msv2)
+                bool mmend = FALSE
+                if len(mmbody) > 0:
+                    dict mmlast = mmbody[len(mmbody) - 1]
+                    if mmlast[k] == "return":
+                        mmend = TRUE
+                if NOT mmend:
+                    emit_line(st, "return krt.NONE")
+                st.add("indent", st[indent] - 1)
+                emit_line(st, "end)")
+        elif sk == "self_init":
+            list sfl = s[fields]
+            for sf0 in sfl:
+                dict sf = sf0
+                emit_line(st, cat(["krt.model_create_field(self, ", lua_str(sf[name]), ", ", sf[lua], ", ", "false", ", ", lua_str(sf[type]), ")"]))
+        elif sk == "field_create":
+            dict fce = s[expr]
+            str fcx = checked(emit_expr(st, fce), fce[t], e_nullable(fce), s[type])
+            str fcb = emit_expr(st, s[base])
+            str fcc = "false"
+            if is_const_name(s[name]):
+                fcc = "true"
+            emit_line(st, cat(["krt.model_create_field(", fcb, ", ", lua_str(s[name]), ", ", fcx, ", ", fcc, ", ", lua_str(s[type]), ")"]))
+        elif sk == "field_assign":
+            dict fae = s[expr]
+            str fax = checked(emit_expr(st, fae), fae[t], e_nullable(fae), s[type])
+            emit_line(st, cat(["krt.model_set(", emit_expr(st, s[base]), ", ", lua_str(s[name]), ", ", fax, ")"]))
+        elif sk == "decl":
             dict de = s[expr]
             str dx = checked(emit_expr(st, de), de[t], e_nullable(de), s[type])
             emit_line(st, cat([s[lua], " = ", dx]))
@@ -2672,7 +3515,7 @@ func emit_stmts(dict st, list stmts) -> str:
 # ---------- сборка Lua ----------
 
 func generate(dict ast, dict opts) -> str:
-    dict st = {out: [], indent: 0, line_map: [], cur_pos: {}, loop_stack: [], loop_id: 0, ret_id: 0, current_ret: "NONE"}
+    dict st = {out: [], indent: 0, line_map: [], cur_pos: {}, loop_stack: [], loop_id: 0, ret_id: 0, current_ret: "NONE", models: opts[models]}
     emit_line(st, "#!/usr/bin/env luajit")
     emit_line(st, "-- generated by kraft")
     emit_line(st, cat(["local __KRAFT_SOURCE = ", lua_str(opts[path])]))
@@ -2734,6 +3577,27 @@ func extract_stdin(str src) -> list:
                 out.add(line[i..n])
     return out
 
+# `# const-top` — директива режима: верхний уровень файла только объявляет.
+func has_const_top(str src) -> bool:
+    for l0 in split_lines(src):
+        str line = l0
+        flint i = 0
+        flint n = len(line)
+        while i < n AND (line[i] == " " OR line[i] == "\t"):
+            i += 1
+        if i >= n OR line[i] != "#":
+            continue
+        i += 1
+        while i < n AND (line[i] == " " OR line[i] == "\t"):
+            i += 1
+        if line[i..i + 9] == "const-top":
+            flint j = i + 9
+            while j < n AND (line[j] == " " OR line[j] == "\t" OR line[j] == "\r"):
+                j += 1
+            if j == n:
+                return TRUE
+    return FALSE
+
 func dirname(str p) -> str:
     flint i = len(p) - 1
     while i >= 0:
@@ -2783,7 +3647,7 @@ if mode == "tokens":
     dump_tokens(lx[tokens])
     exit(0)
 
-dict st = {toks: lx[tokens], pos: 0, path: path, vars: {}, nullable: {}, maybe_unset: {}, gvars: {}, gnullable: {}, gmaybe: {}, exts: {}, for_names: {}, funcs: {}, in_func: FALSE, func_ret: "NONE", func_returns: [], block_depth: 0, loop_depth: 0, err: NONE, names: {}, fnames: {}, vcounter: 0, fcounter: 0}
+dict st = {toks: lx[tokens], pos: 0, path: path, const_top: has_const_top(src), vars: {}, nullable: {}, maybe_unset: {}, gvars: {}, gnullable: {}, gmaybe: {}, for_names: {}, funcs: {}, in_func: FALSE, func_ret: "NONE", func_returns: [], block_depth: 0, loop_depth: 0, err: NONE, names: {}, fnames: {}, vcounter: 0, fcounter: 0, models: {Error: error_schema()}, model_ctx: NONE, try_id: 0, try_depth: 0, try_loop_base: 0}
 list prog = parse_block(st, TRUE)
 if st[err]:
     dict e2 = st[err]
@@ -2798,7 +3662,7 @@ if NOT file_exists(krt_path):
     exit(1)
 str krt_src = read_file(krt_path)
 
-str out_lua = generate(ast, {path: path, krt: krt_src, source: src, stdin: extract_stdin(src)})
+str out_lua = generate(ast, {path: path, krt: krt_src, source: src, stdin: extract_stdin(src), models: st[models]})
 if mode == "compile":
     str base = path
     if path.suff(".kraft"):

@@ -1,0 +1,3 @@
+CONST_ERROR: tests/new/err_model_field_readonly.kraft:6
+    6 | x.kind = "cube"
+          ^ expected mutable field, found model field 'kind' is read-only

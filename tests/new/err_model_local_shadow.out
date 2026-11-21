@@ -1,0 +1,3 @@
+REDECLARE_ERROR: tests/new/err_model_local_shadow.kraft:5
+    5 |         flint a = 1
+                      ^ expected local name, found model member 'a'

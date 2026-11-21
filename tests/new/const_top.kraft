@@ -1,0 +1,12 @@
+# const-top
+flint counter = 0
+
+func bump(flint n) -> flint:
+    flint acc = 0
+    for i n:
+        acc += i
+    counter += acc
+    return acc
+
+show({bump(4)})
+show({counter})

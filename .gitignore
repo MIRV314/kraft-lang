@@ -4,3 +4,6 @@ exam.kraft
 # артефакты компиляции (-c)
 *.kraft.lua
 /build/
+
+# кеш скомпилированного компилятора на Kraft
+xkraft.lua

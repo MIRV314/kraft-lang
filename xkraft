@@ -4,14 +4,21 @@
 set -u
 root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
+# Компилятор на Kraft собирается один раз и пересобирается только при изменении
+# его исходника или рантайма. Без этого каждый запуск стоил ~100 мс.
+cache="$root/xkraft.lua"
+if [ ! -f "$cache" ] || [ "$root/xkraft.kraft" -nt "$cache" ] || [ "$root/src/krt.lua" -nt "$cache" ]; then
+  "$root/kraft" -c "$root/xkraft.kraft" >/dev/null 2>&1 || exit $?
+fi
+
 if [ $# -eq 0 ]; then
-  exec "$root/kraft" "$root/xkraft.kraft"
+  exec luajit "$cache"
 fi
 
 case "$1" in
   -c)
     shift
-    "$root/kraft" "$root/xkraft.kraft" -c "$@"
+    luajit "$cache" -c "$@"
     code=$?
     if [ "$code" -eq 0 ] && [ $# -ge 1 ]; then
       case "$1" in
@@ -21,7 +28,7 @@ case "$1" in
     exit "$code"
     ;;
   --tokens|--emit-lua)
-    exec "$root/kraft" "$root/xkraft.kraft" "$@"
+    exec luajit "$cache" "$@"
     ;;
 esac
 
@@ -30,7 +37,7 @@ shift
 tmp=$(mktemp "${TMPDIR:-/tmp}/xkraft.XXXXXX") || exit 1
 trap 'rm -f "$tmp"' EXIT
 
-"$root/kraft" "$root/xkraft.kraft" "$src" > "$tmp"
+luajit "$cache" "$src" > "$tmp"
 code=$?
 if [ "$code" -ne 0 ]; then
   exit "$code"

@@ -1,3 +1,0 @@
-SCOPE_ERROR: tests/new/err_noext.kraft:3
-    3 |     total = 1
-            ^ expected ext for global assignment, found assignment to global 'total' without ext

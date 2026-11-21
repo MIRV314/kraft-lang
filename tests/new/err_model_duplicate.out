@@ -1,0 +1,3 @@
+REDECLARE_ERROR: tests/new/err_model_duplicate.kraft:4
+    4 | model Box:
+              ^ expected unique model name, found name 'Box' is already declared

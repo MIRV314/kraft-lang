@@ -1,0 +1,3 @@
+TYPE_ERROR: tests/new/err_model_print.kraft:5
+    5 | show({x})
+              ^ expected a field or method inside interpolation, not a model instance, found Box

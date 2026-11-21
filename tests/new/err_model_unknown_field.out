@@ -1,0 +1,3 @@
+NAME_ERROR: tests/new/err_model_unknown_field.kraft:5
+    5 | show({x.nope})
+                ^ expected Box field or method, found unknown field 'nope'

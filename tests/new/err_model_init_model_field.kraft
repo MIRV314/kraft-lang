@@ -1,0 +1,5 @@
+model Box:
+    str kind = "box"
+    construct(flint a):
+        self(a)
+Box x = init(a: 1, kind: "cube")

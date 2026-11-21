@@ -1,0 +1,6 @@
+model Box:
+    construct(flint a):
+        self(a)
+        self.MAX = 10
+Box x = Box(1)
+x.MAX = 20

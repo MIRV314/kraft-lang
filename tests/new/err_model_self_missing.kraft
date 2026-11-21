@@ -1,0 +1,4 @@
+model Box:
+    construct(flint a):
+        show({a})
+Box x = Box(1)

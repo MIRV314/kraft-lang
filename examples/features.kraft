@@ -1,7 +1,7 @@
+# const-top
 flint total = 0
 
 func add(flint n):
-    ext total
     total += n
 
 str:

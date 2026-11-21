@@ -1,8 +1,8 @@
+# const-top
 flint total = 0
 str label = "sum"
 
 func add(flint n):
-    ext total
     total += n
 
 func view() -> str:
@@ -11,7 +11,6 @@ func view() -> str:
 add(5)
 add(7)
 show({view()})
-label = "total"
 show({label})
 
 if TRUE:

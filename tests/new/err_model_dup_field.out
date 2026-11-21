@@ -1,0 +1,3 @@
+REDECLARE_ERROR: tests/new/err_model_dup_field.kraft:3
+    3 |     flint a = 2
+                  ^ expected unique field name, found name 'a' is already declared

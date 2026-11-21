@@ -1,3 +1,0 @@
-flint total = 0
-func f():
-    total = 1

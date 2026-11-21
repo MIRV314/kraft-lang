@@ -1,0 +1,3 @@
+model Box:
+    flint a = 1
+Box x = Box()

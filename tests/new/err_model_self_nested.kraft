@@ -1,0 +1,5 @@
+model Box:
+    construct(flint a):
+        if a > 0:
+            self(a)
+Box x = Box(1)

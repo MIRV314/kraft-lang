@@ -1,0 +1,3 @@
+SYNTAX_ERROR: tests/new/err_model_construct_missing.kraft:1
+    1 | model Box:
+        ^ expected construct in model, found missing construct

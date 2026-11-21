@@ -77,9 +77,9 @@ check "usage" $?
 
 # 7. Обёртка ./xkraft запускает компилятор на Kraft с новыми возможностями.
 cat > "$tmp/feat.kraft" <<'EOF'
+# const-top
 flint total = 0
 func add(flint n):
-    ext total
     total += n
 add(2)
 show({total})

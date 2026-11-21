@@ -1,0 +1,7 @@
+model Box:
+    construct(flint a):
+        self(a)
+    method m() -> flint:
+        flint a = 1
+        return a
+Box x = Box(1)

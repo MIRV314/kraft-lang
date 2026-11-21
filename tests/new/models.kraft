@@ -1,0 +1,49 @@
+model Hero:
+    str kind = "hero"
+    flint era = 3
+    construct(str name, flint power):
+        self(name, power)
+        self.title = "{name} the {kind}"
+        self.rank = power * 2
+        self.MAX_RANK = 100
+    method boost(flint by) -> flint:
+        self.power = self.power + by
+        return self.power
+    method strong() -> bool:
+        return self.power > 10
+
+func renamed(Hero h, str name) -> Hero:
+    h.name = name
+    return h
+
+Hero a = Hero("Ann", 7)
+show({a.name})
+show({a.power})
+show({a.title})
+show({a.rank})
+show({a.MAX_RANK})
+show({a.kind})
+show({a.era})
+show({a.strong()})
+show({a.boost(6)})
+show({a.power})
+show({a.strong()})
+a.power = 20
+show({a.power})
+show({type(a)})
+show({a is Hero})
+show({a is Error})
+
+Hero b = init(name: "Bob", power: 2, title: "B", rank: 9)
+show({b.title})
+show({b.rank})
+show({b.MAX_RANK})
+show({b.kind})
+
+Hero c = a
+c.power = 30
+show({a.power})
+show({renamed(c, "Cara").name})
+show({a.name})
+show({b.kind})
+show({b.era})
