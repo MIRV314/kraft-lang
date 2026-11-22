@@ -808,7 +808,7 @@ func template_state(dict st, dict p) -> dict:
         dict t2 = ts[i]
         shift_token_pos(t2, p[line] - 1, p[col] - 1)
         i += 1
-    return {toks: ts, pos: 0, path: st[path], const_top: st[const_top], vars: st[vars], nullable: st[nullable], maybe_unset: st[maybe_unset], gvars: st[gvars], gnullable: st[gnullable], gmaybe: st[gmaybe], for_names: st[for_names], funcs: st[funcs], in_func: st[in_func], func_ret: st[func_ret], func_returns: st[func_returns], block_depth: st[block_depth], loop_depth: st[loop_depth], err: e0, names: st[names], fnames: st[fnames], vcounter: st[vcounter], fcounter: st[fcounter], models: st[models], model_ctx: st[model_ctx]}
+    return {toks: ts, pos: 0, path: st[path], vars: st[vars], nullable: st[nullable], maybe_unset: st[maybe_unset], gvars: st[gvars], gnullable: st[gnullable], gmaybe: st[gmaybe], for_names: st[for_names], funcs: st[funcs], in_func: st[in_func], func_ret: st[func_ret], func_returns: st[func_returns], block_depth: st[block_depth], loop_depth: st[loop_depth], cond_depth: st[cond_depth], err: e0, names: st[names], fnames: st[fnames], vcounter: st[vcounter], fcounter: st[fcounter], models: st[models], model_ctx: st[model_ctx]}
 
 func parse_expr(dict st, flint min_bp) -> dict:
     if st[err]:
@@ -1574,7 +1574,16 @@ func stmt_is_decl_block(dict st) -> bool:
     return nx[type] == "op" AND nx[value] == ":"
 
 # Куда пишет присваивание: в локальную (или верхнеуровневую) или в глобальную.
-# В режиме # const-top верхний уровень — только объявления.
+# Зону изменений открывают только функция и цикл. Условие — не зона: если
+# присваивание лежит внутри if/elif/else, оно запрещено даже внутри функции.
+func top_write_forbidden(dict st, str n) -> bool:
+    dict allg = st[gvars]
+    if NOT allg.contains(n):
+        return FALSE
+    if st[cond_depth] > 0:
+        return TRUE
+    return NOT st[in_func] AND st[loop_depth] == 0
+
 func resolve_write(dict st, dict tok, str n) -> dict:
     dict vars = st[vars]
     dict gv = st[gvars]
@@ -1582,7 +1591,7 @@ func resolve_write(dict st, dict tok, str n) -> dict:
         if is_const_name(n):
             fail(st, tok, "CONST_ERROR", "variable", cat(["constant '", n, "'"]))
             return {}
-        if st[const_top] AND st[block_depth] == 0 AND gv.contains(n):
+        if top_write_forbidden(st, n):
             fail(st, tok, "TOPLEVEL_ERROR", "assignment inside a nested block", cat(["assignment to top-level variable '", n, "'"]))
             return {}
         dict nm = st[names]
@@ -1590,6 +1599,9 @@ func resolve_write(dict st, dict tok, str n) -> dict:
     if gv.contains(n):
         if is_const_name(n):
             fail(st, tok, "CONST_ERROR", "variable", cat(["constant '", n, "'"]))
+            return {}
+        if top_write_forbidden(st, n):
+            fail(st, tok, "TOPLEVEL_ERROR", "assignment inside a nested block", cat(["assignment to top-level variable '", n, "'"]))
             return {}
         dict nm2 = st[names]
         return {kind: "global", type: gv.take(n), lua: nm2.take(n)}
@@ -1712,9 +1724,9 @@ func parse_typed_decl(dict st, str dty, dict dname_tok) -> dict:
             return {}
     str dlua = mangle_var(st, dname)
     dvars.add(dname, dty)
-    # В # const-top любое объявление вне функции — глобальная («верх файла»).
-    # Писать в неё можно только внутри вложенного блока (отступа).
-    if st[const_top] AND NOT st[in_func]:
+    # Любое объявление вне функции — глобальная («верх файла»).
+    # Переприсвоить её можно только в функции или цикле, не в условии.
+    if NOT st[in_func]:
         dict dtg = st[gvars]
         dtg.add(dname, dty)
     dict dnl = st[nullable]
@@ -1728,7 +1740,7 @@ func parse_typed_decl(dict st, str dty, dict dname_tok) -> dict:
     return {k: "decl", type: dty, name: dname, lua: dlua, expr: dexpr, line: dname_tok[line], col: dname_tok[col]}
 
 func snapshot_parser(dict st) -> dict:
-    return {vars: st[vars], nullable: st[nullable], maybe_unset: st[maybe_unset], for_names: st[for_names], gvars: st[gvars], gnullable: st[gnullable], gmaybe: st[gmaybe], loop_depth: st[loop_depth], in_func: st[in_func], func_ret: st[func_ret], func_returns: st[func_returns], model_ctx: st[model_ctx]}
+    return {vars: st[vars], nullable: st[nullable], maybe_unset: st[maybe_unset], for_names: st[for_names], gvars: st[gvars], gnullable: st[gnullable], gmaybe: st[gmaybe], loop_depth: st[loop_depth], cond_depth: st[cond_depth], in_func: st[in_func], func_ret: st[func_ret], func_returns: st[func_returns], model_ctx: st[model_ctx]}
 
 func restore_parser(dict st, dict sv):
     st.add("vars", sv[vars])
@@ -1739,6 +1751,7 @@ func restore_parser(dict st, dict sv):
     st.add("gnullable", sv[gnullable])
     st.add("gmaybe", sv[gmaybe])
     st.add("loop_depth", sv[loop_depth])
+    st.add("cond_depth", sv[cond_depth])
     st.add("in_func", sv[in_func])
     st.add("func_ret", sv[func_ret])
     st.add("func_returns", sv[func_returns])
@@ -2003,19 +2016,25 @@ func parse_block(dict st, bool top) -> list:
                 list branches = []
                 dict cond = parse_expr(st, 0)
                 expect_tok(st, "op", ":", "':'")
+                st.add("cond_depth", st[cond_depth] + 1)
                 list ibody = parse_block(st, FALSE)
+                st.add("cond_depth", st[cond_depth] - 1)
                 branches.add({cond: cond, body: ibody})
                 while tok_is(tk(st), "kw", "elif"):
                     advance(st)
                     dict c2 = parse_expr(st, 0)
                     expect_tok(st, "op", ":", "':'")
+                    st.add("cond_depth", st[cond_depth] + 1)
                     list b2 = parse_block(st, FALSE)
+                    st.add("cond_depth", st[cond_depth] - 1)
                     branches.add({cond: c2, body: b2})
                 node = {k: "if", branches: branches, block_stmt: TRUE, line: iftok[line], col: iftok[col]}
                 if tok_is(tk(st), "kw", "else"):
                     advance(st)
                     expect_tok(st, "op", ":", "':'")
+                    st.add("cond_depth", st[cond_depth] + 1)
                     list eb = parse_block(st, FALSE)
+                    st.add("cond_depth", st[cond_depth] - 1)
                     node.add("else_body", eb)
                 block_stmt = TRUE
             elif t[type] == "kw" AND t[value] == "while":
@@ -3579,27 +3598,6 @@ func extract_stdin(str src) -> list:
                 out.add(line[i..n])
     return out
 
-# `# const-top` — директива режима: верхний уровень файла только объявляет.
-func has_const_top(str src) -> bool:
-    for l0 in split_lines(src):
-        str line = l0
-        flint i = 0
-        flint n = len(line)
-        while i < n AND (line[i] == " " OR line[i] == "\t"):
-            i += 1
-        if i >= n OR line[i] != "#":
-            continue
-        i += 1
-        while i < n AND (line[i] == " " OR line[i] == "\t"):
-            i += 1
-        if line[i..i + 9] == "const-top":
-            flint j = i + 9
-            while j < n AND (line[j] == " " OR line[j] == "\t" OR line[j] == "\r"):
-                j += 1
-            if j == n:
-                return TRUE
-    return FALSE
-
 func dirname(str p) -> str:
     flint i = len(p) - 1
     while i >= 0:
@@ -3610,6 +3608,12 @@ func dirname(str p) -> str:
         i -= 1
     return "."
 
+func write_compiled(str path, str out_lua):
+    str base = path
+    if path.suff(".kraft"):
+        base = path[..len(path) - 6]
+    write_file(cat([base, ".lua"]), out_lua)
+
 # ---------- CLI ----------
 
 list argv = args()
@@ -3617,22 +3621,30 @@ if len(argv) < 2:
     show_err(usage: xkraft [--tokens] [-c] file.kraft)
     exit(1)
 
-str mode = "run"
-flint ai = 1
-bool scanning = TRUE
-while scanning AND ai < len(argv):
-    str av = argv[ai]
-    if av == "--tokens":
-        mode = "tokens"
-        ai += 1
-    elif av == "-c":
-        mode = "compile"
-        ai += 1
-    elif av == "--emit-lua":
-        mode = "run"
-        ai += 1
-    else:
-        scanning = FALSE
+func parse_cli(list av, flint start) -> dict:
+    str m = "run"
+    flint i = start
+    bool scan = TRUE
+    while scan AND i < len(av):
+        str cur = av[i]
+        flint step = 0
+        if cur == "--tokens":
+            m = "tokens"
+            step = 1
+        elif cur == "-c":
+            m = "compile"
+            step = 1
+        elif cur == "--emit-lua":
+            m = "run"
+            step = 1
+        else:
+            scan = FALSE
+        i += step
+    return {mode: m, index: i}
+
+dict cli = parse_cli(argv, 1)
+str mode = cli.take("mode")
+flint ai = cli.take("index")
 if ai >= len(argv):
     show_err(usage: xkraft [--tokens] [-c] file.kraft)
     exit(1)
@@ -3649,7 +3661,7 @@ if mode == "tokens":
     dump_tokens(lx[tokens])
     exit(0)
 
-dict st = {toks: lx[tokens], pos: 0, path: path, const_top: has_const_top(src), vars: {}, nullable: {}, maybe_unset: {}, gvars: {}, gnullable: {}, gmaybe: {}, for_names: {}, funcs: {}, in_func: FALSE, func_ret: "NONE", func_returns: [], block_depth: 0, loop_depth: 0, err: NONE, names: {}, fnames: {}, vcounter: 0, fcounter: 0, models: {Error: error_schema()}, model_ctx: NONE, try_id: 0, try_depth: 0, try_loop_base: 0}
+dict st = {toks: lx[tokens], pos: 0, path: path, vars: {}, nullable: {}, maybe_unset: {}, gvars: {}, gnullable: {}, gmaybe: {}, for_names: {}, funcs: {}, in_func: FALSE, func_ret: "NONE", func_returns: [], block_depth: 0, loop_depth: 0, cond_depth: 0, err: NONE, names: {}, fnames: {}, vcounter: 0, fcounter: 0, models: {Error: error_schema()}, model_ctx: NONE, try_id: 0, try_depth: 0, try_loop_base: 0}
 list prog = parse_block(st, TRUE)
 if st[err]:
     dict e2 = st[err]
@@ -3666,10 +3678,7 @@ str krt_src = read_file(krt_path)
 
 str out_lua = generate(ast, {path: path, krt: krt_src, source: src, stdin: extract_stdin(src), models: st[models]})
 if mode == "compile":
-    str base = path
-    if path.suff(".kraft"):
-        base = path[..len(path) - 6]
-    write_file(cat([base, ".lua"]), out_lua)
+    write_compiled(path, out_lua)
     exit(0)
 
 show({out_lua[..len(out_lua) - 1]})

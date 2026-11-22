@@ -1,4 +1,3 @@
-# const-top
 for i 1:
     flint acc = i
     acc += 1

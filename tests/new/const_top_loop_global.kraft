@@ -1,4 +1,3 @@
-# const-top
 flint x = 0
 for i 10:
     x += i

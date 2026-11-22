@@ -1,0 +1,3 @@
+flint x = 0
+if TRUE:
+    x = 5

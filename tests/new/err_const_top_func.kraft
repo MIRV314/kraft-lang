@@ -1,4 +1,3 @@
-# const-top
 flint MAX = 10
 func f():
     MAX = 20

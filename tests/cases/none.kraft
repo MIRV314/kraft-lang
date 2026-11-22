@@ -1,7 +1,8 @@
 flint x = NONE
 show({x})
 show({x is NONE})
-x = 5
+for i 1:
+    x = 5
 show({x})
 show({x is flint})
 show({x == 5})

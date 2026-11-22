@@ -1,0 +1,5 @@
+flint x = 0
+if FALSE:
+    show(1)
+else:
+    x = 5

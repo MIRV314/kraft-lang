@@ -1,4 +1,3 @@
-# const-top
 flint total = 0
 
 func add_points(flint n):

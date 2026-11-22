@@ -1,0 +1,4 @@
+flint x = 0
+func f():
+    if TRUE:
+        x = 5

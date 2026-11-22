@@ -1,0 +1,3 @@
+TOPLEVEL_ERROR: tests/new/err_toplevel_if.kraft:3
+    3 |     x = 5
+            ^ expected assignment inside a nested block, found assignment to top-level variable 'x'

@@ -1,4 +1,3 @@
-# const-top
 flint counter = 0
 
 func bump(flint n) -> flint:

@@ -1,5 +1,4 @@
-# const-top
 flint x = 0
 if TRUE:
-    x = 5
+    show({x})
 show({x})

@@ -1,0 +1,11 @@
+flint x = 0
+
+func step(flint i):
+    flint tmp = 0
+    if i > 1:
+        tmp = i
+    x += tmp
+
+for i 3:
+    step(i)
+show({x})
