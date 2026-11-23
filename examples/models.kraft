@@ -1,0 +1,16 @@
+# Модели без наследования: construct, method, self.
+
+model Counter:
+    construct(flint value):
+        self(value)
+    method inc(flint by) -> flint:
+        self.value = self.value + by
+        return self.value
+    method describe() -> str:
+        return "Counter({self.value})"
+
+Counter c = Counter(5)
+show({c.inc(3)})
+show({c.value})
+show({c.describe()})
+show({c is Counter})

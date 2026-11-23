@@ -1,0 +1,4 @@
+values: [1, 2, 3, 4]
+doubled: [2, 4, 6, 8]
+even: [2, 4]
+sum: 10

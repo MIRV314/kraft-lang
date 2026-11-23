@@ -1,0 +1,30 @@
+# Небольшая утилита: аргументы + функции высшего порядка.
+#   xkraft examples/script.kraft        -> значения по умолчанию
+#   xkraft examples/script.kraft 2 3 4  -> свои значения
+
+func numbers() -> list:
+    list av = args()
+    list out = []
+    if len(av) <= 1:
+        return [1, 2, 3, 4]
+    # args()[0] — путь к исходнику, дальше идут аргументы программы.
+    flint i = 1
+    while i < len(av):
+        out.add(flint(av[i]))
+        i += 1
+    return out
+
+func double(flint x) -> flint:
+    return x * 2
+
+func even(flint x) -> bool:
+    return x % 2 == 0
+
+func plus(flint a, flint b) -> flint:
+    return a + b
+
+list vals = numbers()
+show(values: {vals})
+show(doubled: {map(vals, double)})
+show(even: {filter(vals, even)})
+show(sum: {reduce(vals, plus, 0)})

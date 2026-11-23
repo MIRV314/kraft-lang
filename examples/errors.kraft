@@ -1,0 +1,20 @@
+# Перехват ошибок: try, trigger, finally.
+
+func positive(flint n):
+    assert(n > 0, "n must be positive")
+
+try:
+    positive(0)
+trigger VALUE_ERROR:
+    show(wrong category)
+trigger ASSERT_ERROR:
+    show(caught: {error.msg})
+finally:
+    show(cleanup)
+
+try:
+    show(no error here)
+trigger ANY_ERROR:
+    show(unexpected)
+finally:
+    show(done)

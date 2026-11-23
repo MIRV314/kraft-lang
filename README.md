@@ -1,5 +1,10 @@
 # Kraft
 
+[![CI](https://github.com/MIRV314/kraft-lang/actions/workflows/ci.yml/badge.svg)](https://github.com/MIRV314/kraft-lang/actions/workflows/ci.yml)
+[![release v0.2.0](https://img.shields.io/badge/release-v0.2.0-blue.svg)](https://github.com/MIRV314/kraft-lang/releases/tag/v0.2.0)
+
+[English](README.en.md) · [Шпаргалка](docs/cheatsheet.md)
+
 Kraft — статически типизированный язык: один числовой тип, отступы вместо
 фигурных скобок, интерполяция `{}` вместо склейки строк. Язык намеренно
 маленький: ядро — типы, функции, коллекции и управление; всё остальное
@@ -95,7 +100,10 @@ KRAFT_HOME=~/.local/share/kraft KRAFT_BIN=~/.local/bin sh install.sh
   stdin), `xkraft.sh` (xkraft против эталона и самокомпиляция) и `new.sh`
   (новые возможности через xkraft); `make check`.
 - `docs/` — `decisions.md` — источник истины по решениям; `rules.md` —
-  старые заметки; `builtins.md` — полный список встроенных.
+  старые заметки; `builtins.md` — полный список встроенных;
+  `cheatsheet.md` — одностраничная шпаргалка на английском.
+- `README.en.md` — краткий гайд на английском; `editors/vscode/` — подсветка
+  синтаксиса для VS Code.
 
 ## Компилятор на самом Kraft
 

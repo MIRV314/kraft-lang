@@ -1,0 +1,35 @@
+{
+  "name": "kraft",
+  "displayName": "Kraft",
+  "description": "Syntax highlighting for the Kraft language",
+  "version": "0.2.0",
+  "publisher": "MIRV314",
+  "engines": {
+    "vscode": "^1.60.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "kraft",
+        "aliases": [
+          "Kraft",
+          "kraft"
+        ],
+        "extensions": [
+          ".kraft"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "kraft",
+        "scopeName": "source.kraft",
+        "path": "./syntaxes/kraft.tmLanguage.json"
+      }
+    ]
+  }
+}
