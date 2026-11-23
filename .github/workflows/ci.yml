@@ -18,14 +18,14 @@ jobs:
       - name: Tests
         run: make check
 
-      - name:Чистая копия без кеша
+      - name: Чистая копия без кеша
         run: |
           rm -f xkraft.lua
           ./xkraft --version
           ./xkraft examples/hello.kraft
           ./xkraft examples/features.kraft
 
-      - name:Установка
+      - name: Установка
         run: |
           KRAFT_HOME="$RUNNER_TEMP/kraft-home" KRAFT_BIN="$RUNNER_TEMP/kraft-bin" sh install.sh
           PATH="$RUNNER_TEMP/kraft-bin:$PATH" kraft --version
