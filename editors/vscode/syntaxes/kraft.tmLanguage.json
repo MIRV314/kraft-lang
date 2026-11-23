@@ -8,6 +8,7 @@
     { "include": "#functions" },
     { "include": "#models" },
     { "include": "#error-categories" },
+    { "include": "#builtins" },
     { "include": "#keywords" },
     { "include": "#types" },
     { "include": "#constants" },
@@ -59,6 +60,10 @@
       "name": "support.constant.error.kraft",
       "match": "\\b(ANY_ERROR|ARGCOUNT_ERROR|ASSERT_ERROR|CONST_ERROR|EXPECT_ERROR|FILE_ERROR|NAME_ERROR|PANIC_ERROR|RUNTIME_ERROR|TYPE_MISMATCH_ERROR|TYPE_ERROR|VALUE_ERROR)\\b"
     },
+    "builtins": {
+      "name": "support.function.builtin.kraft",
+      "match": "\\b(show|show_err|input|len|type|str|flint|up|low|title|abs|round|floor|ceil|sqrt|min|max|sum|avg|keys|values|upk|sort|reverse|clear|map|filter|reduce|read_file|write_file|file_exists|args|exit|time_ms|is_tty|system|assert|expect)\\b"
+    },
     "keywords": {
       "name": "keyword.control.kraft",
       "match": "\\b(func|model|method|construct|if|elif|else|for|in|while|break|continue|return|is|AND|OR|NOT|glob|self|init|try|trigger|finally|panic|import_file|from_file|import_lib|from_lib)\\b"
@@ -69,7 +74,7 @@
     },
     "constants": {
       "name": "constant.language.kraft",
-      "match": "\\b(TRUE|FALSE|NONE|Error)\\b"
+      "match": "\\b(TRUE|FALSE|NONE|Error|error)\\b"
     },
     "numbers": {
       "name": "constant.numeric.kraft",
