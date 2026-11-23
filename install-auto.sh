@@ -1,18 +1,21 @@
 #!/bin/sh
-# Автоустановка Kraft в одну команду.
+# Автоустановка xkraft в одну команду.
 #   curl -fsSL https://raw.githubusercontent.com/MIRV314/kraft-lang/main/install-auto.sh | sh
 # Либо из клона: sh install-auto.sh
 #
 # Переменные окружения:
-#   KRAFT_SRC   — использовать готовый каталог исходников вместо клона;
-#   KRAFT_REPO  — URL репозитория (по умолчанию официальный);
-#   KRAFT_TAG   — тег для клона (по умолчанию v0.2.0);
+#   KRAFT_SRC    — использовать готовый каталог исходников вместо клона;
+#   KRAFT_REPO   — URL репозитория (по умолчанию официальный);
+#   KRAFT_TAG    — тег для клона (по умолчанию v0.2.0);
 #   KRAFT_PREFIX — префикс установки (по умолчанию /usr/local).
+# Ставится только одна команда — xkraft. kraft v0.1 остаётся в исходниках.
 set -eu
 
 prefix=${KRAFT_PREFIX:-/usr/local}
-lib="$prefix/lib/kraft"
 bin="$prefix/bin"
+doc="$prefix/share/doc/kraft"
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
 
 if ! command -v luajit >/dev/null 2>&1; then
   echo "install: нужен LuaJIT (команда luajit должна быть в PATH)" >&2
@@ -28,11 +31,14 @@ else
   fi
   repo=${KRAFT_REPO:-https://github.com/MIRV314/kraft-lang.git}
   tag=${KRAFT_TAG:-v0.2.0}
-  tmp=$(mktemp -d)
-  trap 'rm -rf "$tmp"' EXIT
   echo "install: скачиваем $tag ..."
   git clone --quiet --depth 1 --branch "$tag" "$repo" "$tmp/src"
   src="$tmp/src"
+fi
+
+if [ ! -f "$src/dist/xkraft" ]; then
+  echo "install: в $src нет dist/xkraft — соберите дистрибутив: ./tools/make-dist.sh" >&2
+  exit 1
 fi
 
 if [ "$(id -u)" -eq 0 ]; then
@@ -47,18 +53,21 @@ else
   exit 1
 fi
 
-$sudo mkdir -p "$lib" "$bin"
-tar -C "$src" -cf - --exclude=./.git --exclude=./xkraft.lua . |
-  $sudo tar -C "$lib" -xf -
-
-printf '#!/bin/sh\nexec "%s/kraft" "$@"\n' "$lib" | $sudo tee "$bin/kraft" >/dev/null
-printf '#!/bin/sh\nexec "%s/xkraft" "$@"\n' "$lib" | $sudo tee "$bin/xkraft" >/dev/null
-$sudo chmod +x "$bin/kraft" "$bin/xkraft"
+$sudo mkdir -p "$bin" "$doc"
+$sudo cp "$src/dist/xkraft" "$bin/xkraft"
+$sudo chmod 755 "$bin/xkraft"
+for f in README.md LICENSE NOTICE VERSION CHANGELOG.md; do
+  if [ -f "$src/dist/$f" ]; then
+    $sudo cp "$src/dist/$f" "$doc/$f"
+  fi
+done
 
 echo "install: проверяем установку ..."
-"$bin/kraft" --version
 "$bin/xkraft" --version
-(cd "$lib" && ./xkraft examples/features.kraft >/dev/null)
-echo "Kraft установлен."
-echo "  ядро:    $lib"
-echo "  обёртки: $bin"
+# Проверяем именно установленный файл: рядом с ним нет исходников и src/.
+printf 'show(xkraft ok)\n' > "$tmp/check.kraft"
+(cd "$tmp" && "$bin/xkraft" check.kraft) >/dev/null
+
+echo "xkraft установлен."
+echo "  команда: $bin/xkraft"
+echo "  документация: $doc"

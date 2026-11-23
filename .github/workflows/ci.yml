@@ -25,10 +25,19 @@ jobs:
           ./xkraft examples/hello.kraft
           ./xkraft examples/features.kraft
 
+      - name: Дистрибутив
+        run: |
+          make dist
+          git diff --exit-code -- dist
+          dist/xkraft --version
+          dist/xkraft examples/features.kraft >/dev/null
+
       - name: Установка
         run: |
+          repo=$PWD
           KRAFT_HOME="$RUNNER_TEMP/kraft-home" KRAFT_BIN="$RUNNER_TEMP/kraft-bin" sh install.sh
-          PATH="$RUNNER_TEMP/kraft-bin:$PATH" kraft --version
-          PATH="$RUNNER_TEMP/kraft-bin:$PATH" xkraft --version
-          PATH="$RUNNER_TEMP/kraft-bin:$PATH" xkraft examples/features.kraft
+          "$RUNNER_TEMP/kraft-bin/xkraft" --version
+          (cd "$RUNNER_TEMP" && "$RUNNER_TEMP/kraft-bin/xkraft" "$repo/examples/features.kraft" >/dev/null)
           KRAFT_SRC="$PWD" KRAFT_PREFIX="$RUNNER_TEMP/kraft-auto" sh install-auto.sh
+          "$RUNNER_TEMP/kraft-auto/bin/xkraft" --version
+          (cd "$RUNNER_TEMP" && "$RUNNER_TEMP/kraft-auto/bin/xkraft" "$repo/examples/features.kraft" >/dev/null)

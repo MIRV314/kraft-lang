@@ -36,15 +36,19 @@ LuaJIT is the only requirement: the `luajit` command must be in `PATH`.
 
 ## Installation
 
+LuaJIT is the only requirement (`luajit` must be in `PATH`). The installer puts
+**only `xkraft`** on your system: a single self-contained executable with the
+runtime embedded. No `src/` tree and no frozen `kraft` v0.1 needed.
+
 **Automatic** — one command; the script asks for your `sudo` password:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/MIRV314/kraft-lang/main/install-auto.sh | sh
 ```
 
-It downloads tag `v0.2.0`, installs the core to `/usr/local/lib/kraft`, puts
-`kraft` and `xkraft` wrappers into `/usr/local/bin`, and verifies versions and
-an example. Afterwards both commands work from any directory.
+It downloads tag `v0.2.0`, installs `xkraft` into `/usr/local/bin`, docs into
+`/usr/local/share/doc/kraft`, and verifies the version and an example. The
+command works from any directory afterwards.
 
 **Manual** — from a clone:
 
@@ -52,15 +56,16 @@ an example. Afterwards both commands work from any directory.
 sh install.sh
 ```
 
-By default the core goes to `~/.kraft` and the wrappers to `~/.local/bin`; add
-that directory to `PATH` if needed. Both paths are overridable:
+By default `xkraft` goes to `~/.local/bin` and docs to `~/.kraft`; add the bin
+directory to `PATH` if needed. Both paths are overridable:
 
 ```sh
 KRAFT_HOME=~/.local/share/kraft KRAFT_BIN=~/.local/bin sh install.sh
 ```
 
-Check with `kraft --version` (`kraft 0.1.0`) and `xkraft --version`
-(`xkraft 0.2.0`). Windows installers are not shipped yet.
+Check with `xkraft --version` (`xkraft 0.2.0`). The ready-to-use single file is
+[`dist/xkraft`](dist/xkraft); rebuild it from sources with `make dist`.
+Windows installers are not shipped yet.
 
 ## Language in five minutes
 

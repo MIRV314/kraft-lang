@@ -1,5 +1,5 @@
 #!/bin/sh
-# Установка Kraft: копирует ядро в KRAFT_HOME и ставит обёртки в KRAFT_BIN.
+# Установка xkraft: один автономный файл в KRAFT_BIN, документы в KRAFT_HOME.
 #   sh install.sh
 #   KRAFT_HOME=~/.local/share/kraft KRAFT_BIN=~/.local/bin sh install.sh
 set -eu
@@ -12,25 +12,22 @@ if ! command -v luajit >/dev/null 2>&1; then
   echo "install: нужен LuaJIT (команда luajit должна быть в PATH)" >&2
   exit 1
 fi
-
-mkdir -p "$home" "$bin"
-
-if [ "$src" != "$home" ]; then
-  tar -C "$src" -cf - --exclude=./.git --exclude=./xkraft.lua . |
-    tar -C "$home" -xf -
+if [ ! -f "$src/dist/xkraft" ]; then
+  echo "install: нет $src/dist/xkraft — соберите дистрибутив: ./tools/make-dist.sh" >&2
+  exit 1
 fi
 
-cat > "$bin/kraft" <<EOF
-#!/bin/sh
-exec "$home/kraft" "\$@"
-EOF
-cat > "$bin/xkraft" <<EOF
-#!/bin/sh
-exec "$home/xkraft" "\$@"
-EOF
-chmod +x "$bin/kraft" "$bin/xkraft"
+mkdir -p "$bin" "$home"
+cp "$src/dist/xkraft" "$bin/xkraft"
+chmod 755 "$bin/xkraft"
+for f in README.md LICENSE NOTICE VERSION CHANGELOG.md; do
+  if [ -f "$src/dist/$f" ]; then
+    cp "$src/dist/$f" "$home/$f"
+  fi
+done
 
-echo "Kraft установлен."
-echo "  ядро:    $home"
-echo "  обёртки: $bin"
+"$bin/xkraft" --version
+echo "xkraft установлен."
+echo "  команда: $bin/xkraft"
+echo "  документация: $home"
 echo "Добавьте $bin в PATH, если его там ещё нет."
