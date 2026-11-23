@@ -32,7 +32,7 @@ else
   repo=${KRAFT_REPO:-https://github.com/MIRV314/kraft-lang.git}
   tag=${KRAFT_TAG:-v0.2.0}
   echo "install: скачиваем $tag ..."
-  git clone --quiet --depth 1 --branch "$tag" "$repo" "$tmp/src"
+  git -c advice.detachedHead=false clone --quiet --depth 1 --branch "$tag" "$repo" "$tmp/src"
   src="$tmp/src"
 fi
 
