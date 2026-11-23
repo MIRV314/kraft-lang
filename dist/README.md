@@ -16,8 +16,8 @@
 curl -fsSL https://raw.githubusercontent.com/MIRV314/kraft-lang/main/install-auto.sh | sh
 ```
 
-Скрипт поставит только команду `xkraft` в `/usr/local/bin`. Ручная установка:
-`KRAFT_BIN=~/.local/bin sh install.sh` из корня репозитория.
+Скрипт поставит `xkraft` и псевдоним `kraft` в `/usr/local/bin` — оба запускают
+один и тот же x-бинарник. Ручная установка: `sh install.sh` из корня репозитория.
 
 Полная документация: https://github.com/MIRV314/kraft-lang#readme
 Шпаргалка: https://github.com/MIRV314/kraft-lang/blob/main/docs/cheatsheet.md

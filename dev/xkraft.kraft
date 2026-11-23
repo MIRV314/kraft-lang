@@ -342,6 +342,28 @@ func scan_line(str line, flint i, flint lineno, list tokens) -> dict:
                         dict e2 = r2[err]
                         e2.add("line", lineno)
                         return {err: e2}
+                    # show() — это шаблон: подстановки пишутся в {}.
+                    # show(f(1)) без скобок {}, судя по всему, забыли подстановку:
+                    # первый ')' закрывает вызов, второй — шаблон.
+                    str tpl_raw = line[k + 1..r2[close]]
+                    if tpl_raw.contains("(") AND char_at(line, r2[close] + 1) == ")":
+                        # scan_parts останавливается на первой ')' — вложенные
+                        # вызовы надо досчитать самим, чтобы подсказка была
+                        # готовым кодом, который можно просто скопировать.
+                        flint dep = 0
+                        flint q = k + 1
+                        while q < len(line):
+                            str ch = line[q]
+                            if ch == "(":
+                                dep += 1
+                            elif ch == ")":
+                                if dep == 0:
+                                    break
+                                dep -= 1
+                            q += 1
+                        str expr_raw = line[k + 1..q]
+                        str expr = expr_raw.trim()
+                        return {err: {line: lineno, col: k + 2, msg: cat(["wrap the expression in '\{\}': ", word, "(\{", expr, "\})"])}}
                     tokens.add({type: "template", parts: r2[parts], line: lineno, col: k + 2})
                     tokens.add({type: "op", value: ")", line: lineno, col: r2[close] + 1})
                     i = r2[close] + 1

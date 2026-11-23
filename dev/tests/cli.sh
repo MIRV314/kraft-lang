@@ -20,7 +20,7 @@ check() {
 }
 
 # 1. -c собирает исполняемый .lua рядом с исходником.
-cp examples/hello.kraft "$tmp/hello.kraft"
+cp ../examples/hello.kraft "$tmp/hello.kraft"
 ./kraft -c "$tmp/hello.kraft"
 direct=$(./kraft "$tmp/hello.kraft")
 compiled=$("$tmp/hello.lua")
@@ -100,8 +100,23 @@ out=$(./xkraft --version)
 [ "$out" = "xkraft 0.2.0" ]
 check "xkraft-version" $?
 
+# 8a. Забытую подстановку в show() нужно объяснять, а не ругаться на ')'.
+cat > "$tmp/nobrace.kraft" <<'EOF'
+func am(flint n, flint m):
+    return n + m
+
+show(am(1, 2))
+EOF
+err=$(./xkraft "$tmp/nobrace.kraft" 2>&1 >/dev/null || true)
+if printf '%s\n' "$err" | grep -Fq "wrap the expression in '{}': show({am(1, 2)})"; then
+  check "show-brace-hint" 0
+else
+  check "show-brace-hint" 1
+  printf '%s\n' "$err" | sed 's/^/     /'
+fi
+
 # 9. Все примеры запускаются новой моделью и дают ожидаемый вывод.
-for f in examples/*.kraft; do
+for f in ../examples/*.kraft; do
   [ -e "$f" ] || continue
   expected="${f%.kraft}.out"
   [ -f "$expected" ] || continue

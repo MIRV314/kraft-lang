@@ -1,10 +1,8 @@
 .PHONY: check dist
 
+# Тесты и сборка дистрибутива живут в dev/; здесь только удобные точки входа.
 check:
-	./tests/run.sh
-	./tests/cli.sh
-	./tests/xkraft.sh
-	./tests/new.sh
+	$(MAKE) -C dev check
 
 dist:
-	./tools/make-dist.sh
+	$(MAKE) -C dev dist

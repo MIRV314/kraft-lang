@@ -1,9 +1,10 @@
 #!/bin/sh
 # Собирает минимальный дистрибутив: один автономный исполняемый файл dist/xkraft.
-# Внутрь вшивается рантайм src/krt.lua, поэтому установленному xkraft не нужны
-# исходники, папка src/ или revived kraft v0.1.
+# Внутрь вшивается рантайм dev/src/krt.lua, поэтому установленному xkraft не
+# нужны исходники, папка dev/ или эталон kraft v0.1.
 set -eu
-root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+repo=$(CDPATH= cd -- "$root/.." && pwd)
 
 command -v luajit >/dev/null 2>&1 || {
   echo "make-dist: нужен LuaJIT (команда luajit в PATH)" >&2
@@ -16,14 +17,15 @@ command -v luajit >/dev/null 2>&1 || {
 
 echo "dist: пересобираем xkraft.lua ..."
 "$root/kraft" -c "$root/xkraft.kraft"
-mkdir -p "$root/dist"
+mkdir -p "$repo/dist"
 
-python3 - "$root" <<'PY'
+python3 - "$root" "$repo" <<'PY'
 import pathlib
 import re
 import sys
 
 root = pathlib.Path(sys.argv[1])
+repo = pathlib.Path(sys.argv[2])
 lua = (root / "xkraft.lua").read_text()
 krt = (root / "src/krt.lua").read_text()
 
@@ -102,13 +104,17 @@ esac
 exit 0
 '''
 
-out = root / "dist" / "xkraft"
+out = repo / "dist" / "xkraft"
 out.write_text(header + "__KRAFT_EMBEDDED_COMPILER__\n" + lua)
 out.chmod(0o755)
 PY
 
 for f in LICENSE NOTICE VERSION CHANGELOG.md; do
-  cp "$root/$f" "$root/dist/$f"
+  cp "$repo/$f" "$repo/dist/$f"
 done
 
-echo "dist: готово — dist/xkraft ($(wc -c < "$root/dist/xkraft") байт)"
+# Корневой xkraft — тот же бинарник, что и в dist/.
+cp "$repo/dist/xkraft" "$repo/xkraft"
+chmod 755 "$repo/xkraft"
+
+echo "dist: готово — dist/xkraft ($(wc -c < "$repo/dist/xkraft") байт)"

@@ -5,8 +5,9 @@ exm.kraft
 # артефакты компиляции (-c)
 *.kraft.lua
 /examples/*.lua
-/tests/**/*.lua
+/dev/tests/**/*.lua
 /build/
 
 # кеш скомпилированного компилятора на Kraft
 xkraft.lua
+/dev/xkraft.lua

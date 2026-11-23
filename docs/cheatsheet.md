@@ -8,13 +8,15 @@ Russian README: [README.ru](../README.md). English guide:
 ## Running
 
 ```sh
-./kraft file.kraft [args...]        # frozen v0.1 compiler
-./kraft -c file.kraft               # executable file.lua next to the source
-./xkraft file.kraft [args...]       # post-v0.1 model (default, no flags)
-./xkraft --tokens file.kraft
-./kraft --version                   # kraft 0.1.0
-./xkraft --version                  # xkraft 0.2.0
+xkraft file.kraft [args...]         # installed compiler, new model
+kraft file.kraft [args...]          # same binary under an alias name
+xkraft -c file.kraft                # executable file.lua next to the source
+xkraft --tokens file.kraft
+xkraft --version                    # xkraft 0.2.0 (both names print this)
 ```
+
+From a clone use `./xkraft` in the repo root. The frozen v0.1 reference
+compiler is kept in `dev/kraft` for development only and is never installed.
 
 Requires `luajit` in `PATH`. Install: `sh install.sh` (into `~/.kraft` and
 `~/.local/bin`) or `install-auto.sh` (one command, `/usr/local`, asks for

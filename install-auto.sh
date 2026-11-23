@@ -37,7 +37,7 @@ else
 fi
 
 if [ ! -f "$src/dist/xkraft" ]; then
-  echo "install: в $src нет dist/xkraft — соберите дистрибутив: ./tools/make-dist.sh" >&2
+  echo "install: в $src нет dist/xkraft — соберите дистрибутив: make dist" >&2
   exit 1
 fi
 
@@ -53,9 +53,20 @@ else
   exit 1
 fi
 
+# Раньше сюда ставилось всё дерево исходников. Теперь нужен только бинарник.
+oldlib="$prefix/lib/kraft"
+if [ -d "$oldlib" ] && [ -f "$oldlib/src/krt.lua" ]; then
+  echo "install: удаляем старое ядро $oldlib ..."
+  $sudo rm -rf "$oldlib"
+fi
+
 $sudo mkdir -p "$bin" "$doc"
 $sudo cp "$src/dist/xkraft" "$bin/xkraft"
 $sudo chmod 755 "$bin/xkraft"
+# `kraft` — просто имя-псевдоним: запускает тот же x-бинарник,
+# а не замороженный эталон v0.1 из dev/.
+printf '#!/bin/sh\nexec "%s/xkraft" "$@"\n' "$bin" | $sudo tee "$bin/kraft" >/dev/null
+$sudo chmod 755 "$bin/kraft"
 for f in README.md LICENSE NOTICE VERSION CHANGELOG.md; do
   if [ -f "$src/dist/$f" ]; then
     $sudo cp "$src/dist/$f" "$doc/$f"
@@ -67,7 +78,8 @@ echo "install: проверяем установку ..."
 # Проверяем именно установленный файл: рядом с ним нет исходников и src/.
 printf 'show(xkraft ok)\n' > "$tmp/check.kraft"
 (cd "$tmp" && "$bin/xkraft" check.kraft) >/dev/null
+(cd "$tmp" && "$bin/kraft" check.kraft) >/dev/null
 
 echo "xkraft установлен."
-echo "  команда: $bin/xkraft"
+echo "  команды: $bin/xkraft и $bin/kraft (обе запускают xkraft)"
 echo "  документация: $doc"

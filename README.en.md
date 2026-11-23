@@ -6,13 +6,12 @@ core is intentionally tiny — types, functions, collections, control flow —
 and everything else is meant to grow as a standard library written in Kraft
 itself.
 
-There are two compilers:
+The user compiler is `xkraft`: it is written in Kraft and compiles itself.
+The frozen v0.1 reference compiler lives in `dev/kraft` for development only.
 
-- `kraft` — the original LuaJIT reference compiler (v0.1, frozen);
-- `xkraft` — a compiler written in Kraft that compiles itself.
-
-Both turn `.kraft` into Lua and run it with LuaJIT. No C toolchain, no build
-step: one command, one run.
+After installation two names run the same x binary: `xkraft` and `kraft`.
+Both use the new language model. No C toolchain, no build step: one command,
+one run.
 
 [Русская версия](README.md) · [Cheatsheet](docs/cheatsheet.md) ·
 [v0.2.0 release](https://github.com/MIRV314/kraft-lang/releases/tag/v0.2.0)
@@ -22,14 +21,13 @@ step: one command, one run.
 ```sh
 git clone https://github.com/MIRV314/kraft-lang.git
 cd kraft-lang
-./kraft examples/hello.kraft            # frozen v0.1 compiler
-./kraft -c examples/hello.kraft         # write hello.lua next to the source
-./kraft examples/hello.kraft one two    # program arguments
-
-./xkraft examples/features.kraft        # post-v0.1 language model
+./xkraft examples/features.kraft       # post-v0.1 language model
 ./xkraft examples/errors.kraft
 ./xkraft examples/models.kraft
 ./xkraft examples/script.kraft 2 3 4
+./xkraft -c examples/hello.kraft       # write hello.lua next to the source
+xkraft examples/features.kraft         # after installation, from any directory
+kraft examples/features.kraft          # same binary, alias name
 ```
 
 LuaJIT is the only requirement: the `luajit` command must be in `PATH`.
@@ -37,8 +35,8 @@ LuaJIT is the only requirement: the `luajit` command must be in `PATH`.
 ## Installation
 
 LuaJIT is the only requirement (`luajit` must be in `PATH`). The installer puts
-**only `xkraft`** on your system: a single self-contained executable with the
-runtime embedded. No `src/` tree and no frozen `kraft` v0.1 needed.
+one self-contained x binary on your system (runtime embedded) and creates two
+names for it: `xkraft` and `kraft`. No `dev/` tree and no frozen v0.1 needed.
 
 **Automatic** — one command; the script asks for your `sudo` password:
 
@@ -46,9 +44,9 @@ runtime embedded. No `src/` tree and no frozen `kraft` v0.1 needed.
 curl -fsSL https://raw.githubusercontent.com/MIRV314/kraft-lang/main/install-auto.sh | sh
 ```
 
-It downloads tag `v0.2.0`, installs `xkraft` into `/usr/local/bin`, docs into
-`/usr/local/share/doc/kraft`, and verifies the version and an example. The
-command works from any directory afterwards.
+It downloads tag `v0.2.0`, installs `xkraft` plus the `kraft` alias into
+`/usr/local/bin`, docs into `/usr/local/share/doc/kraft`, and verifies both
+names with an example. They work from any directory afterwards.
 
 **Manual** — from a clone:
 
@@ -56,15 +54,16 @@ command works from any directory afterwards.
 sh install.sh
 ```
 
-By default `xkraft` goes to `~/.local/bin` and docs to `~/.kraft`; add the bin
-directory to `PATH` if needed. Both paths are overridable:
+By default `xkraft` and `kraft` go to `~/.local/bin` and docs to `~/.kraft`;
+add the bin directory to `PATH` if needed. Both paths are overridable:
 
 ```sh
 KRAFT_HOME=~/.local/share/kraft KRAFT_BIN=~/.local/bin sh install.sh
 ```
 
-Check with `xkraft --version` (`xkraft 0.2.0`). The ready-to-use single file is
-[`dist/xkraft`](dist/xkraft); rebuild it from sources with `make dist`.
+Check with `xkraft --version` or `kraft --version` (both print `xkraft 0.2.0`).
+The ready-to-use single file is [`dist/xkraft`](dist/xkraft); rebuild it with
+`make dist`. All development sources live under `dev/`.
 Windows installers are not shipped yet.
 
 ## Language in five minutes
@@ -193,7 +192,7 @@ including `return`. `error` is a read-only object with fields `cat`, `msg`,
   byte-identical Lua on all compatibility tests.
 - In `xkraft`, the new model is always on: top-level declarations only,
   mutation zones, models, full set of built-ins, and error handling.
-  `xkraft.kraft` itself stays in v0.1 syntax.
+  `dev/xkraft.kraft` itself stays in v0.1 syntax.
 - `froz`, `panic`, stdlib prelude and modules are reserved but not
   implemented yet. Windows setup is planned for a later release.
 

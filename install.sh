@@ -13,13 +13,26 @@ if ! command -v luajit >/dev/null 2>&1; then
   exit 1
 fi
 if [ ! -f "$src/dist/xkraft" ]; then
-  echo "install: нет $src/dist/xkraft — соберите дистрибутив: ./tools/make-dist.sh" >&2
+  echo "install: нет $src/dist/xkraft — соберите дистрибутив: make dist" >&2
   exit 1
+fi
+
+# Старая ручная установка клала ядро в ~/.kraft; теперь там только документы.
+if [ -f "$home/src/krt.lua" ]; then
+  echo "install: удаляем старое ядро в $home ..."
+  rm -rf "$home/src" "$home/tests" "$home/examples" "$home/docs" \
+    "$home/editors" "$home/kraft" "$home/xkraft"
 fi
 
 mkdir -p "$bin" "$home"
 cp "$src/dist/xkraft" "$bin/xkraft"
 chmod 755 "$bin/xkraft"
+# `kraft` — псевдоним того же x-бинарника, не эталон v0.1.
+cat > "$bin/kraft" <<EOF
+#!/bin/sh
+exec "$bin/xkraft" "\$@"
+EOF
+chmod 755 "$bin/kraft"
 for f in README.md LICENSE NOTICE VERSION CHANGELOG.md; do
   if [ -f "$src/dist/$f" ]; then
     cp "$src/dist/$f" "$home/$f"
@@ -28,6 +41,6 @@ done
 
 "$bin/xkraft" --version
 echo "xkraft установлен."
-echo "  команда: $bin/xkraft"
+echo "  команды: $bin/xkraft и $bin/kraft (обе запускают xkraft)"
 echo "  документация: $home"
 echo "Добавьте $bin в PATH, если его там ещё нет."
