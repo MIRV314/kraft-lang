@@ -1191,11 +1191,21 @@ function krt.time_ms()
 end
 
 function krt.system(cmd)
-  local st = os.execute(cmd)
-  if st == nil then return -1 end
-  local sig = st % 256
-  if sig ~= 0 then return 128 + sig end
-  return math.floor(st / 256)
+  -- LuaJIT returns the raw wait status as a number; some builds of Lua 5.1/5.2
+  -- return true/false plus "exit"/"signal" and a code instead.
+  local a, kind, code = os.execute(cmd)
+  if type(a) == "number" then
+    local st = a
+    local sig = st % 256
+    if sig ~= 0 then return 128 + sig end
+    return math.floor(st / 256)
+  end
+  if type(code) == "number" then
+    if kind == "signal" then return 128 + code end
+    return code
+  end
+  if a == true then return 0 end
+  return -1
 end
 
 function krt.is_tty()
