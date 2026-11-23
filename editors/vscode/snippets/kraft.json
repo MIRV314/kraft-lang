@@ -1,0 +1,95 @@
+{
+  "Function": {
+    "prefix": "func",
+    "body": [
+      "func ${1:name}(${2:flint x}) -> ${3:flint}:",
+      "    ${0:return x}"
+    ],
+    "description": "Typed function with a result"
+  },
+  "Function no result": {
+    "prefix": "funcv",
+    "body": [
+      "func ${1:name}():",
+      "    ${0:show(hello)}"
+    ],
+    "description": "Function without a result"
+  },
+  "If": {
+    "prefix": "if",
+    "body": [
+      "if ${1:condition}:",
+      "    ${0:# then}"
+    ],
+    "description": "If block"
+  },
+  "If else": {
+    "prefix": "ifelse",
+    "body": [
+      "if ${1:condition}:",
+      "    ${2:# then}",
+      "else:",
+      "    ${0:# otherwise}"
+    ],
+    "description": "If/else block"
+  },
+  "For range": {
+    "prefix": "for",
+    "body": [
+      "for ${1:i} ${2:10}:",
+      "    ${0:show({i})}"
+    ],
+    "description": "Range loop"
+  },
+  "For each": {
+    "prefix": "forin",
+    "body": [
+      "for ${1:x} in ${2:items}:",
+      "    ${0:show({x})}"
+    ],
+    "description": "Collection loop"
+  },
+  "While": {
+    "prefix": "while",
+    "body": [
+      "while ${1:condition}:",
+      "    ${0:# body}"
+    ],
+    "description": "While loop"
+  },
+  "Model": {
+    "prefix": "model",
+    "body": [
+      "model ${1:Name}:",
+      "    construct(${2:flint value}):",
+      "        self(${3:value})",
+      "    method ${4:describe}() -> ${5:str}:",
+      "        ${0:return \"model\"}"
+    ],
+    "description": "Model with construct and method"
+  },
+  "Try": {
+    "prefix": "try",
+    "body": [
+      "try:",
+      "    ${1:# risky code}",
+      "trigger ${2:ASSERT_ERROR}:",
+      "    ${3:show({error.msg})}",
+      "trigger ANY_ERROR:",
+      "    ${4:show({error.cat})}",
+      "finally:",
+      "    ${0:# cleanup}"
+    ],
+    "description": "try / trigger / finally block"
+  },
+  "Assert": {
+    "prefix": "assert",
+    "body": "assert(${1:condition}, ${0:\"message\"})",
+    "description": "Assert with message"
+  },
+  "Show": {
+    "prefix": "show",
+    "body": "show(${0:value})",
+    "description": "Print a template"
+  }
+}

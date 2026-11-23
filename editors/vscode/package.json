@@ -1,7 +1,7 @@
 {
   "name": "kraft",
   "displayName": "Kraft",
-  "description": "Syntax highlighting for the Kraft language",
+  "description": "Syntax highlighting and snippets for the Kraft language",
   "version": "0.2.0",
   "publisher": "MIRV314",
   "engines": {
@@ -29,6 +29,12 @@
         "language": "kraft",
         "scopeName": "source.kraft",
         "path": "./syntaxes/kraft.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "kraft",
+        "path": "./snippets/kraft.json"
       }
     ]
   }
