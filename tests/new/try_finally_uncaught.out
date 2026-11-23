@@ -1,0 +1,4 @@
+finally still ran
+ASSERT_ERROR: tests/new/try_finally_uncaught.kraft:2
+    2 |     assert(FALSE, "uncaught")
+            ^ uncaught

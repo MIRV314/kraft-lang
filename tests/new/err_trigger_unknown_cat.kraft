@@ -1,0 +1,6 @@
+try:
+    show(body)
+trigger GARBAGE_ERROR:
+    show(caught)
+finally:
+    show(done)

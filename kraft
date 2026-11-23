@@ -91,6 +91,11 @@ end
 
 -- ---------- аргументы ----------
 
+if arg[1] == "--version" then
+  io.write("kraft 0.1.0\n")
+  os.exit(0)
+end
+
 local emit_lua = false
 local compile_only = false
 local src_path

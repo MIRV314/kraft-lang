@@ -1,0 +1,3 @@
+NAME_ERROR: tests/new/err_trigger_unknown_cat.kraft:3
+    3 | trigger GARBAGE_ERROR:
+                ^ expected known error category, found GARBAGE_ERROR

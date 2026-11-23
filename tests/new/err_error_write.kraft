@@ -1,0 +1,6 @@
+try:
+    assert(FALSE, "boom")
+trigger ANY_ERROR:
+    error.msg = "changed"
+finally:
+    show(done)

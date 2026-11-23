@@ -1,0 +1,11 @@
+try:
+    try:
+        assert(FALSE, "inner")
+    trigger VALUE_ERROR:
+        show(wrong)
+    finally:
+        show(inner finally)
+trigger ASSERT_ERROR:
+    show(outer caught {error.cat})
+finally:
+    show(outer finally)

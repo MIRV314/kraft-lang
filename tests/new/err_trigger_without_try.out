@@ -1,0 +1,3 @@
+SYNTAX_ERROR: tests/new/err_trigger_without_try.kraft:1
+    1 | trigger ANY_ERROR:
+        ^ expected expression, found kw 1:1 trigger

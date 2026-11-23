@@ -1,0 +1,3 @@
+SCOPE_ERROR: tests/new/err_break_across_try.kraft:4
+    4 |         break
+                ^ expected 'break' or 'continue' inside the loop that contains try, found 'break' across a try boundary

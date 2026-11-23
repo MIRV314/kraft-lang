@@ -1,0 +1,6 @@
+try:
+    assert(FALSE, "uncaught")
+trigger VALUE_ERROR:
+    show(wrong)
+finally:
+    show(finally still ran)

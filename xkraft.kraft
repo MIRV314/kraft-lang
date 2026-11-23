@@ -693,6 +693,8 @@ func method_info(str base, str name) -> dict:
 func is_reserved(str name) -> bool:
     if is_builtin(name) OR name == "show" OR name == "show_err" OR name == "input" OR name == "Error":
         return TRUE
+    if name == "error" OR name == "ANY_ERROR":
+        return TRUE
     # Методы типов — тоже занятые имена: `add`, `take`, `contains`, `text` и т.д.
     return method_info("str", name)[ok] OR method_info("list", name)[ok] OR method_info("dict", name)[ok] OR method_info("expect", name)[ok] OR name == "text"
 
@@ -708,6 +710,18 @@ func error_schema() -> dict:
     dict meth = {}
     meth.add("text", {params: [], ret: "str", ret_nullable: FALSE, line: 1, col: 1})
     return {name: "Error", model_fields: {}, field_types: fields, consts: consts, init_fields: {}, params: [], param_types: {}, methods: meth, method_order: ["text"], ctor: NONE, order: [], field_order: []}
+
+# Категории, которые рантайм может положить в error.cat.
+func is_error_category(str c) -> bool:
+    if c == "ANY_ERROR" OR c == "ARGCOUNT_ERROR" OR c == "ASSERT_ERROR":
+        return TRUE
+    if c == "CONST_ERROR" OR c == "EXPECT_ERROR" OR c == "FILE_ERROR":
+        return TRUE
+    if c == "NAME_ERROR" OR c == "RUNTIME_ERROR" OR c == "TYPE_ERROR":
+        return TRUE
+    if c == "TYPE_MISMATCH_ERROR" OR c == "VALUE_ERROR":
+        return TRUE
+    return FALSE
 
 func is_scalar_type(str t) -> bool:
     return t == "str" OR t == "flint" OR t == "bool"
@@ -1585,6 +1599,9 @@ func top_write_forbidden(dict st, str n) -> bool:
     return NOT st[in_func] AND st[loop_depth] == 0
 
 func resolve_write(dict st, dict tok, str n) -> dict:
+    if n == "error":
+        fail(st, tok, "CONST_ERROR", "variable", cat(["handler variable '", n, "' is read-only"]))
+        return {}
     dict vars = st[vars]
     dict gv = st[gvars]
     if vars.contains(n):
@@ -1740,7 +1757,7 @@ func parse_typed_decl(dict st, str dty, dict dname_tok) -> dict:
     return {k: "decl", type: dty, name: dname, lua: dlua, expr: dexpr, line: dname_tok[line], col: dname_tok[col]}
 
 func snapshot_parser(dict st) -> dict:
-    return {vars: st[vars], nullable: st[nullable], maybe_unset: st[maybe_unset], for_names: st[for_names], gvars: st[gvars], gnullable: st[gnullable], gmaybe: st[gmaybe], loop_depth: st[loop_depth], cond_depth: st[cond_depth], in_func: st[in_func], func_ret: st[func_ret], func_returns: st[func_returns], model_ctx: st[model_ctx]}
+    return {vars: st[vars], nullable: st[nullable], maybe_unset: st[maybe_unset], for_names: st[for_names], gvars: st[gvars], gnullable: st[gnullable], gmaybe: st[gmaybe], loop_depth: st[loop_depth], cond_depth: st[cond_depth], try_depth: st[try_depth], try_loop_base: st[try_loop_base], in_func: st[in_func], func_ret: st[func_ret], func_returns: st[func_returns], model_ctx: st[model_ctx]}
 
 func restore_parser(dict st, dict sv):
     st.add("vars", sv[vars])
@@ -1752,6 +1769,8 @@ func restore_parser(dict st, dict sv):
     st.add("gmaybe", sv[gmaybe])
     st.add("loop_depth", sv[loop_depth])
     st.add("cond_depth", sv[cond_depth])
+    st.add("try_depth", sv[try_depth])
+    st.add("try_loop_base", sv[try_loop_base])
     st.add("in_func", sv[in_func])
     st.add("func_ret", sv[func_ret])
     st.add("func_returns", sv[func_returns])
@@ -1931,6 +1950,63 @@ func finish_method(dict st, dict info, list body, str declared, bool has_ret, li
 
 # Разбирает блок. top=TRUE — весь файл до eof; top=FALSE — после ':'.
 # Рекурсивна: тела if/while/for/func разбираются ею же.
+func enter_try_zone(dict st, flint old_base):
+    st.add("try_depth", st[try_depth] + 1)
+    flint base = old_base
+    if st[loop_depth] > base:
+        base = st[loop_depth]
+    st.add("try_loop_base", base)
+
+func leave_try_zone(dict st, flint old_base):
+    st.add("try_depth", st[try_depth] - 1)
+    st.add("try_loop_base", old_base)
+
+func try_crosses_loop(dict st) -> bool:
+    return st[try_depth] > 0 AND st[loop_depth] <= st[try_loop_base]
+
+func add_handler_error(dict st) -> dict:
+    dict old_names = st[names]
+    dict old_vars = st[vars]
+    dict old_null = st[nullable]
+    dict old_maybe = st[maybe_unset]
+    bool had_name = old_names.contains("error")
+    bool had_var = old_vars.contains("error")
+    bool had_null = old_null.contains("error")
+    bool had_maybe = old_maybe.contains("error")
+    str prev_name = ""
+    str prev_var = ""
+    bool prev_null = FALSE
+    bool prev_maybe = FALSE
+    if had_name:
+        prev_name = old_names.take("error")
+    if had_var:
+        prev_var = old_vars.take("error")
+    if had_null:
+        prev_null = old_null.take("error")
+    if had_maybe:
+        prev_maybe = old_maybe.take("error")
+    old_names.add("error", "error")
+    old_vars.add("error", "Error")
+    return {name: had_name, var: had_var, null: had_null, maybe: had_maybe, prev_name: prev_name, prev_var: prev_var, prev_null: prev_null, prev_maybe: prev_maybe}
+
+func remove_handler_error(dict st, dict sv):
+    dict cur_names = st[names]
+    dict cur_vars = st[vars]
+    dict cur_null = st[nullable]
+    dict cur_maybe = st[maybe_unset]
+    cur_names.remove("error")
+    cur_vars.remove("error")
+    cur_null.remove("error")
+    cur_maybe.remove("error")
+    if sv[name]:
+        cur_names.add("error", sv[prev_name])
+    if sv[var]:
+        cur_vars.add("error", sv[prev_var])
+    if sv[null]:
+        cur_null.add("error", sv[prev_null])
+    if sv[maybe]:
+        cur_maybe.add("error", sv[prev_maybe])
+
 func parse_block(dict st, bool top) -> list:
     list stmts = []
     if NOT top:
@@ -2045,6 +2121,62 @@ func parse_block(dict st, bool top) -> list:
                 list wbody = parse_block(st, FALSE)
                 st.add("loop_depth", st[loop_depth] - 1)
                 node = {k: "while", cond: wcond, body: wbody, block_stmt: TRUE, line: wtok[line], col: wtok[col]}
+                block_stmt = TRUE
+            elif t[type] == "kw" AND t[value] == "try":
+                dict trytok = advance(st)
+                expect_tok(st, "op", ":", "':'")
+                flint zbase = st[try_loop_base]
+                enter_try_zone(st, zbase)
+                list try_body = parse_block(st, FALSE)
+                leave_try_zone(st, zbase)
+                if st[err]:
+                    return stmts
+                list ztriggers = []
+                dict zany = NONE
+                dict zcats = {}
+                while tok_is(tk(st), "kw", "trigger"):
+                    dict trtok = advance(st)
+                    dict zcattok = expect_tok(st, "name", "", "error category")
+                    if st[err]:
+                        return stmts
+                    if NOT is_error_category(zcattok[value]):
+                        fail(st, zcattok, "NAME_ERROR", "known error category", zcattok[value])
+                        return stmts
+                    if NOT (zany is NONE):
+                        fail(st, zcattok, "SYNTAX_ERROR", "trigger after ANY_ERROR", cat(["'", zcattok[value], "'"]))
+                        return stmts
+                    if zcattok[value] != "ANY_ERROR":
+                        if zcats.contains(zcattok[value]):
+                            fail(st, zcattok, "REDECLARE_ERROR", "unique trigger category", cat(["'", zcattok[value], "'"]))
+                            return stmts
+                        zcats.add(zcattok[value], TRUE)
+                    expect_tok(st, "op", ":", "':'")
+                    enter_try_zone(st, zbase)
+                    dict hsv = add_handler_error(st)
+                    list hbody = parse_block(st, FALSE)
+                    remove_handler_error(st, hsv)
+                    leave_try_zone(st, zbase)
+                    if st[err]:
+                        return stmts
+                    dict hnode = {cat: zcattok[value], body: hbody, line: trtok[line], col: trtok[col]}
+                    if zcattok[value] == "ANY_ERROR":
+                        zany = hnode
+                    else:
+                        ztriggers.add(hnode)
+                if len(ztriggers) == 0 AND zany is NONE:
+                    fail(st, trytok, "SYNTAX_ERROR", "trigger after try", "finally")
+                    return stmts
+                if NOT tok_is(tk(st), "kw", "finally"):
+                    fail(st, tk(st), "SYNTAX_ERROR", "'finally:'", describe_tok(tk(st)))
+                    return stmts
+                advance(st)
+                expect_tok(st, "op", ":", "':'")
+                enter_try_zone(st, zbase)
+                list zfinally = parse_block(st, FALSE)
+                leave_try_zone(st, zbase)
+                if st[err]:
+                    return stmts
+                node = {k: "try", body: try_body, triggers: ztriggers, any: zany, "finally": zfinally, block_stmt: TRUE, line: trytok[line], col: trytok[col]}
                 block_stmt = TRUE
             elif t[type] == "kw" AND t[value] == "for":
                 dict ftok = advance(st)
@@ -2482,6 +2614,9 @@ func parse_block(dict st, bool top) -> list:
                 dict btok = advance(st)
                 if st[loop_depth] == 0:
                     fail(st, btok, "SCOPE_ERROR", "'break' or 'continue' inside a loop", cat(["'", btok[value], "' outside a loop"]))
+                    return stmts
+                if try_crosses_loop(st):
+                    fail(st, btok, "SCOPE_ERROR", "'break' or 'continue' inside the loop that contains try", cat(["'", btok[value], "' across a try boundary"]))
                     return stmts
                 node = {k: btok[value], line: btok[line], col: btok[col]}
             elif t[type] == "name" AND NOT is_template_func(t[value]) AND peek_value(st) == "=":
@@ -3175,6 +3310,15 @@ func collect_walk(list stmts, list out) -> list:
                 collect_walk(s[else_body], out)
         elif sk == "while" OR sk == "for" OR sk == "for_in":
             collect_walk(s[body], out)
+        elif sk == "try":
+            collect_walk(s[body], out)
+            for h0 in s[triggers]:
+                dict h = h0
+                collect_walk(h[body], out)
+            if NOT (s[any] is NONE):
+                dict ha = s[any]
+                collect_walk(ha[body], out)
+            collect_walk(s["finally"], out)
     return out
 
 func collect_scope(list stmts) -> list:
@@ -3382,6 +3526,69 @@ func emit_stmts(dict st, list stmts) -> str:
                 emit_stmts(st, s[else_body])
                 st.add("indent", st[indent] - 1)
             emit_line(st, "end")
+        elif sk == "try":
+            st.add("try_id", st[try_id] + 1)
+            str tid = str(st[try_id])
+            str tnorm = cat(["__try_normal_", tid])
+            str tok2 = cat(["__try_ok_", tid])
+            str tval2 = cat(["__try_val_", tid])
+            str terr2 = cat(["__try_err_", tid])
+            str thok = cat(["__try_hok_", tid])
+            str hval2 = cat(["__try_hval_", tid])
+            str thandled = cat(["__try_handled_", tid])
+            emit_line(st, "do")
+            st.add("indent", st[indent] + 1)
+            emit_line(st, cat(["local ", tnorm, " = \{\}"]))
+            emit_line(st, cat(["local ", tok2, ", ", tval2]))
+            emit_line(st, cat([tok2, ", ", tval2, " = pcall(function()"]))
+            st.add("indent", st[indent] + 1)
+            emit_stmts(st, s[body])
+            emit_line(st, cat(["return ", tnorm]))
+            st.add("indent", st[indent] - 1)
+            emit_line(st, "end)")
+            emit_line(st, cat(["if not ", tok2, " then"]))
+            st.add("indent", st[indent] + 1)
+            emit_line(st, cat(["local ", terr2, " = ", tval2]))
+            emit_line(st, cat(["local ", thok, ", ", hval2]))
+            emit_line(st, cat([thok, ", ", hval2, " = pcall(function()"]))
+            st.add("indent", st[indent] + 1)
+            emit_line(st, cat(["local error = krt.error_new(", terr2, ")"]))
+            emit_line(st, cat(["local ", thandled, " = false"]))
+            bool zfirst = TRUE
+            for h0 in s[triggers]:
+                dict h = h0
+                str zkw = "if"
+                if NOT zfirst:
+                    zkw = "elseif"
+                emit_line(st, cat([zkw, " error.cat == ", lua_str(h[cat]), " then"]))
+                st.add("indent", st[indent] + 1)
+                emit_line(st, cat([thandled, " = true"]))
+                emit_stmts(st, h[body])
+                st.add("indent", st[indent] - 1)
+                zfirst = FALSE
+            if NOT (s[any] is NONE):
+                dict ha = s[any]
+                if zfirst:
+                    emit_line(st, "if true then")
+                else:
+                    emit_line(st, "else")
+                st.add("indent", st[indent] + 1)
+                emit_line(st, cat([thandled, " = true"]))
+                emit_stmts(st, ha[body])
+                st.add("indent", st[indent] - 1)
+            emit_line(st, "end")
+            emit_line(st, cat(["if not ", thandled, " then _G.error(", terr2, ", 0) end"]))
+            emit_line(st, cat(["return ", tnorm]))
+            st.add("indent", st[indent] - 1)
+            emit_line(st, "end)")
+            emit_line(st, cat([tok2, ", ", tval2, " = ", thok, ", ", hval2]))
+            st.add("indent", st[indent] - 1)
+            emit_line(st, "end")
+            emit_stmts(st, s["finally"])
+            emit_line(st, cat(["if not ", tok2, " then _G.error(", tval2, ", 0) end"]))
+            emit_line(st, cat(["if ", tval2, " ~= ", tnorm, " then return ", tval2, " end"]))
+            st.add("indent", st[indent] - 1)
+            emit_line(st, "end")
         elif sk == "while":
             st.add("loop_id", st[loop_id] + 1)
             str lid = str(st[loop_id])
@@ -3536,7 +3743,7 @@ func emit_stmts(dict st, list stmts) -> str:
 # ---------- сборка Lua ----------
 
 func generate(dict ast, dict opts) -> str:
-    dict st = {out: [], indent: 0, line_map: [], cur_pos: {}, loop_stack: [], loop_id: 0, ret_id: 0, current_ret: "NONE", models: opts[models]}
+    dict st = {out: [], indent: 0, line_map: [], cur_pos: {}, loop_stack: [], loop_id: 0, try_id: 0, ret_id: 0, current_ret: "NONE", models: opts[models]}
     emit_line(st, "#!/usr/bin/env luajit")
     emit_line(st, "-- generated by kraft")
     emit_line(st, cat(["local __KRAFT_SOURCE = ", lua_str(opts[path])]))
@@ -3617,6 +3824,9 @@ func write_compiled(str path, str out_lua):
 # ---------- CLI ----------
 
 list argv = args()
+if len(argv) >= 2 AND argv[1] == "--version":
+    show(xkraft 0.2.0)
+    exit(0)
 if len(argv) < 2:
     show_err(usage: xkraft [--tokens] [-c] file.kraft)
     exit(1)

@@ -1,0 +1,2 @@
+trigger ANY_ERROR:
+    show(caught)

@@ -1,0 +1,8 @@
+try:
+    expect(1).equals(2)
+trigger ASSERT_ERROR:
+    show(wrong category)
+trigger ANY_ERROR:
+    show(any {error.cat})
+finally:
+    show(done)

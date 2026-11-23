@@ -1,0 +1,7 @@
+try:
+    assert(FALSE, "boom")
+trigger ASSERT_ERROR:
+    show(caught {error.cat})
+    show({error.msg})
+finally:
+    show(finally ran)

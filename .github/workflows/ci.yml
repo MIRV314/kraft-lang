@@ -1,0 +1,34 @@
+name: check
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: LuaJIT
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y luajit
+
+      - name: Tests
+        run: make check
+
+      - name:Чистая копия без кеша
+        run: |
+          rm -f xkraft.lua
+          ./xkraft --version
+          ./xkraft examples/hello.kraft
+          ./xkraft examples/features.kraft
+
+      - name:Установка
+        run: |
+          KRAFT_HOME="$RUNNER_TEMP/kraft-home" KRAFT_BIN="$RUNNER_TEMP/kraft-bin" sh install.sh
+          PATH="$RUNNER_TEMP/kraft-bin:$PATH" kraft --version
+          PATH="$RUNNER_TEMP/kraft-bin:$PATH" xkraft --version
+          PATH="$RUNNER_TEMP/kraft-bin:$PATH" xkraft examples/features.kraft
+          KRAFT_SRC="$PWD" KRAFT_PREFIX="$RUNNER_TEMP/kraft-auto" sh install-auto.sh

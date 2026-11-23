@@ -92,6 +92,24 @@ out=$("$tmp/feat.lua")
 [ "$out" = "2" ]
 check "xkraft-compile-c" $?
 
+# 8. Версии эталона и xkraft.
+out=$(./kraft --version)
+[ "$out" = "kraft 0.1.0" ]
+check "kraft-version" $?
+out=$(./xkraft --version)
+[ "$out" = "xkraft 0.2.0" ]
+check "xkraft-version" $?
+
+# 9. Все примеры запускаются новой моделью и дают ожидаемый вывод.
+for f in examples/*.kraft; do
+  [ -e "$f" ] || continue
+  expected="${f%.kraft}.out"
+  [ -f "$expected" ] || continue
+  out=$(./xkraft "$f")
+  [ "$out" = "$(cat "$expected")" ]
+  check "example $(basename "$f")" $?
+done
+
 echo "---"
 echo "$((total - fail))/$total passed"
 [ "$fail" -eq 0 ]

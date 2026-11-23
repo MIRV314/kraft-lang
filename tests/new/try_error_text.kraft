@@ -1,0 +1,6 @@
+try:
+    avg([])
+trigger ANY_ERROR:
+    show({error.text()})
+finally:
+    show(done)

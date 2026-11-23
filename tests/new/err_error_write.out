@@ -1,0 +1,3 @@
+CONST_ERROR: tests/new/err_error_write.kraft:4
+    4 |     error.msg = "changed"
+                  ^ expected mutable field, found constant 'msg' is read-only

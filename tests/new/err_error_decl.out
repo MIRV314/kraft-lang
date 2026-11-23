@@ -1,0 +1,3 @@
+NAME_ERROR: tests/new/err_error_decl.kraft:1
+    1 | str error = "x"
+            ^ expected free name, found reserved 'error'

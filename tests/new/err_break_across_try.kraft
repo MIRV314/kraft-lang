@@ -1,0 +1,8 @@
+for i 3:
+    try:
+        show({i})
+        break
+    trigger ANY_ERROR:
+        show(caught)
+    finally:
+        show(done)

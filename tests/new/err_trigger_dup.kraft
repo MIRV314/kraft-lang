@@ -1,0 +1,8 @@
+try:
+    show(body)
+trigger VALUE_ERROR:
+    show(one)
+trigger VALUE_ERROR:
+    show(two)
+finally:
+    show(done)

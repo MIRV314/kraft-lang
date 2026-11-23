@@ -1,0 +1,3 @@
+caught ASSERT_ERROR
+boom
+finally ran

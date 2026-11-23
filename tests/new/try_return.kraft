@@ -1,0 +1,10 @@
+func f() -> str:
+    try:
+        return "value"
+    trigger ANY_ERROR:
+        return "handler"
+    finally:
+        show(finally ran)
+    return "never"
+str r = f()
+show({r})
