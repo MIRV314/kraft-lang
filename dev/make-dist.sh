@@ -300,11 +300,18 @@ for name, text in [
 
 win_assets = ["xkraft-win.lua", "xkraft.cmd", "kraft.cmd", "install-win.cmd",
               "README.md", "LICENSE", "NOTICE", "VERSION", "CHANGELOG.md"]
+# Фиксируем время и атрибуты: иначе mtime перезаписанных файлов попадает в zip,
+# и повторная сборка меняет SHA256SUMS (CI ловит это через git diff --exit-code).
 with zipfile.ZipFile(repo / "dist" / "kraft-win.zip", "w", zipfile.ZIP_DEFLATED) as z:
     for name in win_assets:
         path = repo / "dist" / name
-        if path.exists():
-            z.write(path, name)
+        if not path.exists():
+            continue
+        info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+        info.compress_type = zipfile.ZIP_DEFLATED
+        info.create_system = 0
+        info.external_attr = 0o644 << 16
+        z.writestr(info, path.read_bytes())
 
 checksum_lines = []
 for name in ["xkraft", "kraft-win.zip"]:
