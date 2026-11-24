@@ -2324,6 +2324,145 @@ func parse_trigger_cats(dict st, dict zcats, bool zhas_any) -> dict:
         hinfo.add("any", TRUE)
     return hinfo
 
+# Разбор func разбит на хелперы: parse_block вплотную подошёл к лимиту
+# LuaJIT в 200 локальных переменных. Ни один хелпер не вызывает parse_block,
+# поэтому mutual recursion не возникает.
+func parse_func_head(dict st) -> dict:
+    dict funtok = advance(st)
+    if st[in_func] OR st[block_depth] > 0:
+        fail(st, funtok, "SYNTAX_ERROR", "function at top level", "nested function")
+        return {}
+    dict fntok = expect_tok(st, "name", "", "function name")
+    if NOT (st[err] is NONE):
+        return {}
+    str fn_name = fntok[value]
+    if is_reserved(fn_name):
+        fail(st, fntok, "NAME_ERROR", "free name", cat(["reserved '", fn_name, "'"]))
+        return {}
+    if is_const_name(fn_name):
+        fail(st, fntok, "CONST_ERROR", "function name", cat(["constant '", fn_name, "'"]))
+        return {}
+    dict gvars = st[vars]
+    dict gfuncs = st[funcs]
+    if gfuncs.contains(fn_name) OR gvars.contains(fn_name):
+        fail(st, fntok, "REDECLARE_ERROR", "unique name", cat(["name '", fn_name, "' is already declared"]))
+        return {}
+    return {tok: funtok, name: fn_name}
+
+func parse_func_params(dict st) -> list:
+    list params = []
+    expect_tok(st, "op", "(", "'('")
+    if NOT (st[err] is NONE):
+        return params
+    if NOT tok_is(tk(st), "op", ")"):
+        while TRUE:
+            dict pty_tok = tk(st)
+            str pty = parse_type_name(st)
+            if NOT (st[err] is NONE):
+                return params
+            if pty == "NONE":
+                fail(st, pty_tok, "TYPE_ERROR", "parameter type", "NONE")
+                return params
+            dict pn = expect_tok(st, "name", "", "parameter name")
+            if NOT (st[err] is NONE):
+                return params
+            str pnm = pn[value]
+            if is_reserved(pnm):
+                fail(st, pn, "NAME_ERROR", "free name", cat(["reserved '", pnm, "'"]))
+                return params
+            dict pgv = st[vars]
+            if pgv.contains(pnm):
+                fail(st, pn, "REDECLARE_ERROR", "parameter name", cat(["global '", pnm, "' is already declared"]))
+                return params
+            flint di = 0
+            while di < len(params):
+                dict pp0 = params[di]
+                if pp0[name] == pnm:
+                    fail(st, pn, "REDECLARE_ERROR", "unique parameter name", cat(["duplicate '", pnm, "'"]))
+                    return params
+                di += 1
+            params.add({name: pnm, type: pty, line: pn[line], col: pn[col]})
+            if tok_is(tk(st), "op", ","):
+                advance(st)
+            else:
+                break
+    expect_tok(st, "op", ")", "')'")
+    return params
+
+func enter_func_scope(dict st) -> dict:
+    dict sv = {vars: st[vars], nullable: st[nullable], maybe: st[maybe_unset], fors: st[for_names], gvars: st[gvars], gnullable: st[gnullable], gmaybe: st[gmaybe], loop: st[loop_depth], in_func: st[in_func], ret: st[func_ret], returns: st[func_returns]}
+    st.add("gvars", st[vars])
+    st.add("gnullable", st[nullable])
+    st.add("gmaybe", st[maybe_unset])
+    st.add("vars", {})
+    st.add("nullable", {})
+    st.add("maybe_unset", {})
+    st.add("for_names", {})
+    st.add("loop_depth", 0)
+    st.add("in_func", TRUE)
+    st.add("func_ret", "NONE")
+    st.add("func_returns", [])
+    return sv
+
+func leave_func_scope(dict st, dict sv):
+    st.add("vars", sv[vars])
+    st.add("nullable", sv[nullable])
+    st.add("maybe_unset", sv[maybe])
+    st.add("for_names", sv[fors])
+    st.add("gvars", sv[gvars])
+    st.add("gnullable", sv[gnullable])
+    st.add("gmaybe", sv[gmaybe])
+    st.add("loop_depth", sv[loop])
+    st.add("in_func", sv[in_func])
+    st.add("func_ret", sv[ret])
+    st.add("func_returns", sv[returns])
+
+func bind_func_params(dict st, list params):
+    flint pj = 0
+    while pj < len(params):
+        dict pj_p = params[pj]
+        pj_p.add("lua", mangle_var(st, pj_p[name]))
+        dict nv = st[vars]
+        nv.add(pj_p[name], pj_p[type])
+        pj += 1
+
+func finish_func(dict st, dict funtok, str fn_name, dict fninfo, list params, str flua, str fret, bool fhas_ret, list fnbody, bool exported) -> dict:
+    list frets = st[func_returns]
+    bool fallthrough = TRUE
+    if len(fnbody) > 0:
+        dict last_stmt = fnbody[len(fnbody) - 1]
+        if last_stmt[k] == "return":
+            fallthrough = FALSE
+    bool fnullable = fallthrough
+    str seen = ""
+    flint ri = 0
+    while ri < len(frets):
+        dict rr = frets[ri]
+        if rr[empty] OR rr[type] == "NONE" OR e_nullable(rr):
+            fnullable = TRUE
+        elif fhas_ret:
+            if rr[type] != fret AND rr[type] != "any":
+                fail(st, rr, "TYPE_ERROR", cat(["return type ", fret]), rr[type])
+                return {}
+        else:
+            if seen != "" AND seen != rr[type]:
+                fail(st, rr, "TYPE_ERROR", cat(["all returns of '", fn_name, "' to have one type"]), cat([seen, " and ", rr[type]]))
+                return {}
+            seen = rr[type]
+        ri += 1
+    str final_ret = fret
+    if NOT fhas_ret:
+        final_ret = seen
+        if final_ret == "":
+            final_ret = "NONE"
+    fninfo.add("ret", final_ret)
+    fninfo.add("ret_nullable", fnullable)
+    fninfo.add("inferring", FALSE)
+    dict fnode = {k: "func", name: fn_name, lua: flua, params: params, ret: final_ret, body: fnbody, block_stmt: TRUE, line: funtok[line], col: funtok[col]}
+    if exported:
+        fnode.add("exported", TRUE)
+    return fnode
+
 func parse_block(dict st, bool top) -> list:
     list stmts = []
     if NOT top:
@@ -2628,56 +2767,14 @@ func parse_block(dict st, bool top) -> list:
                     node = ftnode
                     block_stmt = TRUE
             elif t[type] == "kw" AND t[value] == "func":
-                dict funtok = advance(st)
-                if st[in_func] OR st[block_depth] > 0:
-                    fail(st, funtok, "SYNTAX_ERROR", "function at top level", "nested function")
+                dict fh = parse_func_head(st)
+                if NOT (st[err] is NONE):
                     return stmts
-                dict fntok = expect_tok(st, "name", "", "function name")
-                str fn_name = fntok[value]
-                if is_reserved(fn_name):
-                    fail(st, fntok, "NAME_ERROR", "free name", cat(["reserved '", fn_name, "'"]))
+                dict funtok = fh[tok]
+                str fn_name = fh[name]
+                list params = parse_func_params(st)
+                if NOT (st[err] is NONE):
                     return stmts
-                if is_const_name(fn_name):
-                    fail(st, fntok, "CONST_ERROR", "function name", cat(["constant '", fn_name, "'"]))
-                    return stmts
-                dict gvars = st[vars]
-                dict gfuncs = st[funcs]
-                if gfuncs.contains(fn_name) OR gvars.contains(fn_name):
-                    fail(st, fntok, "REDECLARE_ERROR", "unique name", cat(["name '", fn_name, "' is already declared"]))
-                    return stmts
-                expect_tok(st, "op", "(", "'('")
-                list params = []
-                if NOT tok_is(tk(st), "op", ")"):
-                    while TRUE:
-                        dict pty_tok = tk(st)
-                        str pty = parse_type_name(st)
-                        if NOT (st[err] is NONE):
-                            return stmts
-                        if pty == "NONE":
-                            fail(st, pty_tok, "TYPE_ERROR", "parameter type", "NONE")
-                            return stmts
-                        dict pn = expect_tok(st, "name", "", "parameter name")
-                        str pnm = pn[value]
-                        if is_reserved(pnm):
-                            fail(st, pn, "NAME_ERROR", "free name", cat(["reserved '", pnm, "'"]))
-                            return stmts
-                        dict pgv = st[vars]
-                        if pgv.contains(pnm):
-                            fail(st, pn, "REDECLARE_ERROR", "parameter name", cat(["global '", pnm, "' is already declared"]))
-                            return stmts
-                        flint di = 0
-                        while di < len(params):
-                            dict pp0 = params[di]
-                            if pp0[name] == pnm:
-                                fail(st, pn, "REDECLARE_ERROR", "unique parameter name", cat(["duplicate '", pnm, "'"]))
-                                return stmts
-                            di += 1
-                        params.add({name: pnm, type: pty, line: pn[line], col: pn[col]})
-                        if tok_is(tk(st), "op", ","):
-                            advance(st)
-                        else:
-                            break
-                expect_tok(st, "op", ")", "')'")
                 str fret = "NONE"
                 bool fhas_ret = FALSE
                 if tok_is(tk(st), "op", "->"):
@@ -2694,81 +2791,18 @@ func parse_block(dict st, bool top) -> list:
                 dict fninfo = {params: params, ret: NONE, ret_nullable: FALSE, inferring: TRUE}
                 if fhas_ret:
                     fninfo.add("ret", fret)
+                dict gfuncs = st[funcs]
                 gfuncs.add(fn_name, fninfo)
                 str flua = mangle_func(st, fn_name)
-                dict sv_vars = st[vars]
-                dict sv_nullable = st[nullable]
-                dict sv_maybe = st[maybe_unset]
-                dict sv_for = st[for_names]
-                dict sv_gvars = st[gvars]
-                dict sv_gnullable = st[gnullable]
-                dict sv_gmaybe = st[gmaybe]
-                flint sv_loop = st[loop_depth]
-                bool sv_in = st[in_func]
-                str sv_ret = st[func_ret]
-                list sv_returns = st[func_returns]
-                st.add("gvars", st[vars])
-                st.add("gnullable", st[nullable])
-                st.add("gmaybe", st[maybe_unset])
-                st.add("vars", {})
-                st.add("nullable", {})
-                st.add("maybe_unset", {})
-                st.add("for_names", {})
-                st.add("loop_depth", 0)
-                st.add("in_func", TRUE)
+                dict fsv = enter_func_scope(st)
                 st.add("func_ret", fret)
-                st.add("func_returns", [])
-                flint pj = 0
-                while pj < len(params):
-                    dict pj_p = params[pj]
-                    pj_p.add("lua", mangle_var(st, pj_p[name]))
-                    dict nv = st[vars]
-                    nv.add(pj_p[name], pj_p[type])
-                    pj += 1
+                bind_func_params(st, params)
                 list fnbody = parse_block(st, FALSE)
-                list frets = st[func_returns]
-                st.add("vars", sv_vars)
-                st.add("nullable", sv_nullable)
-                st.add("maybe_unset", sv_maybe)
-                st.add("for_names", sv_for)
-                st.add("gvars", sv_gvars)
-                st.add("gnullable", sv_gnullable)
-                st.add("gmaybe", sv_gmaybe)
-                st.add("loop_depth", sv_loop)
-                st.add("in_func", sv_in)
-                st.add("func_ret", sv_ret)
-                st.add("func_returns", sv_returns)
-                bool fallthrough = TRUE
-                if len(fnbody) > 0:
-                    dict last_stmt = fnbody[len(fnbody) - 1]
-                    if last_stmt[k] == "return":
-                        fallthrough = FALSE
-                bool fnullable = fallthrough
-                str seen = ""
-                flint ri = 0
-                while ri < len(frets):
-                    dict rr = frets[ri]
-                    if rr[empty] OR rr[type] == "NONE" OR e_nullable(rr):
-                        fnullable = TRUE
-                    elif fhas_ret:
-                        if rr[type] != fret AND rr[type] != "any":
-                            fail(st, rr, "TYPE_ERROR", cat(["return type ", fret]), rr[type])
-                            return stmts
-                    else:
-                        if seen != "" AND seen != rr[type]:
-                            fail(st, rr, "TYPE_ERROR", cat(["all returns of '", fn_name, "' to have one type"]), cat([seen, " and ", rr[type]]))
-                            return stmts
-                        seen = rr[type]
-                    ri += 1
-                str final_ret = fret
-                if NOT fhas_ret:
-                    final_ret = seen
-                    if final_ret == "":
-                        final_ret = "NONE"
-                fninfo.add("ret", final_ret)
-                fninfo.add("ret_nullable", fnullable)
-                fninfo.add("inferring", FALSE)
-                node = {k: "func", name: fn_name, lua: flua, params: params, ret: final_ret, body: fnbody, block_stmt: TRUE, line: funtok[line], col: funtok[col]}
+                leave_func_scope(st, fsv)
+                dict fnode = finish_func(st, funtok, fn_name, fninfo, params, flua, fret, fhas_ret, fnbody, FALSE)
+                if NOT (st[err] is NONE):
+                    return stmts
+                node = fnode
                 block_stmt = TRUE
             elif t[type] == "kw" AND t[value] == "model":
                 dict mtok = advance(st)
