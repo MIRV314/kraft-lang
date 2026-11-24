@@ -73,6 +73,8 @@ func pad5(flint n) -> str:
     return cat([spaces(5 - len(s)), s])
 
 func report_error(dict e, str src):
+    if e.contains("source") AND NOT (e[source] is NONE):
+        src = e[source]
     list lines = split_lines(src)
     str ecat = "SYNTAX_ERROR"
     if e.contains("cat"):
@@ -164,6 +166,8 @@ func is_keyword(str w) -> bool:
     if w == "init" OR w == "import_file" OR w == "from_file":
         return TRUE
     if w == "import_lib" OR w == "from_lib":
+        return TRUE
+    if w == "export" OR w == "namespace":
         return TRUE
     if w == "str" OR w == "flint" OR w == "bool" OR w == "list" OR w == "dict":
         return TRUE
@@ -518,7 +522,7 @@ func peek_value(dict st) -> str:
 func fail(dict st, dict t, str ecat, str expected, str found):
     if NOT (st[err] is NONE):
         return:
-    dict e = {cat: ecat, line: 1, col: 1, expected: expected, found: found, path: st[path]}
+    dict e = {cat: ecat, line: 1, col: 1, expected: expected, found: found, path: st[path], source: st[source]}
     if len(t) > 0:
         e.add("line", t[line])
         e.add("col", t[col])
@@ -899,6 +903,16 @@ func plain_string_of(dict st, dict t) -> str:
             return ""
         buf.add(p[value])
     return buf.join("")
+
+func dirname(str p) -> str:
+    flint i = len(p) - 1
+    while i >= 0:
+        if p[i] == "/":
+            if i == 0:
+                return "/"
+            return p[..i]
+        i -= 1
+    return "."
 
 # Соответствует ли литерал параметризованному типу.
 func literal_ok(dict st, dict e, str spec) -> bool:
@@ -2463,6 +2477,107 @@ func finish_func(dict st, dict funtok, str fn_name, dict fninfo, list params, st
         fnode.add("exported", TRUE)
     return fnode
 
+# ---------- модули: разбор импортов до основного парсера ----------
+
+func dict_copy(dict src) -> dict:
+    dict out = {}
+    for ck, cv in src:
+        out.add(ck, cv)
+    return out
+
+func is_import_kw(str w) -> bool:
+    return w == "import_file" OR w == "from_file" OR w == "import_lib" OR w == "from_lib"
+
+# Читает синтаксис импорта, не загружая файл. Возвращает start/tok/kind/path/names.
+func parse_import_syntax(dict st) -> dict:
+    flint start = st[pos]
+    dict kwtok = advance(st)
+    str kind = kwtok[value]
+    dict ptok = expect_tok(st, "string", "", "module path")
+    if NOT (st[err] is NONE):
+        return {}
+    str mpath = plain_string_of(st, ptok)
+    if NOT (st[err] is NONE):
+        return {}
+    list names = []
+    if kind == "from_file" OR kind == "from_lib":
+        if NOT tok_is(tk(st), "name", "import"):
+            fail(st, tk(st), "SYNTAX_ERROR", "'import' after module path", describe_tok(tk(st)))
+            return {}
+        advance(st)
+        dict nt = expect_tok(st, "name", "", "imported name")
+        if NOT (st[err] is NONE):
+            return {}
+        names.add(nt)
+        while tok_is(tk(st), "op", ","):
+            advance(st)
+            dict nt2 = expect_tok(st, "name", "", "imported name")
+            if NOT (st[err] is NONE):
+                return {}
+            names.add(nt2)
+    return {start: start, tok: kwtok, kind: kind, path: mpath, names: names}
+
+func module_full_path(dict st, str kind, str mpath, dict tok) -> str:
+    if kind == "import_lib" OR kind == "from_lib":
+        str short = mpath
+        if len(short) >= 4 AND short[..4] == "std/":
+            short = short[4..len(short)]
+        return cat([st[self_dir], "/stdlib/", short, ".kraft"])
+    return cat([dirname(st[path]), "/", mpath])
+
+func bind_export(dict st, dict md, dict nt):
+    str name = nt[value]
+    dict ex = md[exports]
+    if NOT ex.contains(name):
+        fail(st, nt, "NAME_ERROR", "exported name", cat(["module does not export '", name, "'"]))
+        return:
+    dict bound = md[bound]
+    if bound.contains(name):
+        return:
+    dict tvars = st[vars]
+    dict tfuncs = st[funcs]
+    if tvars.contains(name) OR tfuncs.contains(name):
+        fail(st, nt, "REDECLARE_ERROR", "unique import name", cat(["name '", name, "' is already declared"]))
+        return:
+    str kind = ex.take(name)
+    if kind == "func":
+        dict pf = md[funcs]
+        dict pfn = md[fnames]
+        if NOT pf.contains(name):
+            fail(st, nt, "NAME_ERROR", "exported function", name)
+            return:
+        tfuncs.add(name, pf.take(name))
+        dict tfn = st[fnames]
+        tfn.add(name, pfn.take(name))
+    else:
+        dict pv = md[vars]
+        dict pn = md[names]
+        if NOT pv.contains(name):
+            fail(st, nt, "NAME_ERROR", "exported variable", name)
+            return:
+        tvars.add(name, pv.take(name))
+        dict tn = st[names]
+        tn.add(name, pn.take(name))
+        dict pnl = md[nullable]
+        if pnl.contains(name):
+            dict tnl = st[nullable]
+            tnl.add(name, TRUE)
+        dict pgv = md[gvars]
+        if pgv.contains(name):
+            dict tgv = st[gvars]
+            tgv.add(name, pgv.take(name))
+        dict pgn = md[gnullable]
+        if pgn.contains(name):
+            dict tgn = st[gnullable]
+            tgn.add(name, TRUE)
+        dict pgm = md[gmaybe]
+        if pgm.contains(name):
+            dict tgm = st[gmaybe]
+            tgm.add(name, TRUE)
+    bound.add(name, TRUE)
+    st.add("vcounter", md[vcounter])
+    st.add("fcounter", md[fcounter])
+
 func parse_block(dict st, bool top) -> list:
     list stmts = []
     if NOT top:
@@ -2496,6 +2611,15 @@ func parse_block(dict st, bool top) -> list:
             dict node = {}
             bool block_stmt = FALSE
             bool decl_block = FALSE
+            bool exported = FALSE
+            bool export_ok = FALSE
+            if tok_is(tk(st), "kw", "export"):
+                if st[in_func] OR st[block_depth] > 0:
+                    fail(st, tk(st), "SYNTAX_ERROR", "export at top level", "nested export")
+                    return stmts
+                advance(st)
+                exported = TRUE
+                t = tk(st)
             if stmt_is_decl_block(st):
                 dict dbtok = advance(st)
                 str dbty = dbtok[value]
@@ -2545,6 +2669,26 @@ func parse_block(dict st, bool top) -> list:
                 node = parse_typed_decl(st, dty, dname_tok)
                 if NOT (st[err] is NONE):
                     return stmts
+                if exported:
+                    node.add("exported", TRUE)
+                    dict dexp = st[exports]
+                    dexp.add(node[name], "var")
+                    st.add("exports", dexp)
+                    export_ok = TRUE
+            elif t[type] == "kw" AND is_import_kw(t[value]):
+                if st[in_func] OR st[block_depth] > 0:
+                    fail(st, t, "SYNTAX_ERROR", "import at top level", "nested import")
+                    return stmts
+                dict req = parse_import_syntax(st)
+                if NOT (st[err] is NONE):
+                    return stmts
+                str bkey = cat([st[path], ":", str(req[start])])
+                list impbody = []
+                dict ib = st[import_bodies]
+                if ib.contains(bkey):
+                    impbody = ib.take(bkey)
+                dict itok = req[tok]
+                node = {k: "import", body: impbody, line: itok[line], col: itok[col]}
             elif t[type] == "kw" AND t[value] == "panic":
                 node = parse_panic(st)
                 if NOT (st[err] is NONE):
@@ -2799,9 +2943,14 @@ func parse_block(dict st, bool top) -> list:
                 bind_func_params(st, params)
                 list fnbody = parse_block(st, FALSE)
                 leave_func_scope(st, fsv)
-                dict fnode = finish_func(st, funtok, fn_name, fninfo, params, flua, fret, fhas_ret, fnbody, FALSE)
+                dict fnode = finish_func(st, funtok, fn_name, fninfo, params, flua, fret, fhas_ret, fnbody, exported)
                 if NOT (st[err] is NONE):
                     return stmts
+                if exported:
+                    dict fexp = st[exports]
+                    fexp.add(fn_name, "func")
+                    st.add("exports", fexp)
+                    export_ok = TRUE
                 node = fnode
                 block_stmt = TRUE
             elif t[type] == "kw" AND t[value] == "model":
@@ -3141,6 +3290,9 @@ func parse_block(dict st, bool top) -> list:
                         node = {k: "setindex", target: e, expr: eval2, line: eq2[line], col: eq2[col]}
                 else:
                     node = {k: "exprstmt", expr: e, line: e[line], col: e[col]}
+            if exported AND NOT export_ok:
+                fail(st, t, "SYNTAX_ERROR", "export func or declaration", describe_tok(t))
+                return stmts
             if NOT decl_block:
                 stmts.add(node)
                 if NOT block_stmt:
@@ -3162,6 +3314,140 @@ func parse_block(dict st, bool top) -> list:
             advance(st)
         st.add("block_depth", st[block_depth] - 1)
     return stmts
+
+# Загружает и разбирает один файл. Рекурсивен только сам в себя:
+# вложенные import разбираются этим же вызовом до основного parse_block.
+func process_source(dict st, str path, str src, bool fresh, bool capture_body) -> dict:
+    dict old = {toks: st[toks], pos: st[pos], path: st[path], source: st[source], err: st[err], vars: st[vars], nullable: st[nullable], maybe: st[maybe_unset], fors: st[for_names], gvars: st[gvars], gnullable: st[gnullable], gmaybe: st[gmaybe], funcs: st[funcs], names: st[names], fnames: st[fnames], exports: st[exports], models: st[models], vcounter: st[vcounter], fcounter: st[fcounter], block_depth: st[block_depth], loop_depth: st[loop_depth], cond_depth: st[cond_depth], in_func: st[in_func], func_ret: st[func_ret], func_returns: st[func_returns], model_ctx: st[model_ctx], try_id: st[try_id], try_depth: st[try_depth], try_loop_base: st[try_loop_base]}
+    if fresh:
+        st.add("vars", {})
+        st.add("nullable", {})
+        st.add("maybe_unset", {})
+        st.add("for_names", {})
+        st.add("gvars", {})
+        st.add("gnullable", {})
+        st.add("gmaybe", {})
+        st.add("funcs", {})
+        st.add("names", {})
+        st.add("fnames", {})
+        st.add("exports", {})
+        st.add("models", dict_copy(old[models]))
+        st.add("vcounter", old[vcounter])
+        st.add("fcounter", old[fcounter])
+        st.add("block_depth", 0)
+        st.add("loop_depth", 0)
+        st.add("cond_depth", 0)
+        st.add("in_func", FALSE)
+        st.add("func_ret", "NONE")
+        st.add("func_returns", [])
+        st.add("model_ctx", NONE)
+        st.add("err", NONE)
+    dict mlx = lex(src, path)
+    if NOT (mlx[err] is NONE):
+        dict e = mlx[err]
+        e.add("path", path)
+        e.add("source", src)
+        st.add("err", e)
+        if fresh:
+            for rk1, rv1 in old:
+                st.add(rk1, rv1)
+            st.add("err", e)
+        return {}
+    st.add("toks", mlx[tokens])
+    st.add("pos", 0)
+    st.add("path", path)
+    st.add("source", src)
+    if fresh:
+        add_prelude(st)
+    list stack = st[import_stack]
+    flint si = 0
+    while si < len(stack):
+        if stack[si] == path:
+            fail(st, tk(st), "REDECLARE_ERROR", "import without a cycle", path)
+            dict ce = st[err]
+            if fresh:
+                for rk2, rv2 in old:
+                    st.add(rk2, rv2)
+                st.add("err", ce)
+            return {}
+        si += 1
+    stack.add(path)
+    st.add("import_stack", stack)
+    flint i = 0
+    flint depth = 0
+    dict bodies = st[import_bodies]
+    while i < len(st[toks]) AND (st[err] is NONE):
+        dict it = st[toks][i]
+        flint nexti = i + 1
+        if it[type] == "indent":
+            depth += 1
+        elif it[type] == "dedent":
+            depth -= 1
+        elif depth == 0 AND it[type] == "kw" AND is_import_kw(it[value]):
+            st.add("pos", i)
+            dict req = parse_import_syntax(st)
+            if NOT (st[err] is NONE):
+                break
+            str full = module_full_path(st, req[kind], req[path], req[tok])
+            dict cache = st[import_cache]
+            dict md = {}
+            bool cached = FALSE
+            if cache.contains(full):
+                md = cache.take(full)
+                cached = TRUE
+            else:
+                if NOT file_exists(full):
+                    fail(st, req[tok], "FILE_ERROR", "module file", full)
+                    break
+                str msrc = read_file(full)
+                md = process_source(st, full, msrc, TRUE, TRUE)
+                if NOT (st[err] is NONE):
+                    break
+                cache.add(full, md)
+                st.add("import_cache", cache)
+            dict usemd = dict_copy(md)
+            usemd.add("bound", {})
+            dict rtk = req[tok]
+            list reqnames = req[names]
+            if len(reqnames) == 0:
+                dict ex0 = usemd[exports]
+                for nm0, nvv0 in ex0:
+                    dict nt0 = {value: nm0, line: rtk[line], col: rtk[col]}
+                    bind_export(st, usemd, nt0)
+                    if NOT (st[err] is NONE):
+                        break
+            else:
+                for nt1 in reqnames:
+                    bind_export(st, usemd, nt1)
+                    if NOT (st[err] is NONE):
+                        break
+            if NOT (st[err] is NONE):
+                break
+            if NOT cached:
+                st.add("vcounter", usemd[vcounter])
+                st.add("fcounter", usemd[fcounter])
+            str bodykey = cat([path, ":", str(req[start])])
+            if cached:
+                bodies.add(bodykey, [])
+            else:
+                bodies.add(bodykey, usemd[body])
+            st.add("import_bodies", bodies)
+            nexti = st[pos]
+        i = nexti
+    list stack2 = st[import_stack]
+    stack2.del(len(stack2) - 1)
+    st.add("import_stack", stack2)
+    if NOT capture_body:
+        st.add("pos", 0)
+    dict result = {}
+    if capture_body AND (st[err] is NONE):
+        st.add("pos", 0)
+        list body = parse_block(st, TRUE)
+        result = {path: path, body: body, exports: st[exports], vars: st[vars], nullable: st[nullable], funcs: st[funcs], names: st[names], fnames: st[fnames], gvars: st[gvars], gnullable: st[gnullable], gmaybe: st[gmaybe], vcounter: st[vcounter], fcounter: st[fcounter], bound: {}}
+    if fresh:
+        for rk3, rv3 in old:
+            st.add(rk3, rv3)
+    return result
 
 # ---------- кодогенератор ----------
 
@@ -3705,6 +3991,8 @@ func collect_walk(list stmts, list out) -> list:
         str sk = s[k]
         if sk == "decl":
             out.add(s[lua])
+        elif sk == "import":
+            collect_walk(s[body], out)
         elif sk == "if":
             list brs = s[branches]
             for b0 in brs:
@@ -3782,6 +4070,8 @@ func emit_stmts(dict st, list stmts) -> str:
         st.add("cur_pos", stmt_pos(s))
         str sk = s[k]
         bool wrap_ret = FALSE
+        if sk == "import":
+            emit_stmts(st, s[body])
         if sk == "return" AND i < len(stmts) - 1:
             wrap_ret = TRUE
             emit_line(st, "do")
@@ -4240,16 +4530,6 @@ func extract_stdin(str src) -> list:
                 out.add(line[i..n])
     return out
 
-func dirname(str p) -> str:
-    flint i = len(p) - 1
-    while i >= 0:
-        if p[i] == "/":
-            if i == 0:
-                return "/"
-            return p[..i]
-        i -= 1
-    return "."
-
 func write_compiled(str path, str out_lua):
     str base = path
     if path.suff(".kraft"):
@@ -4311,9 +4591,14 @@ if mode == "tokens":
     dump_tokens(lx[tokens])
     exit(0)
 
-dict st = {toks: lx[tokens], pos: 0, path: path, vars: {}, nullable: {}, maybe_unset: {}, gvars: {}, gnullable: {}, gmaybe: {}, for_names: {}, funcs: {}, in_func: FALSE, func_ret: "NONE", func_returns: [], block_depth: 0, loop_depth: 0, cond_depth: 0, err: NONE, names: {}, fnames: {}, vcounter: 0, fcounter: 0, models: {Error: error_schema()}, model_ctx: NONE, try_id: 0, try_depth: 0, try_loop_base: 0}
+dict st = {toks: lx[tokens], pos: 0, path: path, source: src, vars: {}, nullable: {}, maybe_unset: {}, gvars: {}, gnullable: {}, gmaybe: {}, for_names: {}, funcs: {}, in_func: FALSE, func_ret: "NONE", func_returns: [], block_depth: 0, loop_depth: 0, cond_depth: 0, err: NONE, names: {}, fnames: {}, vcounter: 0, fcounter: 0, models: {Error: error_schema()}, model_ctx: NONE, try_id: 0, try_depth: 0, try_loop_base: 0, exports: {}, import_stack: [], import_cache: {}, import_bodies: {}, self_dir: dirname(argv[0])}
 if use_prelude:
     add_prelude(st)
+process_source(st, path, src, FALSE, FALSE)
+if NOT (st[err] is NONE):
+    dict ie = st[err]
+    report_error(ie, src)
+    exit(1)
 list prog = parse_block(st, TRUE)
 if NOT (st[err] is NONE):
     dict e2 = st[err]

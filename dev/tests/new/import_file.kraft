@@ -1,0 +1,4 @@
+import_file "./modules/math.kraft"
+
+show({plus3(1, 2)})
+show({base})

@@ -1,0 +1,7 @@
+export flint base = 10
+
+export func plus3(flint a, flint b) -> flint:
+    return a + b + base
+
+func hidden(flint a) -> flint:
+    return a * 2

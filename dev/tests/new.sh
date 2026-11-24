@@ -62,17 +62,23 @@ for f in tests/new/*.kraft; do
   fi
 
   ok=1
-
-  run_case direct "$f" "$tmp/$name.direct"
-  got_code=$?
-  if [ "$got_code" -ne "$expected_code" ]; then
-    echo "     direct: exit $got_code, expected $expected_code"
-    ok=0
+  selfonly=0
+  if [ -f "tests/new/$name.selfonly" ]; then
+    selfonly=1
   fi
-  if ! diff -u "$expected" "$tmp/$name.direct.out" > "$tmp/$name.direct.diff" 2>&1; then
-    echo "     direct: output differs"
-    sed 's/^/     /' "$tmp/$name.direct.diff"
-    ok=0
+
+  if [ "$selfonly" -eq 0 ]; then
+    run_case direct "$f" "$tmp/$name.direct"
+    got_code=$?
+    if [ "$got_code" -ne "$expected_code" ]; then
+      echo "     direct: exit $got_code, expected $expected_code"
+      ok=0
+    fi
+    if ! diff -u "$expected" "$tmp/$name.direct.out" > "$tmp/$name.direct.diff" 2>&1; then
+      echo "     direct: output differs"
+      sed 's/^/     /' "$tmp/$name.direct.diff"
+      ok=0
+    fi
   fi
 
   run_case self "$f" "$tmp/$name.self"
@@ -87,7 +93,7 @@ for f in tests/new/*.kraft; do
     ok=0
   fi
 
-  if [ -s "$tmp/$name.direct.lua" ] && [ -s "$tmp/$name.self.lua" ]; then
+  if [ "$selfonly" -eq 0 ] && [ -s "$tmp/$name.direct.lua" ] && [ -s "$tmp/$name.self.lua" ]; then
     if ! diff -q "$tmp/$name.direct.lua" "$tmp/$name.self.lua" > /dev/null 2>&1; then
       echo "     direct and self produced different Lua"
       ok=0
