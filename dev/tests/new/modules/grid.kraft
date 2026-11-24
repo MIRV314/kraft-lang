@@ -1,0 +1,4 @@
+namespace grid:
+    export flint size = 4
+    export func area(flint a, flint b) -> flint:
+        return a * b

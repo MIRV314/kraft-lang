@@ -1,0 +1,4 @@
+import_file "./modules/grid.kraft"
+
+show({grid.size})
+show({grid.area(2, 3)})

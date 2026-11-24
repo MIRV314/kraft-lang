@@ -1,0 +1,15 @@
+namespace util:
+    flint base = 3
+    func inc(flint x) -> flint:
+        return x + base
+    export flint mark = 7
+
+show({util.inc(4)})
+show({util.base})
+show({util.mark})
+
+func bump():
+    util.base += 1
+
+bump()
+show({util.base})

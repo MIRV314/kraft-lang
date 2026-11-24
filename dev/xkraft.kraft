@@ -1000,6 +1000,74 @@ func mangle_func(dict st, str name) -> str:
     fnames.add(name, lua)
     return lua
 
+# Имена внутри namespace хранятся с префиксом "ns.".
+func decl_key(dict st, str name) -> str:
+    str pref = st[ns_prefix]
+    if pref == "":
+        return name
+    return cat([pref, name])
+
+func read_key(dict st, str name) -> str:
+    str pref = st[ns_read_prefix]
+    if pref == "":
+        return name
+    return cat([pref, name])
+
+func is_declared_name(dict st, str name) -> bool:
+    dict dns = st[names]
+    if dns.contains(name):
+        return TRUE
+    dict dfs = st[funcs]
+    if dfs.contains(name):
+        return TRUE
+    dict dvs = st[vars]
+    if dvs.contains(name):
+        return TRUE
+    dict dgs = st[gvars]
+    if dgs.contains(name):
+        return TRUE
+    return FALSE
+
+# Читает имя, допуская краткую форму внутри namespace и ns.name снаружи.
+func consume_name(dict st, str what) -> dict:
+    dict nt = expect_tok(st, "name", "", what)
+    if NOT (st[err] is NONE):
+        return {}
+    str nm = nt[value]
+    str key = read_key(st, nm)
+    if is_declared_name(st, key) AND NOT tok_is(tk(st), "op", "."):
+        return {name: key, tok: nt}
+    if tok_is(tk(st), "op", "."):
+        dict dt = advance(st)
+        dict mt = tk(st)
+        if mt[type] == "name":
+            str cand = cat([nm, ".", mt[value]])
+            if is_declared_name(st, cand):
+                advance(st)
+                return {name: cand, tok: nt}
+        st.add("pos", st[pos] - 1)
+    return {name: nm, tok: nt}
+
+func name_assign_op(dict st) -> str:
+    dict n1 = token_at(st, st[pos] + 1)
+    if n1[type] != "op":
+        return ""
+    if n1[value] == "=" OR is_compound(n1[value]):
+        return n1[value]
+    if n1[value] != ".":
+        return ""
+    dict n2 = token_at(st, st[pos] + 2)
+    if n2[type] != "name":
+        return ""
+    dict n0 = token_at(st, st[pos])
+    str cand = cat([n0[value], ".", n2[value]])
+    if NOT is_declared_name(st, cand):
+        return ""
+    dict n3 = token_at(st, st[pos] + 3)
+    if n3[type] == "op" AND (n3[value] == "=" OR is_compound(n3[value])):
+        return n3[value]
+    return ""
+
 func e_nullable(dict e) -> bool:
     if e.contains("nullable"):
         return e[nullable]
@@ -1230,11 +1298,15 @@ func parse_expr(dict st, flint min_bp) -> dict:
             return {}
         ptok = tpl
     elif ty == "name":
-        str fn = t[value]
+        dict rt = consume_name(st, "name")
+        if NOT (st[err] is NONE):
+            return {}
+        str fn = rt[name]
+        t = rt[tok]
         if is_model_type(st, fn):
             fail(st, t, "TYPE_ERROR", "a value, not a model name", cat(["model '", fn, "'"]))
             return {}
-        if peek_value(st) == "(":
+        if tk(st)[type] == "op" AND tk(st)[value] == "(":
             dict funcs = st[funcs]
             if NOT funcs.contains(fn):
                 fail(st, t, "NAME_ERROR", "declared function", cat(["undeclared function '", fn, "'"]))
@@ -1243,7 +1315,6 @@ func parse_expr(dict st, flint min_bp) -> dict:
             if fi[inferring] AND fi[ret] is NONE:
                 fail(st, t, "TYPE_ERROR", "explicit '->' for recursion", cat(["'", fn, "' is called while its return type is inferred"]))
                 return {}
-            advance(st)
             expect_tok(st, "op", "(", "'('")
             list cargs = []
             if NOT tok_is(tk(st), "op", ")"):
@@ -1277,7 +1348,7 @@ func parse_expr(dict st, flint min_bp) -> dict:
             dict fnames = st[fnames]
             e = {k: "call_user", name: fn, lua: fnames.take(fn), args: cargs, ptypes: ptypes, t: fi[ret], nullable: fi[ret_nullable], line: t[line], col: t[col]}
         else:
-            str vn = t[value]
+            str vn = fn
             dict vars = st[vars]
             bool is_local = vars.contains(vn)
             dict gv = st[gvars]
@@ -1298,7 +1369,6 @@ func parse_expr(dict st, flint min_bp) -> dict:
                 else:
                     fail(st, t, "NAME_ERROR", "declared name", cat(["undeclared '", vn, "'"]))
                     return {}
-            advance(st)
             dict names = st[names]
             bool nl = FALSE
             str vt = ""
@@ -1934,17 +2004,18 @@ func resolve_write(dict st, dict tok, str n) -> dict:
 # объявления и для строки внутри блока типов.
 func parse_typed_decl(dict st, str dty, dict dname_tok) -> dict:
     str dname = dname_tok[value]
+    str dkey = decl_key(st, dname)
     if is_reserved(dname):
         fail(st, dname_tok, "NAME_ERROR", "free name", cat(["reserved '", dname, "'"]))
         return {}
     dict dvars = st[vars]
     dict dfuncs = st[funcs]
-    if dvars.contains(dname) OR dfuncs.contains(dname):
+    if dvars.contains(dkey) OR dfuncs.contains(dkey):
         fail(st, dname_tok, "REDECLARE_ERROR", "unique name", cat(["name '", dname, "' is already declared"]))
         return {}
     if st[in_func]:
         dict dg = st[gvars]
-        if dg.contains(dname):
+        if dg.contains(dkey):
             fail(st, dname_tok, "REDECLARE_ERROR", "local name", cat(["global '", dname, "' is already declared"]))
             return {}
     dict dctx = st[model_ctx]
@@ -2048,22 +2119,22 @@ func parse_typed_decl(dict st, str dty, dict dname_tok) -> dict:
             if NOT litok:
                 fail(st, {line: dexpr[line], col: dexpr[col]}, "TYPE_ERROR", cat(["declaration of '", dname, "': type ", dty]), dexpr[t])
                 return {}
-    str dlua = mangle_var(st, dname)
-    dvars.add(dname, dty)
+    str dlua = mangle_var(st, dkey)
+    dvars.add(dkey, dty)
     # Любое объявление вне функции — глобальная («верх файла»).
     # Переприсвоить её можно только в функции или цикле, не в условии.
     if NOT st[in_func]:
         dict dtg = st[gvars]
-        dtg.add(dname, dty)
+        dtg.add(dkey, dty)
     dict dnl = st[nullable]
     if dexpr[t] == "NONE" OR e_nullable(dexpr):
-        dnl.add(dname, TRUE)
+        dnl.add(dkey, TRUE)
     else:
-        dnl.remove(dname)
+        dnl.remove(dkey)
     if st[block_depth] > 0:
         dict dmu = st[maybe_unset]
-        dmu.add(dname, TRUE)
-    return {k: "decl", type: dty, name: dname, lua: dlua, expr: dexpr, line: dname_tok[line], col: dname_tok[col]}
+        dmu.add(dkey, TRUE)
+    return {k: "decl", type: dty, name: dkey, short_name: dname, lua: dlua, expr: dexpr, line: dname_tok[line], col: dname_tok[col]}
 
 func snapshot_parser(dict st) -> dict:
     return {vars: st[vars], nullable: st[nullable], maybe_unset: st[maybe_unset], for_names: st[for_names], gvars: st[gvars], gnullable: st[gnullable], gmaybe: st[gmaybe], loop_depth: st[loop_depth], cond_depth: st[cond_depth], try_depth: st[try_depth], try_loop_base: st[try_loop_base], in_func: st[in_func], func_ret: st[func_ret], func_returns: st[func_returns], model_ctx: st[model_ctx]}
@@ -2370,6 +2441,7 @@ func parse_func_head(dict st) -> dict:
     if NOT (st[err] is NONE):
         return {}
     str fn_name = fntok[value]
+    str fn_key = decl_key(st, fn_name)
     if is_reserved(fn_name):
         fail(st, fntok, "NAME_ERROR", "free name", cat(["reserved '", fn_name, "'"]))
         return {}
@@ -2378,10 +2450,10 @@ func parse_func_head(dict st) -> dict:
         return {}
     dict gvars = st[vars]
     dict gfuncs = st[funcs]
-    if gfuncs.contains(fn_name) OR gvars.contains(fn_name):
+    if gfuncs.contains(fn_key) OR gvars.contains(fn_key):
         fail(st, fntok, "REDECLARE_ERROR", "unique name", cat(["name '", fn_name, "' is already declared"]))
         return {}
-    return {tok: funtok, name: fn_name}
+    return {tok: funtok, name: fn_name, key: fn_key}
 
 func parse_func_params(dict st) -> list:
     list params = []
@@ -2495,6 +2567,59 @@ func finish_func(dict st, dict funtok, str fn_name, dict fninfo, list params, st
     dict fnode = {k: "func", name: fn_name, lua: flua, params: params, ret: final_ret, body: fnbody, block_stmt: TRUE, line: funtok[line], col: funtok[col]}
     if exported:
         fnode.add("exported", TRUE)
+    return fnode
+
+func prepare_func(dict st, bool exported) -> dict:
+    dict fh = parse_func_head(st)
+    if NOT (st[err] is NONE):
+        return {}
+    dict funtok = fh[tok]
+    str fn_name = fh[name]
+    str fn_key = fh[key]
+    list params = parse_func_params(st)
+    if NOT (st[err] is NONE):
+        return {}
+    str fret = "NONE"
+    bool fhas_ret = FALSE
+    if tok_is(tk(st), "op", "->"):
+        advance(st)
+        dict rtok = tk(st)
+        fret = parse_type_name(st)
+        if NOT (st[err] is NONE):
+            return {}
+        if fret == "NONE":
+            fail(st, rtok, "SYNTAX_ERROR", "return type (omit '->' for NONE)", "NONE")
+            return {}
+        fhas_ret = TRUE
+    expect_tok(st, "op", ":", "':'")
+    if NOT (st[err] is NONE):
+        return {}
+    dict fninfo = {params: params, ret: NONE, ret_nullable: FALSE, inferring: TRUE}
+    if fhas_ret:
+        fninfo.add("ret", fret)
+    dict gfuncs = st[funcs]
+    gfuncs.add(fn_key, fninfo)
+    str flua = mangle_func(st, fn_key)
+    return {funtok: funtok, name: fn_name, key: fn_key, params: params, fret: fret, has: fhas_ret, info: fninfo, lua: flua}
+
+func begin_func_body(dict st, dict prep):
+    prep.add("prefix", st[ns_prefix])
+    st.add("ns_prefix", "")
+    dict fsv = enter_func_scope(st)
+    st.add("func_ret", prep[fret])
+    bind_func_params(st, prep[params])
+    prep.add("scope", fsv)
+
+func complete_func(dict st, dict prep, list fnbody, bool exported) -> dict:
+    st.add("ns_prefix", prep[prefix])
+    leave_func_scope(st, prep[scope])
+    dict fnode = finish_func(st, prep[funtok], prep[key], prep[info], prep[params], prep[lua], prep[fret], prep[has], fnbody, exported)
+    if NOT (st[err] is NONE):
+        return {}
+    if exported:
+        dict fexp = st[exports]
+        fexp.add(prep[key], "func")
+        st.add("exports", fexp)
     return fnode
 
 # ---------- модули: разбор импортов до основного парсера ----------
@@ -2709,6 +2834,83 @@ func parse_block(dict st, bool top) -> list:
                     impbody = ib.take(bkey)
                 dict itok = req[tok]
                 node = {k: "import", body: impbody, line: itok[line], col: itok[col]}
+            elif t[type] == "kw" AND t[value] == "namespace":
+                if st[in_func] OR st[block_depth] > 0 OR st[ns_prefix] != "":
+                    fail(st, t, "SCOPE_ERROR", "namespace at top level", "nested namespace")
+                    return stmts
+                dict ntok = advance(st)
+                dict nnt = expect_tok(st, "name", "", "namespace name")
+                if NOT (st[err] is NONE):
+                    return stmts
+                str nsname = nnt[value]
+                if is_reserved(nsname) OR is_const_name(nsname):
+                    fail(st, nnt, "NAME_ERROR", "free namespace name", cat(["reserved '", nsname, "'"]))
+                    return stmts
+                expect_tok(st, "op", ":", "':'")
+                if NOT (st[err] is NONE):
+                    return stmts
+                expect_tok(st, "newline", "", "end of line after ':'")
+                expect_tok(st, "indent", "", "indented namespace block")
+                if NOT (st[err] is NONE):
+                    return stmts
+                str oldpref = st[ns_prefix]
+                str oldread = st[ns_read_prefix]
+                st.add("ns_prefix", cat([nsname, "."]))
+                st.add("ns_read_prefix", cat([nsname, "."]))
+                list nsbody = []
+                bool nsgoing = TRUE
+                while nsgoing AND (st[err] is NONE):
+                    dict nt = tk(st)
+                    if nt[type] == "dedent" OR nt[type] == "eof":
+                        nsgoing = FALSE
+                    elif nt[type] == "newline":
+                        advance(st)
+                    else:
+                        bool nexp = FALSE
+                        if tok_is(tk(st), "kw", "export"):
+                            advance(st)
+                            nexp = TRUE
+                        dict nn = {}
+                        if stmt_is_decl(st):
+                            str ndty = parse_type_name(st)
+                            if NOT (st[err] is NONE):
+                                break
+                            dict dnnt = expect_tok(st, "name", "", "variable name")
+                            if NOT (st[err] is NONE):
+                                break
+                            nn = parse_typed_decl(st, ndty, dnnt)
+                            if nexp:
+                                nn.add("exported", TRUE)
+                                dict nexp2 = st[exports]
+                                nexp2.add(nn[name], "var")
+                                st.add("exports", nexp2)
+                            dict nnxt = tk(st)
+                            if nnxt[type] == "newline":
+                                advance(st)
+                            elif nnxt[type] != "dedent":
+                                fail(st, nnxt, "SYNTAX_ERROR", "end of line", describe_tok(nnxt))
+                                break
+                        elif tok_is(tk(st), "kw", "func"):
+                            dict nprep = prepare_func(st, nexp)
+                            if NOT (st[err] is NONE):
+                                break
+                            begin_func_body(st, nprep)
+                            list nfb = parse_block(st, FALSE)
+                            nn = complete_func(st, nprep, nfb, nexp)
+                        else:
+                            fail(st, tk(st), "SYNTAX_ERROR", "func or declaration inside namespace", describe_tok(tk(st)))
+                            break
+                        if NOT (st[err] is NONE):
+                            break
+                        nsbody.add(nn)
+                if tk(st)[type] == "dedent":
+                    advance(st)
+                st.add("ns_prefix", oldpref)
+                st.add("ns_read_prefix", oldread)
+                if NOT (st[err] is NONE):
+                    return stmts
+                node = {k: "namespace", name: nsname, body: nsbody, block_stmt: TRUE, line: ntok[line], col: ntok[col]}
+                block_stmt = TRUE
             elif t[type] == "kw" AND t[value] == "panic":
                 node = parse_panic(st)
                 if NOT (st[err] is NONE):
@@ -2931,47 +3133,15 @@ func parse_block(dict st, bool top) -> list:
                     node = ftnode
                     block_stmt = TRUE
             elif t[type] == "kw" AND t[value] == "func":
-                dict fh = parse_func_head(st)
+                dict prep = prepare_func(st, exported)
                 if NOT (st[err] is NONE):
                     return stmts
-                dict funtok = fh[tok]
-                str fn_name = fh[name]
-                list params = parse_func_params(st)
-                if NOT (st[err] is NONE):
-                    return stmts
-                str fret = "NONE"
-                bool fhas_ret = FALSE
-                if tok_is(tk(st), "op", "->"):
-                    advance(st)
-                    dict rtok = tk(st)
-                    fret = parse_type_name(st)
-                    if NOT (st[err] is NONE):
-                        return stmts
-                    if fret == "NONE":
-                        fail(st, rtok, "SYNTAX_ERROR", "return type (omit '->' for NONE)", "NONE")
-                        return stmts
-                    fhas_ret = TRUE
-                expect_tok(st, "op", ":", "':'")
-                dict fninfo = {params: params, ret: NONE, ret_nullable: FALSE, inferring: TRUE}
-                if fhas_ret:
-                    fninfo.add("ret", fret)
-                dict gfuncs = st[funcs]
-                gfuncs.add(fn_name, fninfo)
-                str flua = mangle_func(st, fn_name)
-                dict fsv = enter_func_scope(st)
-                st.add("func_ret", fret)
-                bind_func_params(st, params)
+                begin_func_body(st, prep)
                 list fnbody = parse_block(st, FALSE)
-                leave_func_scope(st, fsv)
-                dict fnode = finish_func(st, funtok, fn_name, fninfo, params, flua, fret, fhas_ret, fnbody, exported)
+                node = complete_func(st, prep, fnbody, exported)
                 if NOT (st[err] is NONE):
                     return stmts
-                if exported:
-                    dict fexp = st[exports]
-                    fexp.add(fn_name, "func")
-                    st.add("exports", fexp)
-                    export_ok = TRUE
-                node = fnode
+                export_ok = TRUE
                 block_stmt = TRUE
             elif t[type] == "kw" AND t[value] == "model":
                 dict mtok = advance(st)
@@ -3140,9 +3310,12 @@ func parse_block(dict st, bool top) -> list:
                     fail(st, btok, "SCOPE_ERROR", "'break' or 'continue' inside the loop that contains try", cat(["'", btok[value], "' across a try boundary"]))
                     return stmts
                 node = {k: btok[value], line: btok[line], col: btok[col]}
-            elif t[type] == "name" AND NOT is_template_func(t[value]) AND peek_value(st) == "=":
-                dict atok = advance(st)
-                str aname = atok[value]
+            elif t[type] == "name" AND NOT is_template_func(t[value]) AND name_assign_op(st) == "=":
+                dict an = consume_name(st, "variable name")
+                if NOT (st[err] is NONE):
+                    return stmts
+                dict atok = an[tok]
+                str aname = an[name]
                 dict aw = resolve_write(st, atok, aname)
                 if NOT (st[err] is NONE):
                     return stmts
@@ -3162,9 +3335,12 @@ func parse_block(dict st, bool top) -> list:
                 else:
                     anl.remove(aname)
                 node = {k: "assign", name: aname, lua: aw[lua], expr: aexpr, type: avt, line: atok[line], col: atok[col]}
-            elif t[type] == "name" AND NOT is_template_func(t[value]) AND is_compound(peek_value(st)):
-                dict ctok = advance(st)
-                str cname = ctok[value]
+            elif t[type] == "name" AND NOT is_template_func(t[value]) AND is_compound(name_assign_op(st)):
+                dict cn = consume_name(st, "variable name")
+                if NOT (st[err] is NONE):
+                    return stmts
+                dict ctok = cn[tok]
+                str cname = cn[name]
                 dict cw = resolve_write(st, ctok, cname)
                 if NOT (st[err] is NONE):
                     return stmts
@@ -3338,8 +3514,10 @@ func parse_block(dict st, bool top) -> list:
 # Загружает и разбирает один файл. Рекурсивен только сам в себя:
 # вложенные import разбираются этим же вызовом до основного parse_block.
 func process_source(dict st, str path, str src, bool fresh, bool capture_body) -> dict:
-    dict old = {toks: st[toks], pos: st[pos], path: st[path], source: st[source], err: st[err], vars: st[vars], nullable: st[nullable], maybe: st[maybe_unset], fors: st[for_names], gvars: st[gvars], gnullable: st[gnullable], gmaybe: st[gmaybe], funcs: st[funcs], names: st[names], fnames: st[fnames], exports: st[exports], models: st[models], vcounter: st[vcounter], fcounter: st[fcounter], block_depth: st[block_depth], loop_depth: st[loop_depth], cond_depth: st[cond_depth], in_func: st[in_func], func_ret: st[func_ret], func_returns: st[func_returns], model_ctx: st[model_ctx], try_id: st[try_id], try_depth: st[try_depth], try_loop_base: st[try_loop_base]}
+    dict old = {toks: st[toks], pos: st[pos], path: st[path], source: st[source], err: st[err], vars: st[vars], nullable: st[nullable], maybe: st[maybe_unset], fors: st[for_names], gvars: st[gvars], gnullable: st[gnullable], gmaybe: st[gmaybe], funcs: st[funcs], names: st[names], fnames: st[fnames], exports: st[exports], models: st[models], vcounter: st[vcounter], fcounter: st[fcounter], block_depth: st[block_depth], loop_depth: st[loop_depth], cond_depth: st[cond_depth], in_func: st[in_func], func_ret: st[func_ret], func_returns: st[func_returns], model_ctx: st[model_ctx], try_id: st[try_id], try_depth: st[try_depth], try_loop_base: st[try_loop_base], ns_prefix: st[ns_prefix], ns_read_prefix: st[ns_read_prefix]}
     if fresh:
+        st.add("ns_prefix", "")
+        st.add("ns_read_prefix", "")
         st.add("vars", {})
         st.add("nullable", {})
         st.add("maybe_unset", {})
@@ -4023,7 +4201,7 @@ func collect_walk(list stmts, list out) -> list:
         str sk = s[k]
         if sk == "decl":
             out.add(s[lua])
-        elif sk == "import":
+        elif sk == "import" OR sk == "namespace":
             collect_walk(s[body], out)
         elif sk == "if":
             list brs = s[branches]
@@ -4102,7 +4280,7 @@ func emit_stmts(dict st, list stmts) -> str:
         st.add("cur_pos", stmt_pos(s))
         str sk = s[k]
         bool wrap_ret = FALSE
-        if sk == "import":
+        if sk == "import" OR sk == "namespace":
             emit_stmts(st, s[body])
         if sk == "return" AND i < len(stmts) - 1:
             wrap_ret = TRUE
@@ -4629,7 +4807,7 @@ if mode == "tokens":
     dump_tokens(lx[tokens])
     exit(0)
 
-dict st = {toks: lx[tokens], pos: 0, path: path, source: src, vars: {}, nullable: {}, maybe_unset: {}, gvars: {}, gnullable: {}, gmaybe: {}, for_names: {}, funcs: {}, in_func: FALSE, func_ret: "NONE", func_returns: [], block_depth: 0, loop_depth: 0, cond_depth: 0, err: NONE, names: {}, fnames: {}, vcounter: 0, fcounter: 0, models: {Error: error_schema()}, model_ctx: NONE, try_id: 0, try_depth: 0, try_loop_base: 0, exports: {}, import_stack: [], import_cache: {}, import_bodies: {}, self_dir: dirname(argv[0])}
+dict st = {toks: lx[tokens], pos: 0, path: path, source: src, vars: {}, nullable: {}, maybe_unset: {}, gvars: {}, gnullable: {}, gmaybe: {}, for_names: {}, funcs: {}, in_func: FALSE, func_ret: "NONE", func_returns: [], block_depth: 0, loop_depth: 0, cond_depth: 0, err: NONE, names: {}, fnames: {}, vcounter: 0, fcounter: 0, models: {Error: error_schema()}, model_ctx: NONE, try_id: 0, try_depth: 0, try_loop_base: 0, exports: {}, import_stack: [], import_cache: {}, import_bodies: {}, ns_prefix: "", ns_read_prefix: "", self_dir: dirname(argv[0])}
 if use_prelude:
     add_prelude(st)
 process_source(st, path, src, FALSE, FALSE)
