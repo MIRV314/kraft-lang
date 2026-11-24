@@ -1,0 +1,22 @@
+try:
+    panic("VALUE_ERROR", "one")
+trigger VALUE_ERROR, ASSERT_ERROR:
+    show(caught {error.cat})
+    show({error.msg})
+finally:
+    show(finally one)
+
+try:
+    assert(FALSE, "two")
+trigger VALUE_ERROR, ASSERT_ERROR:
+    show(caught {error.cat})
+    show({error.msg})
+finally:
+    show(finally two)
+
+try:
+    show(no error)
+trigger VALUE_ERROR, ASSERT_ERROR:
+    show(never)
+finally:
+    show(finally three)

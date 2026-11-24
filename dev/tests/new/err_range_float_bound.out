@@ -1,0 +1,3 @@
+TYPE_ERROR: tests/new/err_range_float_bound.kraft:1
+    1 | for i 1..10.0:
+              ^ expected integer range bound, found float

@@ -1,0 +1,8 @@
+try:
+    panic("VALUE_ERROR", "x")
+trigger VALUE_ERROR:
+    show(one)
+trigger TYPE_ERROR, VALUE_ERROR:
+    show(two)
+finally:
+    show(never)

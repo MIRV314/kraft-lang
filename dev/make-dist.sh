@@ -99,7 +99,7 @@ if "__KRAFT_EMBEDDED_COMPILER__" in lua:
     sys.exit("make-dist: метка встроенного компилятора уже встречается в Lua")
 
 header = '''#!/bin/sh
-# xkraft 0.3.0 — автономный компилятор Kraft.
+# xkraft 0.4.0 — автономный компилятор Kraft.
 # lua-код компилятора вшит ниже; внешних файлов и каталога src/ не нужно.
 set -eu
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/xkraft.XXXXXX") || exit 1

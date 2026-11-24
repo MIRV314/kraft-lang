@@ -1,9 +1,9 @@
 # Kraft
 
 [![CI](https://github.com/MIRV314/kraft-lang/actions/workflows/ci.yml/badge.svg)](https://github.com/MIRV314/kraft-lang/actions/workflows/ci.yml)
-[![release v0.3.0](https://img.shields.io/badge/release-v0.3.0-blue.svg)](https://github.com/MIRV314/kraft-lang/releases/tag/v0.3.0)
+[![release v0.4.0](https://img.shields.io/badge/release-v0.4.0-blue.svg)](https://github.com/MIRV314/kraft-lang/releases/tag/v0.4.0)
 
-[English](README.en.md) · [Шпаргалка](docs/cheatsheet.md) · [Встроенные](docs/builtins.md) · [Release](https://github.com/MIRV314/kraft-lang/releases/tag/v0.3.0)
+[English](README.en.md) · [Шпаргалка](docs/cheatsheet.md) · [Встроенные](docs/builtins.md) · [Release](https://github.com/MIRV314/kraft-lang/releases/tag/v0.4.0)
 
 Kraft — статически типизированный язык: один числовой тип `flint`, отступы
 вместо фигурных скобок, интерполяция `{}` вместо склейки строк. Ядро маленькое
@@ -26,7 +26,7 @@ curl -fsSL https://raw.githubusercontent.com/MIRV314/kraft-lang/main/install-aut
 Или из клона: `sh install.sh` — по умолчанию в `~/.local/bin`.
 
 ```sh
-xkraft --version                    # xkraft 0.3.0
+xkraft --version                    # xkraft 0.4.0
 kraft --version                     # то же самое: псевдоним
 
 xkraft program.kraft                # скомпилировать и запустить
@@ -62,9 +62,7 @@ flint MAX = 100                         # имя капсом — констан
 | `froz` | `[4, 5, 6]` — только для чтения |
 | `model` | `Counter(5)` |
 
-`NONE` — пустое значение; в условиях ложны только `FALSE` и `NONE`.
-`0`, `""`, `[]`, `{}` в `if`/`while` дают `TYPE_ERROR`. `show` печатает
-шаблон: всё вне `{}` — текст, внутри — выражение.
+`NONE` может быть ложью, `FALSE` — ложь, `TRUE` — истина.
 
 ```kraft
 show(привет, {name}!)       # привет, Kraft!
@@ -110,6 +108,23 @@ func dec(flint n) -> flint:     # аннотация задана явно
 
 Функция видна только после объявления. Условия используют `AND`, `OR`, `NOT`;
 сравнения можно цеплять: `0 <= x <= 10`.
+
+`..` задаёт диапазон с исключённой правой границей; отдельного объявления
+`range` нет — диапазон пишется сразу на месте. Границы всегда целые, шаг
+может быть дробным:
+
+```kraft
+for i 1..5:                 # 1, 2, 3, 4
+    show({i})
+for x 1..10..0.5:           # 1, 1.5, 2, …, 9.5
+    show({x})
+show({xs[1..3]})            # срез: элементы 1 и 2
+if age in 0..17:            # вхождение в полуоткрытый интервал
+    show(child)
+```
+
+`in` перебирает `list`/`froz` и ключи `dict` (`for x in xs`, `for k, v in d`)
+или проверяет вхождение. В числовом цикле по диапазону `in` не пишется.
 
 ### Глобальные переменные в `xkraft`
 
@@ -178,8 +193,8 @@ show({c.inc(3)})        # 8
 ```kraft
 try:
     assert(FALSE, "не сработало")
-trigger ASSERT_ERROR:
-    show(перехвачено: {error.msg})
+trigger ASSERT_ERROR, VALUE_ERROR:  # одна ветка на две категории
+    show(перехвачено: {error.cat})
 trigger ANY_ERROR:
     show(другая: {error.cat})
 finally:
@@ -188,7 +203,8 @@ finally:
 
 `error` доступен в каждой ветке и только для чтения (`cat`, `msg`, `file`,
 `line`, `col`, метод `text()`). `ANY_ERROR` ловит остальное и должен быть
-последним. `finally` выполняется всегда, даже при `return`.
+последним и не объединяется с другими категориями. Несколько категорий через
+запятую делят одну ветку. `finally` выполняется всегда, даже при `return`.
 
 `panic("CATEGORY"[, "message"])` бросает ошибку с заданной категорией;
 сообщение по умолчанию равно категории. Категория — plain-строка из списка
@@ -202,10 +218,11 @@ finally:
 - В `xkraft` новая модель включена всегда: только объявления наверху, зоны
   изменений, блоки типов, модели, индексная запись, встроенные и
   `try/trigger/finally`.
-- Реализованы `froz`, `panic`, prelude и установка на Windows.
-- Пока не реализованы модули/импорты и пакетный менеджер. Синтаксис
-  `trigger`-веток остаётся текущим; группировка под общим `trigger:` отложена
-  до этапа модулей.
+- Реализованы `froz`, `panic`, prelude, диапазоны `..`, `in`, группировка
+  `trigger CAT1, CAT2:` и установка на Windows.
+- Пока не реализованы модули/импорты (`import_file`, `from_file`,
+  `import_lib`, `from_lib`), `export`, пространства имён и пакетный менеджер
+  `kpm`. Они запланированы на `1.x`.
 
 Параметры типов в `[]` указывать не обязательно — они нужны для конкретных
 задач:

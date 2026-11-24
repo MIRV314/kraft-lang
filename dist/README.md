@@ -1,4 +1,4 @@
-# xkraft 0.3.0
+# xkraft 0.4.0
 
 `xkraft` — компилятор языка Kraft, написанный на Kraft. Это один автономный
 исполняемый файл: внутри уже вшит рантайм, дополнительных каталогов не нужно.
@@ -9,6 +9,9 @@
 ./xkraft program.kraft       # скомпилировать и запустить
 ./xkraft -c program.kraft    # собрать program.lua рядом
 ```
+
+Ядро поддерживает диапазоны `1..5` и `1..10..0.5`, `in`, срез `xs[1..3]`
+и группировку `trigger CAT1, CAT2:`.
 
 Prelude (`path_join`, `now_ms`, `parse_args`, `parse_csv`, `parse_json`,
 `prelude_cat`) доступен без `import`; `--no-prelude` отключает его.

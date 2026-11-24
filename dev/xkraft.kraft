@@ -216,6 +216,19 @@ func escape_of(str n) -> str:
         return "'"
     return NONE
 
+# Форма числового литерала: "float" для записи с точкой, иначе "int".
+# Используется оператором диапазона, чтобы задать целый/дробный режим.
+func num_form(dict n) -> str:
+    if n[k] == "un" AND n[op] == "-":
+        return num_form(n[a])
+    if n[k] == "num":
+        str raw = n[raw]
+        if raw is NONE:
+            return "int"
+        if raw.contains(".") OR raw.contains("e") OR raw.contains("E"):
+            return "float"
+    return "int"
+
 # ---------- лексер ----------
 
 # Сканирует строку или шаблон с позиции i.
@@ -1008,7 +1021,7 @@ func parse_expr(dict st, flint min_bp) -> dict:
 
     if ty == "number":
         advance(st)
-        e = {k: "num", value: t[value], t: "flint", line: t[line], col: t[col]}
+        e = {k: "num", value: t[value], raw: t[raw], t: "flint", line: t[line], col: t[col]}
     elif ty == "string":
         advance(st)
         ptok = t
@@ -1346,7 +1359,7 @@ func parse_expr(dict st, flint min_bp) -> dict:
         if NOT is_numeric(ua[t]):
             fail(st, t, "TYPE_ERROR", "operand of unary '-' to be flint", ua[t])
             return {}
-        e = {k: "un", op: "-", a: ua, t: "flint", line: t[line], col: t[col]}
+        e = {k: "un", op: "-", a: ua, raw: ua[raw], t: "flint", line: t[line], col: t[col]}
     elif ty == "kw" AND t[value] == "NOT":
         advance(st)
         dict na = parse_expr(st, 25)
@@ -1433,7 +1446,7 @@ func parse_expr(dict st, flint min_bp) -> dict:
                 dict from = {}
                 bool has_from = FALSE
                 if NOT tok_is(tk(st), "op", ".."):
-                    from = parse_expr(st, 0)
+                    from = parse_expr(st, 36)
                     if NOT (st[err] is NONE):
                         return {}
                     has_from = TRUE
@@ -1442,7 +1455,7 @@ func parse_expr(dict st, flint min_bp) -> dict:
                     dict to = {}
                     bool has_to = FALSE
                     if NOT tok_is(tk(st), "op", "]"):
-                        to = parse_expr(st, 0)
+                        to = parse_expr(st, 36)
                         if NOT (st[err] is NONE):
                             return {}
                         has_to = TRUE
@@ -1450,7 +1463,7 @@ func parse_expr(dict st, flint min_bp) -> dict:
                     bool has_step = FALSE
                     if tok_is(tk(st), "op", ".."):
                         advance(st)
-                        step = parse_expr(st, 0)
+                        step = parse_expr(st, 36)
                         if NOT (st[err] is NONE):
                             return {}
                         has_step = TRUE
@@ -1678,6 +1691,35 @@ func parse_expr(dict st, flint min_bp) -> dict:
                     if NOT (st[err] is NONE):
                         return {}
                     e = {k: "bin", op: op, a: e, b: orhs, t: "bool", line: it2[line], col: it2[col]}
+            elif op == "..":
+                if 35 <= min_bp:
+                    more = FALSE
+                else:
+                    advance(st)
+                    dict rto = parse_expr(st, 36)
+                    if NOT (st[err] is NONE):
+                        return {}
+                    if NOT is_numeric(e[t]) OR NOT is_numeric(rto[t]):
+                        fail(st, it2, "TYPE_ERROR", "range bounds to be flint", cat([e[t], " and ", rto[t]]))
+                        return {}
+                    if num_form(e) == "float" OR num_form(rto) == "float":
+                        fail(st, {line: e[line], col: e[col]}, "TYPE_ERROR", "integer range bound", "float")
+                        return {}
+                    dict rstep = {k: "num", value: 1, raw: "1", t: "flint", line: it2[line], col: it2[col]}
+                    str rkind = "int"
+                    bool rhas_step = FALSE
+                    if tok_is(tk(st), "op", ".."):
+                        advance(st)
+                        rhas_step = TRUE
+                        rstep = parse_expr(st, 36)
+                        if NOT (st[err] is NONE):
+                            return {}
+                        if NOT is_numeric(rstep[t]):
+                            fail(st, {line: rstep[line], col: rstep[col]}, "TYPE_ERROR", "range step to be flint", rstep[t])
+                            return {}
+                        if num_form(rstep) == "float":
+                            rkind = "float"
+                    e = {k: "range", from: e, to: rto, step: rstep, kind: rkind, has_step: rhas_step, t: "range", line: it2[line], col: it2[col]}
             elif op == "+" OR op == "-" OR op == "*" OR op == "/" OR op == "//" OR op == "%":
                 flint abp = 40
                 if op == "*" OR op == "/" OR op == "//" OR op == "%":
@@ -1736,6 +1778,19 @@ func parse_expr(dict st, flint min_bp) -> dict:
                 if NOT (st[err] is NONE):
                     return {}
                 e = {k: "is", a: e, typename: tn, t: "bool", line: it2[line], col: it2[col]}
+        elif nty == "kw" AND it2[value] == "in":
+            if 30 <= min_bp:
+                more = FALSE
+            else:
+                advance(st)
+                dict memrhs = parse_expr(st, 31)
+                if NOT (st[err] is NONE):
+                    return {}
+                str memrt = memrhs[t]
+                if memrt != "range" AND base_type(memrt) != "list" AND base_type(memrt) != "dict" AND memrt != "str" AND memrt != "any":
+                    fail(st, {line: memrhs[line], col: memrhs[col]}, "TYPE_ERROR", "right operand of 'in' to be range, list, froz, dict or str", memrt)
+                    return {}
+                e = {k: "in", a: e, b: memrhs, t: "bool", line: it2[line], col: it2[col]}
         else:
             more = FALSE
 
@@ -2227,6 +2282,48 @@ func remove_handler_error(dict st, dict sv):
     if sv[maybe]:
         cur_maybe.add("error", sv[prev_maybe])
 
+# Категории одного trigger через запятую делят один обработчик.
+# ANY_ERROR не объединяется с другими и не повторяется.
+func parse_trigger_cats(dict st, dict zcats, bool zhas_any) -> dict:
+    list zcatnames = []
+    list zcattoks = []
+    dict zfirsttok = expect_tok(st, "name", "", "error category")
+    if NOT (st[err] is NONE):
+        return {}
+    zcatnames.add(zfirsttok[value])
+    zcattoks.add(zfirsttok)
+    while tok_is(tk(st), "op", ","):
+        advance(st)
+        dict znexttok = expect_tok(st, "name", "", "error category")
+        if NOT (st[err] is NONE):
+            return {}
+        zcatnames.add(znexttok[value])
+        zcattoks.add(znexttok)
+    flint zci = 0
+    while zci < len(zcatnames):
+        str zcname = zcatnames[zci]
+        dict zctok = zcattoks[zci]
+        if NOT is_error_category(zcname):
+            fail(st, zctok, "NAME_ERROR", "known error category", zcname)
+            return {}
+        if zhas_any:
+            fail(st, zctok, "SYNTAX_ERROR", "trigger after ANY_ERROR", cat(["'", zcname, "'"]))
+            return {}
+        if zcname == "ANY_ERROR":
+            if len(zcatnames) != 1:
+                fail(st, zctok, "SYNTAX_ERROR", "ANY_ERROR in a group of triggers", zcname)
+                return {}
+        else:
+            if zcats.contains(zcname):
+                fail(st, zctok, "REDECLARE_ERROR", "unique trigger category", cat(["'", zcname, "'"]))
+                return {}
+            zcats.add(zcname, TRUE)
+        zci += 1
+    dict hinfo = {cats: zcatnames, cat: zfirsttok[value], any: FALSE}
+    if zfirsttok[value] == "ANY_ERROR":
+        hinfo.add("any", TRUE)
+    return hinfo
+
 func parse_block(dict st, bool top) -> list:
     list stmts = []
     if NOT top:
@@ -2377,20 +2474,9 @@ func parse_block(dict st, bool top) -> list:
                 dict zcats = {}
                 while tok_is(tk(st), "kw", "trigger"):
                     dict trtok = advance(st)
-                    dict zcattok = expect_tok(st, "name", "", "error category")
+                    dict hinfo = parse_trigger_cats(st, zcats, NOT (zany is NONE))
                     if NOT (st[err] is NONE):
                         return stmts
-                    if NOT is_error_category(zcattok[value]):
-                        fail(st, zcattok, "NAME_ERROR", "known error category", zcattok[value])
-                        return stmts
-                    if NOT (zany is NONE):
-                        fail(st, zcattok, "SYNTAX_ERROR", "trigger after ANY_ERROR", cat(["'", zcattok[value], "'"]))
-                        return stmts
-                    if zcattok[value] != "ANY_ERROR":
-                        if zcats.contains(zcattok[value]):
-                            fail(st, zcattok, "REDECLARE_ERROR", "unique trigger category", cat(["'", zcattok[value], "'"]))
-                            return stmts
-                        zcats.add(zcattok[value], TRUE)
                     expect_tok(st, "op", ":", "':'")
                     enter_try_zone(st, zbase)
                     dict hsv = add_handler_error(st)
@@ -2399,8 +2485,8 @@ func parse_block(dict st, bool top) -> list:
                     leave_try_zone(st, zbase)
                     if NOT (st[err] is NONE):
                         return stmts
-                    dict hnode = {cat: zcattok[value], body: hbody, line: trtok[line], col: trtok[col]}
-                    if zcattok[value] == "ANY_ERROR":
+                    dict hnode = {cats: hinfo[cats], cat: hinfo[cat], body: hbody, line: trtok[line], col: trtok[col]}
+                    if hinfo[any]:
                         zany = hnode
                     else:
                         ztriggers.add(hnode)
@@ -2518,33 +2604,19 @@ func parse_block(dict st, bool top) -> list:
                     dict first = parse_expr(st, 0)
                     if NOT (st[err] is NONE):
                         return stmts
-                    if NOT is_numeric(first[t]):
-                        fail(st, first, "TYPE_ERROR", "loop bound to be flint", first[t])
-                        return stmts
                     dict ftnode = {k: "for", name: rname, lua: rlua, line: ftok[line], col: ftok[col]}
-                    if tok_is(tk(st), "op", ".."):
-                        advance(st)
-                        dict last = parse_expr(st, 0)
-                        if NOT (st[err] is NONE):
-                            return stmts
-                        if NOT is_numeric(last[t]):
-                            fail(st, last, "TYPE_ERROR", "loop bound to be flint", last[t])
-                            return stmts
+                    if first[k] == "range":
                         ftnode.add("form", "range")
-                        ftnode.add("from", first)
-                        ftnode.add("to", last)
-                        if tok_is(tk(st), "op", ".."):
-                            advance(st)
-                            dict step = parse_expr(st, 0)
-                            if NOT (st[err] is NONE):
-                                return stmts
-                            if NOT is_numeric(step[t]):
-                                fail(st, step, "TYPE_ERROR", "loop step to be flint", step[t])
-                                return stmts
-                            ftnode.add("step", step)
-                    else:
+                        ftnode.add("from", first[from])
+                        ftnode.add("to", first[to])
+                        if first[has_step]:
+                            ftnode.add("step", first[step])
+                    elif is_numeric(first[t]):
                         ftnode.add("form", "upto")
                         ftnode.add("to", first)
+                    else:
+                        fail(st, first, "TYPE_ERROR", "loop bound to be flint or range", first[t])
+                        return stmts
                     expect_tok(st, "op", ":", "':'")
                     st.add("loop_depth", st[loop_depth] + 1)
                     list rbody = parse_block(st, FALSE)
@@ -3474,6 +3546,28 @@ func emit_expr(dict st, dict e) -> str:
             return cat(["krt.is_model(", ix2, ", ", lua_str(ty2), ")"])
         return cat(["(", ix2, " == krt.NONE or ", ix2, " == nil)"])
 
+    if k == "range":
+        dict rex = e[from]
+        dict rey = e[to]
+        dict rez = e[step]
+        return cat(["krt.range_new(", wrap_flint(emit_expr(st, rex), rex[t], e_nullable(rex)), ", ", wrap_flint(emit_expr(st, rey), rey[t], e_nullable(rey)), ", ", wrap_flint(emit_expr(st, rez), rez[t], e_nullable(rez)), ", ", lua_str(e[kind]), ")"])
+
+    if k == "in":
+        dict iax = e[a]
+        dict ibx = e[b]
+        str ixf = emit_expr(st, iax)
+        str iyb = emit_expr(st, ibx)
+        if ibx[t] == "range":
+            return cat(["krt.in_range(", wrap_flint(ixf, iax[t], e_nullable(iax)), ", ", iyb, ")"])
+        str ibt = base_type(ibx[t])
+        if ibt == "list" OR ibt == "froz":
+            return cat(["krt.in_list(", ixf, ", ", wrap_list(iyb, ibx[t], e_nullable(ibx)), ")"])
+        if ibt == "dict":
+            return cat(["krt.in_dict_keys(", wrap_str(ixf, iax[t], e_nullable(iax)), ", ", wrap_dict(iyb, ibx[t], e_nullable(ibx)), ")"])
+        if ibx[t] == "str":
+            return cat(["krt.in_str(", wrap_str(ixf, iax[t], e_nullable(iax)), ", ", wrap_str(iyb, ibx[t], e_nullable(ibx)), ")"])
+        return cat(["krt.in_list(", ixf, ", ", iyb, ")"])
+
     if k == "bin":
         str op = e[op]
         dict bna = e[a]
@@ -3848,7 +3942,16 @@ func emit_stmts(dict st, list stmts) -> str:
                 str zkw = "if"
                 if NOT zfirst:
                     zkw = "elseif"
-                emit_line(st, cat([zkw, " error.cat == ", lua_str(h[cat]), " then"]))
+                str zcond = cat(["error.cat == ", lua_str(h[cat])])
+                if h.contains("cats"):
+                    list zcnames = h[cats]
+                    list zparts = []
+                    flint zpi = 0
+                    while zpi < len(zcnames):
+                        zparts.add(cat(["error.cat == ", lua_str(zcnames[zpi])]))
+                        zpi += 1
+                    zcond = zparts.join(" or ")
+                emit_line(st, cat([zkw, " ", zcond, " then"]))
                 st.add("indent", st[indent] + 1)
                 emit_line(st, cat([thandled, " = true"]))
                 emit_stmts(st, h[body])
@@ -4123,7 +4226,7 @@ func write_compiled(str path, str out_lua):
 
 list argv = args()
 if len(argv) >= 2 AND argv[1] == "--version":
-    show(xkraft 0.3.0)
+    show(xkraft 0.4.0)
     exit(0)
 if len(argv) < 2:
     show_err(usage: xkraft [--tokens] [-c] file.kraft)

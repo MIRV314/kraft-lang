@@ -1,0 +1,6 @@
+try:
+    panic("VALUE_ERROR", "x")
+trigger VALUE_ERROR, ANY_ERROR:
+    show(never)
+finally:
+    show(never)

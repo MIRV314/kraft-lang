@@ -1,9 +1,9 @@
 # Kraft
 
 [![CI](https://github.com/MIRV314/kraft-lang/actions/workflows/ci.yml/badge.svg)](https://github.com/MIRV314/kraft-lang/actions/workflows/ci.yml)
-[![release v0.3.0](https://img.shields.io/badge/release-v0.3.0-blue.svg)](https://github.com/MIRV314/kraft-lang/releases/tag/v0.3.0)
+[![release v0.4.0](https://img.shields.io/badge/release-v0.4.0-blue.svg)](https://github.com/MIRV314/kraft-lang/releases/tag/v0.4.0)
 
-[Русская версия](README.md) · [Cheatsheet](docs/cheatsheet.md) · [Built-ins](docs/builtins.md) · [Release](https://github.com/MIRV314/kraft-lang/releases/tag/v0.3.0)
+[Русская версия](README.md) · [Cheatsheet](docs/cheatsheet.md) · [Built-ins](docs/builtins.md) · [Release](https://github.com/MIRV314/kraft-lang/releases/tag/v0.4.0)
 
 Kraft is a small statically typed language: one numeric type (`flint`),
 indentation instead of braces, and `{}` interpolation instead of string
@@ -28,7 +28,7 @@ curl -fsSL https://raw.githubusercontent.com/MIRV314/kraft-lang/main/install-aut
 Or install from a clone: `sh install.sh` (defaults to `~/.local/bin`).
 
 ```sh
-xkraft --version                    # xkraft 0.3.0
+xkraft --version                    # xkraft 0.4.0
 kraft --version                     # same binary, alias name
 
 xkraft program.kraft                # compile and run
@@ -65,9 +65,7 @@ Declarations always need an explicit type; assignments do not repeat it.
 | `froz` | `[4, 5, 6]` — read-only |
 | `model` | `Counter(5)` |
 
-`NONE` is the empty value. In conditions only `FALSE` and `NONE` are falsy;
-`0`, `""`, `[]` and `{}` produce `TYPE_ERROR`. `show` prints a template:
-everything outside `{}` is text, everything inside is an expression.
+`NONE` may be false, `FALSE` is false, `TRUE` is true.
 
 ```kraft
 show(hello, {name}!)       # hello, Kraft!
@@ -114,6 +112,23 @@ func dec(flint n) -> flint:     # annotation given explicitly
 
 Functions are visible only after their declaration. Conditions use `AND`, `OR`,
 `NOT`, and comparisons chain like in Python (`0 <= x <= 10`).
+
+`..` builds a range with the right bound excluded; there is no separate `range`
+declaration — ranges are written inline. Bounds are always integers, the step
+may be fractional:
+
+```kraft
+for i 1..5:                 # 1, 2, 3, 4
+    show({i})
+for x 1..10..0.5:           # 1, 1.5, 2, …, 9.5
+    show({x})
+show({xs[1..3]})            # slice: elements 1 and 2
+if age in 0..17:            # half-open interval membership
+    show(child)
+```
+
+`in` iterates `list`/`froz` and `dict` keys (`for x in xs`, `for k, v in d`)
+or checks membership. The numeric range loop is written without `in`.
 
 ### The post-v0.1 global model
 
@@ -184,8 +199,8 @@ A `try` block has exactly three parts: `try:`, one or more
 ```kraft
 try:
     assert(FALSE, "nope")
-trigger ASSERT_ERROR:
-    show(caught: {error.msg})
+trigger ASSERT_ERROR, VALUE_ERROR:  # one branch for both
+    show(caught: {error.cat})
 trigger ANY_ERROR:
     show(other: {error.cat})
 finally:
@@ -194,7 +209,8 @@ finally:
 
 `error` is available in every branch and is read-only: `cat`, `msg`, `file`,
 `line`, `col`, plus the `text()` method. `ANY_ERROR` catches everything else
-and must come last. `finally` runs on every path, including `return`.
+and must come last and cannot be grouped. A comma-separated list of categories
+shares one branch. `finally` runs on every path, including `return`.
 
 `panic("CATEGORY"[, "message"])` raises a known category; without a message
 the category becomes `error.msg`. It is caught by `trigger CATEGORY` or
@@ -239,10 +255,11 @@ parameters or models (`NAME_ERROR`).
 - In `xkraft` the new model is always on: top-level declarations only, mutation
   zones, type blocks, models, index assignment, the full set of built-ins, and
   `try`/`trigger`/`finally`.
-- Implemented: `froz`, `panic`, prelude and Windows setup.
-- Not implemented yet: modules/imports and a package manager. The current
-  `trigger CATEGORY` syntax stays; grouped handlers under a single `trigger:`
-  are deferred to that stage.
+- Implemented: `froz`, `panic`, prelude, `..` ranges, `in`, grouped
+  `trigger CAT1, CAT2:` and Windows setup.
+- Not implemented yet: modules/imports (`import_file`, `from_file`,
+  `import_lib`, `from_lib`), `export`, namespaces and the `kpm` package
+  manager. They are planned for `1.x`.
 
 Type parameters are optional and only for specific tasks:
 

@@ -1,0 +1,3 @@
+REDECLARE_ERROR: tests/new/err_trigger_group_dup.kraft:5
+    5 | trigger TYPE_ERROR, VALUE_ERROR:
+                            ^ expected unique trigger category, found 'VALUE_ERROR'

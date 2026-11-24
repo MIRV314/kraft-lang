@@ -1,0 +1,3 @@
+TYPE_ERROR: tests/new/err_range_float_left.kraft:1
+    1 | flint x = 1.0..5
+                  ^ expected integer range bound, found float

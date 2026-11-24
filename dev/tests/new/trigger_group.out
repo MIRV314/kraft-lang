@@ -1,0 +1,8 @@
+caught VALUE_ERROR
+one
+finally one
+caught ASSERT_ERROR
+two
+finally two
+no error
+finally three

@@ -10,6 +10,7 @@ local LIST_MT = { __kraft = "list" }
 local FROZ_MT = { __kraft = "list" }
 local DICT_MT = { __kraft = "dict" }
 local MODEL_MT = { __kraft = "model" }
+local RANGE_MT = { __kraft = "range" }
 
 function krt.list(t) return setmetatable(t or {}, LIST_MT) end
 function krt.froz(t, spec)
@@ -29,11 +30,51 @@ end
 function krt.is_list(v) return kraft_kind(v) == "list" end
 function krt.is_froz(v) return type(v) == "table" and getmetatable(v) == FROZ_MT end
 function krt.is_dict(v) return kraft_kind(v) == "dict" end
+function krt.is_range(v) return kraft_kind(v) == "range" end
 function krt.is_model_table(v)
   return type(v) == "table" and getmetatable(v) == MODEL_MT
 end
 function krt.is_model(v, name)
   return krt.is_model_table(v) and v.__kraft_model == name
+end
+
+-- ---------- диапазоны и in ----------
+
+function krt.range_new(from, to, step, kind)
+  if type(from) ~= "number" or type(to) ~= "number" or type(step) ~= "number" then
+    krt.fail("TYPE_MISMATCH_ERROR", "expected flint range bounds and step")
+  end
+  if step == 0 then krt.fail("VALUE_ERROR", "range step cannot be zero") end
+  return setmetatable({ from = from, to = to, step = step, kind = kind }, RANGE_MT)
+end
+
+function krt.in_range(v, r)
+  if not krt.is_range(r) then krt.fail("TYPE_ERROR", "expected range, found " .. krt.typeof(r)) end
+  if type(v) ~= "number" then
+    krt.fail("TYPE_MISMATCH_ERROR", "expected flint, found " .. krt.typeof(v))
+  end
+  if v < r.from or v >= r.to then return false end
+  if r.kind == "int" then return true end
+  local q = (v - r.from) / r.step
+  return math.abs(q - math.floor(q + 0.5)) < 1e-9
+end
+
+function krt.in_list(v, xs)
+  for i = 1, #xs do
+    if xs[i] == v then return true end
+  end
+  return false
+end
+
+function krt.in_dict_keys(k, d)
+  for i = 1, #d.keys do
+    if d.keys[i] == k then return true end
+  end
+  return false
+end
+
+function krt.in_str(part, s)
+  return string.find(s, part, 1, true) ~= nil
 end
 
 -- ---------- модели ----------
@@ -454,6 +495,7 @@ function krt.typeof(v)
   if t == "boolean" then return "bool" end
   if t == "table" then
     if krt.is_model_table(v) then return v.__kraft_model end
+    if krt.is_range(v) then return "range" end
     if krt.is_list(v) then return "list" end
     if krt.is_dict(v) then return "dict" end
     return "dict"

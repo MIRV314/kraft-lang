@@ -1,6 +1,6 @@
 # Kraft cheatsheet
 
-One-page reference for v0.3.0. Full docs: [README](../README.md),
+One-page reference for v0.4.0. Full docs: [README](../README.md),
 [builtins](builtins.md), [decisions](decisions.md).
 Russian README: [README.ru](../README.md). English guide:
 [README.en](../README.en.md).
@@ -12,7 +12,7 @@ xkraft file.kraft [args...]         # installed compiler, new model
 kraft file.kraft [args...]          # same binary under an alias name
 xkraft -c file.kraft                # executable file.lua next to the source
 xkraft --tokens file.kraft
-xkraft --version                    # xkraft 0.3.0 (both names print this)
+xkraft --version                    # xkraft 0.4.0 (both names print this)
 ```
 
 From a clone use `./xkraft` in the repo root. The frozen v0.1 reference
@@ -38,10 +38,9 @@ show(hello: {name}, n={n})  # interpolation, not concatenation
 ```
 
 Indentation defines blocks: 4 spaces or tabs, never mixed. One statement per
-line, no semicolons. `NONE` is the empty value; only `FALSE` and `NONE` are
-falsy in conditions; `0`, `""`, `[]`, `{}` raise `TYPE_ERROR`. Uppercase names
-(`MAX`, `MAX_SIZE`) are hard constants: writing to them is always
-`CONST_ERROR`.
+line, no semicolons. `NONE` may be false, `FALSE` is false, `TRUE` is true.
+Uppercase names (`MAX`, `MAX_SIZE`) are hard constants: writing to them is
+always `CONST_ERROR`.
 
 Types: `str`, `flint`, `bool`, `list`, `froz`, `dict`, `model`. A block of
 declarations of one type is allowed:
@@ -58,6 +57,9 @@ str:
   `//` floors, `%` follows the divisor), `-` unary.
 - Comparison: `== != < <= > >=`; chained like Python (`0 <= x <= 10`).
 - Logic: `AND`, `OR`, `NOT`. Type check: `n is flint`.
+- Range: `1..5` yields `1, 2, 3, 4` (right bound excluded); `1..10..2`
+  steps by 2, `1..10..0.5` steps by 0.5. Range bounds are always integers.
+- Membership: `if age in 0..17`, `if x in xs`, `if k in d`.
 - Strings are joined with interpolation or `xs.join(sep)`, never with `+`.
 - Compound assignment: `+= -= *= /= //= %= **=` (numbers only).
 
@@ -171,8 +173,8 @@ Runtime errors can be caught in `xkraft`:
 ```kraft
 try:
     assert(FALSE, "bad")
-trigger ASSERT_ERROR:
-    show(caught: {error.msg})
+trigger ASSERT_ERROR, VALUE_ERROR:  # one handler for both
+    show(caught: {error.cat})
 trigger ANY_ERROR:              # must be last
     show(other: {error.cat})
 finally:                        # mandatory
@@ -196,6 +198,5 @@ Categories: `SYNTAX_ERROR`, `NAME_ERROR`, `REDECLARE_ERROR`, `CONST_ERROR`,
 ## Not implemented yet
 
 Modules and imports (`import_file` / `from_file` / `import_lib` /
-`from_lib`) and the package manager. Grouped handlers under a single
-`trigger:` are deferred to that stage; the current `trigger CATEGORY`
-form stays.
+`from_lib`), `export`, namespaces and the `kpm` package manager. These
+arrive in `1.x`; `0.4.0` freezes the core grammar.
