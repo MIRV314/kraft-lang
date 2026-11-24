@@ -1,96 +1,83 @@
 # Kraft
 
-Kraft is a small statically typed language: one numeric type, indentation
-instead of braces, `{}` interpolation instead of string concatenation. The
-core is intentionally tiny — types, functions, collections, control flow —
-and everything else is meant to grow as a standard library written in Kraft
-itself.
+[![CI](https://github.com/MIRV314/kraft-lang/actions/workflows/ci.yml/badge.svg)](https://github.com/MIRV314/kraft-lang/actions/workflows/ci.yml)
+[![release v0.2.0](https://img.shields.io/badge/release-v0.2.0-blue.svg)](https://github.com/MIRV314/kraft-lang/releases/tag/v0.2.0)
 
-The user compiler is `xkraft`: it is written in Kraft and compiles itself.
-The frozen v0.1 reference compiler lives in `dev/kraft` for development only.
+[Русская версия](README.md) · [Cheatsheet](docs/cheatsheet.md) · [Built-ins](docs/builtins.md) · [Release](https://github.com/MIRV314/kraft-lang/releases/tag/v0.2.0)
 
-After installation two names run the same x binary: `xkraft` and `kraft`.
-Both use the new language model. No C toolchain, no build step: one command,
-one run.
+Kraft is a small statically typed language: one numeric type (`flint`),
+indentation instead of braces, and `{}` interpolation instead of string
+concatenation. The core is deliberately tiny and frozen; everything else is
+meant to grow as a library written in Kraft itself. The compiler `xkraft` is
+written in Kraft and compiles itself.
 
-[Русская версия](README.md) · [Cheatsheet](docs/cheatsheet.md) ·
-[v0.2.0 release](https://github.com/MIRV314/kraft-lang/releases/tag/v0.2.0)
+- **One command.** `.kraft` → Lua → LuaJIT. No C toolchain, no build step.
+- **One binary.** After installation `xkraft` and `kraft` are two names for the
+  same x binary; the frozen v0.1 reference compiler is never installed.
+- **One language for everything.** The core, the examples and the compiler are
+  all written in Kraft.
 
 ## Quick start
 
-```sh
-git clone https://github.com/MIRV314/kraft-lang.git
-cd kraft-lang
-./xkraft examples/features.kraft       # post-v0.1 language model
-./xkraft examples/errors.kraft
-./xkraft examples/models.kraft
-./xkraft examples/script.kraft 2 3 4
-./xkraft -c examples/hello.kraft       # write hello.lua next to the source
-xkraft examples/features.kraft         # after installation, from any directory
-kraft examples/features.kraft          # same binary, alias name
-```
-
-LuaJIT is the only requirement: the `luajit` command must be in `PATH`.
-
-## Installation
-
-LuaJIT is the only requirement (`luajit` must be in `PATH`). The installer puts
-one self-contained x binary on your system (runtime embedded) and creates two
-names for it: `xkraft` and `kraft`. No `dev/` tree and no frozen v0.1 needed.
-
-**Automatic** — one command; the script asks for your `sudo` password:
+LuaJIT is the only requirement (`luajit` must be in `PATH`).
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/MIRV314/kraft-lang/main/install-auto.sh | sh
 ```
 
-It downloads tag `v0.2.0`, installs `xkraft` plus the `kraft` alias into
-`/usr/local/bin`, docs into `/usr/local/share/doc/kraft`, and verifies both
-names with an example. They work from any directory afterwards.
-
-**Manual** — from a clone:
+Or install from a clone: `sh install.sh` (defaults to `~/.local/bin`).
 
 ```sh
-sh install.sh
+xkraft --version                    # xkraft 0.2.0
+kraft --version                     # same binary, alias name
+
+xkraft program.kraft                # compile and run
+kraft program.kraft                 # exactly the same
+xkraft -c program.kraft             # write program.lua next to the source
+xkraft --tokens program.kraft       # inspect tokens
+xkraft program.kraft 1 2 3          # program arguments
 ```
 
-By default `xkraft` and `kraft` go to `~/.local/bin` and docs to `~/.kraft`;
-add the bin directory to `PATH` if needed. Both paths are overridable:
+From a clone, the ready binary sits in the repo root:
+`./xkraft examples/features.kraft`.
 
-```sh
-KRAFT_HOME=~/.local/share/kraft KRAFT_BIN=~/.local/bin sh install.sh
-```
+## Language tour
 
-Check with `xkraft --version` or `kraft --version` (both print `xkraft 0.2.0`).
-The ready-to-use single file is [`dist/xkraft`](dist/xkraft); rebuild it with
-`make dist`. All development sources live under `dev/`.
-Windows installers are not shipped yet.
-
-## Language in five minutes
-
-One statement per line. Blocks are indented with 4 spaces or tabs — pick one.
-Comments start with `#`.
+### Values and variables
 
 ```kraft
 str name = "Kraft"
 flint version = 3
 show(язык: {name} версия: {version})    # язык: Kraft версия: 3
+
+flint MAX = 100                         # uppercase name = constant
 ```
 
-| Type | Literals |
+Declarations always need an explicit type; assignments do not repeat it.
+
+| Type | Example |
 | --- | --- |
 | `str` | `"text"`, `'text'` |
-| `flint` | `42`, `-7`, `3.5` (one type for integers and floats) |
+| `flint` | `42`, `-7`, `3.5` — one type for integers and floats |
 | `bool` | `TRUE`, `FALSE` |
 | `list` | `[1, 2, 3]` |
-| `dict` | `{name: value}` |
-| model | `Название(...)` |
+| `dict` | `{name: "Kraft", age: 25}` |
+| model | `Counter(5)` |
 
-Declarations always require an explicit type; assignment does not repeat it.
-`NONE` is the empty value. Only `FALSE` and `NONE` are falsy — `0`, `""`, `[]`
-and `{}` are truthy. Uppercase names (`MAX`, `MAX_SIZE`) are hard constants.
+`NONE` is the empty value. Only `FALSE` and `NONE` are falsy — `0`, `""` and
+`[]` are truthy. `show` prints a template: everything outside `{}` is text,
+everything inside is an expression.
 
-Functions and conditions:
+```kraft
+show(hello, {name}!)       # hello, Kraft!
+show({version + 1})        # 4
+show(\{x\})                # {x}
+```
+
+Writing `show(f(1))` instead of `show({f(1)})` is a common typo; the compiler
+now tells you exactly where to put the braces.
+
+### Functions, conditions, loops
 
 ```kraft
 func summ(flint a, flint b) -> flint:
@@ -104,32 +91,29 @@ elif n == 4:
 else:
     show(small: {n})
 
-for i 1..5:
+for i 1..5:                 # 1, 2, 3, 4
     show({i})
+
+flint i = 0
+while i < 3:
+    i += 1
 ```
 
-`-> type` is optional but checked when written; recursion needs it. Functions
-are visible only after their declaration. Conditions use `AND`, `OR`, `NOT`;
-comparisons chain like Python (`0 <= x <= 10`).
+The `-> type` clause is optional and checked when present; recursion needs it.
+Functions are visible only after their declaration. Conditions use `AND`, `OR`,
+`NOT`, and comparisons chain like in Python (`0 <= x <= 10`).
 
-Collections have methods (`add`, `del`, `take`, `contains`, `count`, `join`,
-`sort`, `reverse`, …) and higher-order functions take function names, not
-lambdas: `map(xs, double)`, `filter(xs, even)`, `reduce(xs, plus, 0)`.
-Built-ins include `show`, `input`, `len`, `str`, `flint`, `args`, `read_file`,
-`assert`, `expect`, `time_ms`. See [builtins.md](docs/builtins.md).
+### The post-v0.1 global model
 
-### The post-v0.1 model (`xkraft`)
-
-The top level only declares. Globals can be reassigned only directly inside a
-`func`, `for` or `while`; `if`/`elif`/`else` do not open a mutation zone.
-Locals, parameters and `for` counters cannot shadow a global name
-(`REDECLARE_ERROR`). No directives, modes or opt-outs exist.
+In `xkraft` the top level only declares. A global can be reassigned only
+directly inside a `func`, `for` or `while`; `if`/`elif`/`else` do not open a
+mutation zone.
 
 ```kraft
 flint total = 0
 
 func add_points(flint n):
-    total += n          # writing a global needs no `ext`
+    total += n          # no `ext` keyword needed
 
 for i 10:
     total += i          # loops are mutation zones too
@@ -138,10 +122,35 @@ add_points(10)
 show({total})           # 55
 ```
 
+Locals, parameters and `for` counters cannot shadow a global name
+(`REDECLARE_ERROR`). Uppercase names are hard constants: writing to one is a
+`CONST_ERROR`. There are no directives, modes or switches for this behaviour.
+
+### Collections
+
+```kraft
+list xs = [1, 2, 3]
+xs.add(4)
+xs.del(0)
+show({xs.join("-")})        # 2-3-4
+show({xs.contains(3)})      # TRUE
+
+dict user = {name: "Kraft", age: 25}
+show({user[name]})          # Kraft
+user.add("height", 180)
+for k, v in user:
+    show({k} = {v})
+```
+
+Lists and dictionaries are passed by reference. Common methods include `add`,
+`del`, `remove`, `contains`, `count`, `index`, `join`, `take` and `merge`;
+slicing and index assignment work on `str` and `list`. See
+[builtins.md](docs/builtins.md) for the full list.
+
 ### Models
 
-Fields are created in `construct`: `self(a, b)` creates fields named after the
-parameters. Fields declared in the model body are read-only.
+Fields are created in `construct` with `self(...)`. Fields declared in the
+model body are read-only; there is no inheritance.
 
 ```kraft
 model Counter:
@@ -153,21 +162,12 @@ model Counter:
 
 Counter c = Counter(5)
 show({c.inc(3)})        # 8
-show({c is Counter})    # TRUE
 ```
 
 ### Errors
 
-Compile-time errors print the category, file and line, the source line, and a
-caret under the problem:
-
-```
-TYPE_ERROR: name.kraft:2
-    2 | flint x = "text"
-                       ^ expected declaration of 'x': type flint, found str
-```
-
-Runtime errors are handled with `try` / `trigger` / `finally`:
+A `try` block has exactly three parts: `try:`, one or more
+`trigger <CATEGORY>:` branches, and a mandatory `finally:`.
 
 ```kraft
 try:
@@ -180,25 +180,88 @@ finally:
     show(always)
 ```
 
-`ANY_ERROR` must be last; `finally` is mandatory and runs on every path,
-including `return`. `error` is a read-only object with fields `cat`, `msg`,
-`file`, `line`, `col` and method `text()`.
+`error` is available in every branch and is read-only: `cat`, `msg`, `file`,
+`line`, `col`, plus the `text()` method. `ANY_ERROR` catches everything else
+and must come last. `finally` runs on every path, including `return`.
+Compile-time errors print the category, file, line, source line and a caret:
 
-## Status
+```text
+TYPE_ERROR: name.kraft:2
+    2 | flint x = "text"
+                       ^ expected declaration of 'x': type flint, found str
+```
 
-- v0.1 is frozen (`v0.1.0`) and remains the reference compiler; `kraft`
-  still compiles exactly v0.1.
-- `xkraft` is written against frozen v0.1, compiles itself, and produces
-  byte-identical Lua on all compatibility tests.
-- In `xkraft`, the new model is always on: top-level declarations only,
-  mutation zones, models, full set of built-ins, and error handling.
-  `dev/xkraft.kraft` itself stays in v0.1 syntax.
-- `froz`, `panic`, stdlib prelude and modules are reserved but not
-  implemented yet. Windows setup is planned for a later release.
+### Strings in more detail
 
-Run `make check` to run the full test suite (reference compiler, xkraft
-compatibility, new model, CLI).
+Strings use double quotes or single quotes. Escapes include `\\`, `\"`, `\'`,
+`\n`, `\t`, `\r`, `\e`, `\{` and `\}`. Inside `show(...)`, parentheses are call
+syntax, so literal parentheses must be escaped: `show(a \(b\))` → `a (b)`.
+String concatenation with `+` is not allowed — use interpolation or
+`list.join(separator)`.
+
+## Built-ins in a nutshell
+
+```kraft
+show({type(42)}, {type("x")}, {type(NONE)})          # flint, str, NONE
+show({len("Привет")}, {len([1, 2])})                 # 6, 2
+show({flint("42") + 1})                              # 43
+show({sum([1, 2, 3])}, {avg([2, 4])})                # 6, 3
+show({sort([3, 1, 2])})                              # [1, 2, 3]
+```
+
+There are also `map`, `filter`, `reduce`, `read_file`, `write_file`, `args`,
+`exit`, `system`, `assert`, `expect`, `time_ms` and more.
+`map`/`filter`/`reduce` take function names, not lambdas: `map(xs, double)`.
+Built-in names are reserved and cannot be reused for variables, functions,
+parameters or models (`NAME_ERROR`).
+
+## What is implemented, what is next
+
+- v0.1 is frozen (`v0.1.0`). `xkraft` compiles itself and produces byte-identical
+  Lua on all compatibility tests.
+- In `xkraft` the new model is always on: top-level declarations only, mutation
+  zones, type blocks, models, index assignment, the full set of built-ins, and
+  `try`/`trigger`/`finally`.
+- Not implemented yet: `froz`, `panic`, stdlib prelude, modules/imports, and
+  Windows setup.
+- Typed collections are planned too; the syntax is already fixed:
+
+```kraft
+list[flint] nums = [1, 2, 3]
+dict[str|flint] cfg = {age: 25}
+froz[flint] frozen = [4, 5, 6]   # read-only list of flint
+```
+
+`froz[T]` is intended as a read-only collection built like `list[T]`. These
+forms are currently rejected by the compiler and will arrive with the prelude.
+
+Roadmap: frozen v0.1 → self-compilation → post-v0.1 core (done) → standard
+library prelude in Kraft → `froz`/`panic`/modules → Windows installer.
+
+## Repository layout
+
+Everything technical lives under `dev/`; the repo root contains the ready
+binary.
+
+```text
+xkraft            ready standalone binary (same file as dist/xkraft)
+dist/             minimal distribution plus documentation
+dev/kraft         frozen v0.1 reference compiler
+dev/xkraft.kraft  compiler written in Kraft
+dev/src/          runtime and reference compiler sources
+dev/tests/        test suites
+examples/         example programs
+docs/             decisions, built-ins, cheatsheet
+editors/vscode/   syntax highlighting and snippets
+```
+
+```sh
+make check                                              # 22 + 16 + 25 + 71 tests
+make dist                                               # rebuild dist/xkraft and ./xkraft
+(cd dev && ./kraft xkraft.kraft xkraft.kraft > xkraft.lua)  # self-compilation
+```
 
 ## License
 
 Apache 2.0; see [LICENSE](LICENSE) and [NOTICE](NOTICE).
+Repository: <https://github.com/MIRV314/kraft-lang>
