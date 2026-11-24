@@ -506,15 +506,19 @@ end
 -- ---------- типизированные коллекции ----------
 
 -- Спецификация приходит от компилятора в каноническом виде:
---   list[flint, str], froz[bool], dict[str, flint].
--- Внутри скобок только str/flint/bool; вложенность и модели запрещены.
+--   list[flint, str], froz[bool], dict[str], dict[flint|list].
+-- Ключ словаря — str или flint; значение — любой тип.
 local BASE_TYPES = { str = true, flint = true, bool = true }
 
 local function split_args(s)
   local out = {}
   local start = 1
+  local depth = 0
   for i = 1, #s do
-    if s:sub(i, i) == "," then
+    local c = s:sub(i, i)
+    if c == "[" then depth = depth + 1 end
+    if c == "]" then depth = depth - 1 end
+    if c == "," and depth == 0 then
       out[#out + 1] = s:sub(start, i - 1)
       start = i + 1
     end
@@ -542,8 +546,10 @@ local function check_base(t, v, where)
 end
 
 local function one_of(args, v)
+  local got = krt.typeof(v)
   for i = 1, #args do
-    if krt.typeof(v) == args[i] then return true end
+    local want = spec_info(args[i])
+    if want == "any" or want == got then return true end
   end
   return false
 end
@@ -574,8 +580,10 @@ function krt.check_type(spec, v, where)
     if not krt.is_dict(v) then type_error(where, spec, v) end
     if args then
       for i = 1, #v.keys do
-        check_base(args[1], v.keys[i], where .. ".key")
-        check_base(args[2], v.vals[i], where .. "[" .. krt.tostr(v.keys[i]) .. "]")
+        if args[1] then check_base(args[1], v.keys[i], where .. ".key") end
+        if args[2] and BASE_TYPES[args[2]] then
+          check_base(args[2], v.vals[i], where .. "[" .. krt.tostr(v.keys[i]) .. "]")
+        end
       end
     end
     return v
@@ -1107,8 +1115,10 @@ end
 function krt.dict_set(d, k, v)
   local args = dict_args(d)
   if args then
-    check_base(args[1], k, "dict key")
-    check_base(args[2], v, "dict value")
+    if args[1] then check_base(args[1], k, "dict key") end
+    if args[2] and BASE_TYPES[args[2]] then
+      check_base(args[2], v, "dict value")
+    end
   end
   local p = dict_pos(d, k)
   if p then
@@ -1127,8 +1137,9 @@ function krt.dict_get(d, k)
 end
 
 local function dict_key(k)
-  if type(k) ~= "string" then
-    krt.fail("TYPE_MISMATCH_ERROR", "dict key must be str, found " .. krt.typeof(k))
+  local tk = type(k)
+  if tk ~= "string" and tk ~= "number" then
+    krt.fail("TYPE_MISMATCH_ERROR", "dict key must be str or flint, found " .. krt.typeof(k))
   end
   return k
 end

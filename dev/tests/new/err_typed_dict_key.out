@@ -1,3 +1,3 @@
 TYPE_ERROR: tests/new/err_typed_dict_key.kraft:1
-    1 | dict[flint, str] d = {}
-        ^ expected str dict key, found flint
+    1 | dict[bool, str] d = {}
+        ^ expected str or flint dict key, found bool

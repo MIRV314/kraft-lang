@@ -1,1 +1,2 @@
-froz[list[str]] xs = []
+froz[list[str]] xs = [["a"]]
+show({len(xs)})

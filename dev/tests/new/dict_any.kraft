@@ -1,0 +1,13 @@
+dict anything = {anna: 30, 1: "раз"}
+dict[str] ages = {anna: 30}
+dict[flint|str] names = {1: "Аня"}
+dict[flint|list] xs = {1: [7, 8]}
+dict[str|dict] nested = {box: {y: 5}}
+
+show({anything[anna]})
+show({anything[1]})
+show({ages[anna]})
+show({names[1]})
+show({xs[1]})
+dict inner = nested[box]
+show({inner[y]})

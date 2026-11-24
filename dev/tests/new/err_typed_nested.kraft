@@ -1,1 +1,2 @@
-list[list[str]] xs = []
+list[list[str]] xs = [["a"]]
+show({len(xs)})

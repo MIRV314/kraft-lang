@@ -1,1 +1,1 @@
-dict[flint, str] d = {}
+dict[bool, str] d = {}

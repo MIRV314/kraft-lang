@@ -1,3 +1,1 @@
-TYPE_ERROR: tests/new/err_typed_nested.kraft:1
-    1 | list[list[str]] xs = []
-             ^ expected str, flint or bool, found kw 1:6 list
+1
