@@ -1,6 +1,6 @@
 # Kraft cheatsheet
 
-One-page reference for v0.2.0. Full docs: [README](../README.md),
+One-page reference for v0.3.0. Full docs: [README](../README.md),
 [builtins](builtins.md), [decisions](decisions.md).
 Russian README: [README.ru](../README.md). English guide:
 [README.en](../README.en.md).
@@ -12,7 +12,7 @@ xkraft file.kraft [args...]         # installed compiler, new model
 kraft file.kraft [args...]          # same binary under an alias name
 xkraft -c file.kraft                # executable file.lua next to the source
 xkraft --tokens file.kraft
-xkraft --version                    # xkraft 0.2.0 (both names print this)
+xkraft --version                    # xkraft 0.3.0 (both names print this)
 ```
 
 From a clone use `./xkraft` in the repo root. The frozen v0.1 reference
@@ -21,6 +21,9 @@ compiler is kept in `dev/kraft` for development only and is never installed.
 Requires `luajit` in `PATH`. Install: `sh install.sh` (into `~/.kraft` and
 `~/.local/bin`) or `install-auto.sh` (one command, `/usr/local`, asks for
 `sudo`).
+
+On Windows: unpack `kraft-win.zip`, run `install-win.cmd`; LuaJIT must already
+be in `PATH`. Both `xkraft.cmd` and `kraft.cmd` start the same compiler.
 
 ## Syntax and values
 
@@ -36,11 +39,12 @@ show(hello: {name}, n={n})  # interpolation, not concatenation
 
 Indentation defines blocks: 4 spaces or tabs, never mixed. One statement per
 line, no semicolons. `NONE` is the empty value; only `FALSE` and `NONE` are
-falsy. Uppercase names (`MAX`, `MAX_SIZE`) are hard constants: writing to
-them is always `CONST_ERROR`.
+falsy in conditions; `0`, `""`, `[]`, `{}` raise `TYPE_ERROR`. Uppercase names
+(`MAX`, `MAX_SIZE`) are hard constants: writing to them is always
+`CONST_ERROR`.
 
-Types: `str`, `flint`, `bool`, `list`, `dict`, model names. `froz` is reserved
-but not implemented. A block of declarations of one type is allowed:
+Types: `str`, `flint`, `bool`, `list`, `froz`, `dict`, `model`. A block of
+declarations of one type is allowed:
 
 ```kraft
 str:
@@ -109,6 +113,22 @@ show({xs[0]})               # indexing and slices: s[2..7], s[..5], xs[1..5..2]
 xs[0] = 10                  # post-v0.1: index assignment
 ```
 
+Type parameters are optional and only for specific tasks:
+
+```kraft
+list nums = [1, 2, 3]
+list[flint] ints = [1, 2, 3]
+dict[str|flint] cfg = {"age": 25}   # dict[str, flint] is the same
+froz[flint] frozen = [4, 5]         # read-only
+```
+
+Inside `[]`: only `str`, `flint`, `bool`; no nesting and no `NONE`. In `dict`
+the left type is the key (always `str`), the right type is the value. `froz`
+supports reads, slices and `for in`; writes and mutating methods are errors.
+
+Prelude is available without `import`: `prelude_cat`, `path_join`, `now_ms`,
+`parse_args`, `parse_csv`, `parse_json`. Add `--no-prelude` to disable it.
+
 Built-ins: `len`, `type`, `str`, `flint`, `up`, `low`, `title`, `abs`, `round`,
 `floor`, `ceil`, `sqrt`, `min`, `max`, `sum`, `avg`, `keys`, `values`, `upk`,
 `sort`, `reverse`, `clear`, `map`, `filter`, `reduce`, `read_file`,
@@ -163,6 +183,10 @@ finally:                        # mandatory
 `text()`. An error raised inside a `trigger` branch is not caught by the same
 block; `break`/`continue` cannot cross a `try` boundary.
 
+`panic("CATEGORY"[, "message"])` raises a known category; without a message
+the category is used as `error.msg`. It is caught by `trigger CATEGORY` or
+`trigger ANY_ERROR` exactly like a runtime error.
+
 Categories: `SYNTAX_ERROR`, `NAME_ERROR`, `REDECLARE_ERROR`, `CONST_ERROR`,
 `TOPLEVEL_ERROR`, `TYPE_ERROR`, `SCOPE_ERROR`, `ARGCOUNT_ERROR`,
 `VALUE_ERROR`, `CONCATENATE_NOT_SUPPORT`, `FILE_ERROR`,
@@ -171,5 +195,7 @@ Categories: `SYNTAX_ERROR`, `NAME_ERROR`, `REDECLARE_ERROR`, `CONST_ERROR`,
 
 ## Not implemented yet
 
-`froz`, `panic`, stdlib prelude, modules (`import_file` / `from_file` /
-`import_lib` / `from_lib`), Windows installer. Their names are reserved.
+Modules and imports (`import_file` / `from_file` / `import_lib` /
+`from_lib`) and the package manager. Grouped handlers under a single
+`trigger:` are deferred to that stage; the current `trigger CATEGORY`
+form stays.

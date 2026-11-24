@@ -1,0 +1,3 @@
+dict[str|flint] d = {}
+d.add("a", 1)
+show({d["a"]})

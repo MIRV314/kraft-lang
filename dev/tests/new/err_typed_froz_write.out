@@ -1,0 +1,3 @@
+NAME_ERROR: tests/new/err_typed_froz_write.kraft:2
+    2 | xs.add(2)
+           ^ expected froz method, found unknown method 'add'

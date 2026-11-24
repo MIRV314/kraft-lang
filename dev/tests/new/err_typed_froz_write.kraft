@@ -1,0 +1,2 @@
+froz[flint] xs = [1]
+xs.add(2)

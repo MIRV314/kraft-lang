@@ -1,0 +1,7 @@
+try:
+    panic("PANIC_ERROR")
+trigger ANY_ERROR:
+    show("any: {error.cat}")
+    show("msg: {error.msg}")
+finally:
+    show("finally")

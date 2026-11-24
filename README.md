@@ -1,9 +1,9 @@
 # Kraft
 
 [![CI](https://github.com/MIRV314/kraft-lang/actions/workflows/ci.yml/badge.svg)](https://github.com/MIRV314/kraft-lang/actions/workflows/ci.yml)
-[![release v0.2.0](https://img.shields.io/badge/release-v0.2.0-blue.svg)](https://github.com/MIRV314/kraft-lang/releases/tag/v0.2.0)
+[![release v0.3.0](https://img.shields.io/badge/release-v0.3.0-blue.svg)](https://github.com/MIRV314/kraft-lang/releases/tag/v0.3.0)
 
-[English](README.en.md) · [Шпаргалка](docs/cheatsheet.md) · [Встроенные](docs/builtins.md) · [Release](https://github.com/MIRV314/kraft-lang/releases/tag/v0.2.0)
+[English](README.en.md) · [Шпаргалка](docs/cheatsheet.md) · [Встроенные](docs/builtins.md) · [Release](https://github.com/MIRV314/kraft-lang/releases/tag/v0.3.0)
 
 Kraft — статически типизированный язык: один числовой тип `flint`, отступы
 вместо фигурных скобок, интерполяция `{}` вместо склейки строк. Ядро маленькое
@@ -26,7 +26,7 @@ curl -fsSL https://raw.githubusercontent.com/MIRV314/kraft-lang/main/install-aut
 Или из клона: `sh install.sh` — по умолчанию в `~/.local/bin`.
 
 ```sh
-xkraft --version                    # xkraft 0.2.0
+xkraft --version                    # xkraft 0.3.0
 kraft --version                     # то же самое: псевдоним
 
 xkraft program.kraft                # скомпилировать и запустить
@@ -59,10 +59,12 @@ flint MAX = 100                         # имя капсом — констан
 | `bool` | `TRUE`, `FALSE` |
 | `list` | `[1, 2, 3]` |
 | `dict` | `{имя: "Kraft", возраст: 25}` |
-| модель | `Counter(5)` |
+| `froz` | `[4, 5, 6]` — только для чтения |
+| `model` | `Counter(5)` |
 
-`NONE` — пустое значение; ложны только `FALSE` и `NONE` (`0`, `""`, `[]` —
-истинны). `show` печатает шаблон: всё вне `{}` — текст, внутри — выражение.
+`NONE` — пустое значение; в условиях ложны только `FALSE` и `NONE`.
+`0`, `""`, `[]`, `{}` в `if`/`while` дают `TYPE_ERROR`. `show` печатает
+шаблон: всё вне `{}` — текст, внутри — выражение.
 
 ```kraft
 show(привет, {name}!)       # привет, Kraft!
@@ -188,6 +190,11 @@ finally:
 `line`, `col`, метод `text()`). `ANY_ERROR` ловит остальное и должен быть
 последним. `finally` выполняется всегда, даже при `return`.
 
+`panic("CATEGORY"[, "message"])` бросает ошибку с заданной категорией;
+сообщение по умолчанию равно категории. Категория — plain-строка из списка
+известных категорий. `panic("PANIC_ERROR")` ловится веткой
+`trigger PANIC_ERROR` или `trigger ANY_ERROR`.
+
 ## Что есть и чего нет
 
 - v0.1 заморожен (`v0.1.0`), `xkraft` собирает себя и на совместимых тестах
@@ -195,19 +202,32 @@ finally:
 - В `xkraft` новая модель включена всегда: только объявления наверху, зоны
   изменений, блоки типов, модели, индексная запись, встроенные и
   `try/trigger/finally`.
-- Пока не реализовано: `froz`, `panic`, prelude, модули/импорты и установка
-  на Windows.
+- Реализованы `froz`, `panic`, prelude и установка на Windows.
+- Пока не реализованы модули/импорты и пакетный менеджер. Синтаксис
+  `trigger`-веток остаётся текущим; группировка под общим `trigger:` отложена
+  до этапа модулей.
 
-Типизированные коллекции тоже пока не работают, но синтаксис уже зафиксирован:
+Параметры типов в `[]` указывать не обязательно — они нужны для конкретных
+задач:
 
 ```kraft
-list[flint] nums = [1, 2, 3]
-dict[str|flint] cfg = {возраст: 25}
-froz[flint] frozen = [4, 5, 6]   # неизменяемый список с типом элемента
+list nums = [1, 2, 3]               # без параметров — как раньше
+list[flint] ints = [1, 2, 3]        # только flint
+dict[str|flint] cfg = {возраст: 25} # ключ str, значение flint
+froz[flint] frozen = [4, 5, 6]      # только для чтения
 ```
 
-`froz[T]` — коллекция с доступом только на чтение, по тому же принципу, что
-`list[T]`. Реализация запланирована вместе с prelude.
+Запятая в `dict[str, flint]` равнозначна `dict[str|flint]`: слева — тип ключа
+(всегда `str`), справа — тип значения. Внутри `[]` допустимы только `str`,
+`flint`, `bool`; вложенность и `NONE` запрещены. `froz[T]` — read-only список:
+индексы, срезы и `for in` работают, запись и мутирующие методы — нет.
+
+Prelude подключается без `import`: `path_join`, `now_ms`, `parse_args`,
+`parse_csv`, `parse_json`, `prelude_cat`. Флаг `--no-prelude` отключает его.
+
+Для Windows: распакуйте `kraft-win.zip`, запустите `install-win.cmd`
+(LuaJIT должен быть в `PATH`); команды `xkraft` и `kraft` — одна и та же
+программа.
 
 ## Для разработчика
 
@@ -226,7 +246,7 @@ editors/vscode/ подсветка и сниппеты
 ```
 
 ```sh
-make check                  # 22 + 16 + 25 + 71 тест
+make check                  # 22 + 18 + 25 + 89 тестов
 make dist                   # собрать dist/xkraft и корневой xkraft
 (cd dev && ./kraft xkraft.kraft xkraft.kraft > xkraft.lua)   # самокомпиляция
 ```

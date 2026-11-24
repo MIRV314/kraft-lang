@@ -1,0 +1,3 @@
+flint n = 0
+if n:
+    show("never")

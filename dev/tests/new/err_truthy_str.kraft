@@ -1,0 +1,3 @@
+str s = ""
+if s:
+    show("never")

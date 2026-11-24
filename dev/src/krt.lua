@@ -7,13 +7,28 @@ local krt = {}
 krt.NONE = setmetatable({}, { __tostring = function() return "NONE" end })
 
 local LIST_MT = { __kraft = "list" }
+local FROZ_MT = { __kraft = "list" }
 local DICT_MT = { __kraft = "dict" }
 local MODEL_MT = { __kraft = "model" }
 
 function krt.list(t) return setmetatable(t or {}, LIST_MT) end
+function krt.froz(t, spec)
+  local v = t or {}
+  v.__kraft_froz = true
+  v.__kraft_type = spec
+  return setmetatable(v, FROZ_MT)
+end
 function krt.dict() return setmetatable({ keys = {}, vals = {} }, DICT_MT) end
-function krt.is_list(v) return type(v) == "table" and getmetatable(v) == LIST_MT end
-function krt.is_dict(v) return type(v) == "table" and getmetatable(v) == DICT_MT end
+
+local function kraft_kind(v)
+  if type(v) ~= "table" then return nil end
+  local mt = getmetatable(v)
+  return mt and mt.__kraft or nil
+end
+
+function krt.is_list(v) return kraft_kind(v) == "list" end
+function krt.is_froz(v) return type(v) == "table" and getmetatable(v) == FROZ_MT end
+function krt.is_dict(v) return kraft_kind(v) == "dict" end
 function krt.is_model_table(v)
   return type(v) == "table" and getmetatable(v) == MODEL_MT
 end
@@ -266,6 +281,14 @@ function krt.truthy(v)
   return v ~= nil and v ~= false and v ~= krt.NONE
 end
 
+-- Новая модель: TRUE — истина, FALSE и NONE — ложь, всё остальное — ошибка.
+-- Старая krt.truthy выше остаётся для замороженного v0.1.
+function krt.truthy_strict(v)
+  if v == true then return true end
+  if v == false or v == nil or v == krt.NONE then return false end
+  krt.fail("TYPE_ERROR", "condition must be bool (TRUE, FALSE or NONE), found " .. krt.typeof(v))
+end
+
 -- ---------- арифметика с семантикой Python ----------
 
 function krt.fail(cat, msg)
@@ -436,6 +459,138 @@ function krt.typeof(v)
     return "dict"
   end
   return t
+end
+
+-- ---------- типизированные коллекции ----------
+
+-- Спецификация приходит от компилятора в каноническом виде:
+--   list[flint, str], froz[bool], dict[str, flint].
+-- Внутри скобок только str/flint/bool; вложенность и модели запрещены.
+local BASE_TYPES = { str = true, flint = true, bool = true }
+
+local function split_args(s)
+  local out = {}
+  local start = 1
+  for i = 1, #s do
+    if s:sub(i, i) == "," then
+      out[#out + 1] = s:sub(start, i - 1)
+      start = i + 1
+    end
+  end
+  out[#out + 1] = s:sub(start)
+  for i = 1, #out do
+    out[i] = out[i]:gsub("^%s+", ""):gsub("%s+$", "")
+  end
+  return out
+end
+
+local function spec_info(spec)
+  local name, inner = spec:match("^([%a_]+)%[(.*)%]$")
+  if not name then return spec, nil end
+  return name, split_args(inner)
+end
+
+local function type_error(where, expected, v)
+  krt.fail("TYPE_MISMATCH_ERROR",
+    where .. ": expected " .. expected .. ", found " .. krt.typeof(v))
+end
+
+local function check_base(t, v, where)
+  if krt.typeof(v) ~= t then type_error(where, t, v) end
+end
+
+local function one_of(args, v)
+  for i = 1, #args do
+    if krt.typeof(v) == args[i] then return true end
+  end
+  return false
+end
+
+local function expected_text(args)
+  return table.concat(args, " or ")
+end
+
+function krt.check_type(spec, v, where)
+  if not spec or spec == "any" then return v end
+  local name, args = spec_info(spec)
+  if name == "list" or name == "froz" then
+    if name == "froz" then
+      if not krt.is_froz(v) then type_error(where, spec, v) end
+    elseif not krt.is_list(v) or krt.is_froz(v) then
+      type_error(where, spec, v)
+    end
+    if args then
+      for i = 1, #v do
+        if not one_of(args, v[i]) then
+          type_error(where .. "[" .. (i - 1) .. "]", expected_text(args), v[i])
+        end
+      end
+    end
+    return v
+  end
+  if name == "dict" then
+    if not krt.is_dict(v) then type_error(where, spec, v) end
+    if args then
+      for i = 1, #v.keys do
+        check_base(args[1], v.keys[i], where .. ".key")
+        check_base(args[2], v.vals[i], where .. "[" .. krt.tostr(v.keys[i]) .. "]")
+      end
+    end
+    return v
+  end
+  if BASE_TYPES[name] then
+    check_base(name, v, where)
+    return v
+  end
+  if not krt.is_model(v, name) then type_error(where, name, v) end
+  return v
+end
+
+function krt.typed_list(spec, values)
+  local v = krt.list(values or {})
+  v.__kraft_type = spec
+  return krt.check_type(spec, v, "list declaration")
+end
+
+function krt.typed_froz(spec, values)
+  return krt.check_type(spec, krt.froz(values or {}, spec), "froz declaration")
+end
+
+function krt.typed_dict(spec, values)
+  local v = values or krt.dict()
+  v.__kraft_type = spec
+  return krt.check_type(spec, v, "dict declaration")
+end
+
+function krt.typed_attach(v, spec)
+  v.__kraft_type = spec
+  return krt.check_type(spec, v, "declaration")
+end
+
+local function list_args(xs)
+  if type(xs) ~= "table" or not xs.__kraft_type then return nil end
+  local name, args = spec_info(xs.__kraft_type)
+  if name == "list" or name == "froz" then return args end
+  return nil
+end
+
+local function dict_args(d)
+  if type(d) ~= "table" or not d.__kraft_type then return nil end
+  local name, args = spec_info(d.__kraft_type)
+  if name == "dict" then return args end
+  return nil
+end
+
+local function check_elem(xs, v, where)
+  local args = list_args(xs)
+  if not args then return end
+  if not one_of(args, v) then type_error(where, expected_text(args), v) end
+end
+
+local function ensure_mutable(xs)
+  if krt.is_froz(xs) then
+    krt.fail("CONST_ERROR", "froz collection is read-only")
+  end
 end
 
 function krt.utf8_len(s)
@@ -700,8 +855,15 @@ end
 -- ---------- списки ----------
 
 function krt.as_list(v)
-  if not krt.is_list(v) then
+  if not krt.is_list(v) or krt.is_froz(v) then
     krt.fail("TYPE_MISMATCH_ERROR", "expected list, found " .. krt.typeof(v))
+  end
+  return v
+end
+
+function krt.as_froz(v)
+  if not krt.is_froz(v) then
+    krt.fail("TYPE_MISMATCH_ERROR", "expected froz, found " .. krt.typeof(v))
   end
   return v
 end
@@ -748,7 +910,13 @@ function krt.list_slice(xs, from, to, step)
   local a = norm(from, step > 0 and 0 or n - 1)
   local b = norm(to, step > 0 and n or -1)
 
-  local out = krt.list({})
+  local out
+  if krt.is_froz(xs) then
+    out = krt.froz({}, xs.__kraft_type)
+  else
+    out = krt.list({})
+    if xs.__kraft_type then out.__kraft_type = xs.__kraft_type end
+  end
   local i = a
   while (step > 0 and i < b) or (step < 0 and i > b) do
     out[#out + 1] = xs[i + 1]
@@ -780,7 +948,9 @@ function krt.slice(v, from, to, step)
 end
 
 function krt.list_add(xs, a, b)
+  ensure_mutable(xs)
   if b == nil then
+    check_elem(xs, a, "list.add")
     xs[#xs + 1] = a
     return krt.NONE
   end
@@ -789,11 +959,13 @@ function krt.list_add(xs, a, b)
   if i < 0 then i = i + n end
   if i < 0 then i = 0 end
   if i > n then i = n end
+  check_elem(xs, b, "list.add")
   table.insert(xs, i + 1, b)
   return krt.NONE
 end
 
 function krt.list_del(xs, i)
+  ensure_mutable(xs)
   local n = #xs
   if i == nil then
     if n == 0 then
@@ -812,6 +984,7 @@ function krt.list_del(xs, i)
 end
 
 function krt.list_remove(xs, v, count)
+  ensure_mutable(xs)
   if count == nil then count = -1 end
   count = math.floor(krt.as_flint(count))
   local removed = 0
@@ -828,6 +1001,8 @@ function krt.list_remove(xs, v, count)
 end
 
 function krt.list_replace_value(xs, a, b)
+  ensure_mutable(xs)
+  check_elem(xs, b, "list.replace")
   for i = 1, #xs do
     if xs[i] == a then
       xs[i] = b
@@ -838,6 +1013,8 @@ function krt.list_replace_value(xs, a, b)
 end
 
 function krt.list_replace(xs, i, v)
+  ensure_mutable(xs)
+  check_elem(xs, v, "list index assignment")
   local n = #xs
   i = math.floor(i)
   if i < 0 then i = i + n end
@@ -886,6 +1063,11 @@ local function dict_pos(d, k)
 end
 
 function krt.dict_set(d, k, v)
+  local args = dict_args(d)
+  if args then
+    check_base(args[1], k, "dict key")
+    check_base(args[2], v, "dict value")
+  end
   local p = dict_pos(d, k)
   if p then
     d.vals[p] = v
@@ -910,6 +1092,7 @@ local function dict_key(k)
 end
 
 function krt.dict_add(d, k, v)
+  ensure_mutable(d)
   krt.dict_set(d, dict_key(k), v)
   return krt.NONE
 end
@@ -919,6 +1102,7 @@ function krt.dict_take(d, k)
 end
 
 function krt.dict_remove(d, k)
+  ensure_mutable(d)
   local p = dict_pos(d, dict_key(k))
   if not p then return false end
   table.remove(d.keys, p)
@@ -999,6 +1183,7 @@ function krt.coll_reverse(xs)
 end
 
 function krt.coll_clear(coll)
+  ensure_mutable(coll)
   if krt.is_list(coll) then
     for i = #coll, 1, -1 do table.remove(coll, i) end
     return krt.NONE
@@ -1038,6 +1223,13 @@ end
 
 function krt.do_assert(cond, msg)
   if not krt.truthy(cond) then
+    krt.fail("ASSERT_ERROR", msg)
+  end
+  return krt.NONE
+end
+
+function krt.do_assert_strict(cond, msg)
+  if not krt.truthy_strict(cond) then
     krt.fail("ASSERT_ERROR", msg)
   end
   return krt.NONE

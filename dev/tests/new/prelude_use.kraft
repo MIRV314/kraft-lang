@@ -1,0 +1,10 @@
+show({path_join("a", "b")})
+show({path_join("a/", "b")})
+
+list rows = parse_csv("a,b\n1,2")
+show({rows})
+
+dict d = parse_json("\{\"name\": \"Kraft\", \"n\": 2, \"ok\": TRUE\}")
+show({d["name"]})
+show({d["n"]})
+show({d["ok"]})

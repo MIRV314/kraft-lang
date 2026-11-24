@@ -1,0 +1,74 @@
+# Prelude xkraft — подключается ко каждой программе без import.
+# Только функции: верхний уровень не меняет глобалов (D77).
+
+func prelude_cat(list xs) -> str:
+    return xs.join("")
+
+func path_join(str a, str b) -> str:
+    if a == "":
+        return b
+    if b == "":
+        return a
+    if a.suff("/"):
+        return prelude_cat([a, b])
+    return prelude_cat([a, "/", b])
+
+func now_ms() -> flint:
+    return time_ms()
+
+func parse_args() -> dict:
+    dict out = {}
+    list av = args()
+    flint i = 1
+    while i < len(av):
+        str a = av[i]
+        if a.preff("--"):
+            flint p = a.find("=")
+            if p is NONE:
+                out.add(a[2..len(a)], "TRUE")
+            else:
+                out.add(a[2..p], a[p + 1..len(a)])
+        else:
+            out.add(str(i - 1), a)
+        i += 1
+    return out
+
+func parse_csv(str data) -> list:
+    list rows = []
+    list lines = data.part("\n")
+    for line0 in lines:
+        str line = line0
+        if line.trim() == "":
+            continue
+        rows.add(line.part(","))
+    return rows
+
+func parse_json(str data) -> dict:
+    dict out = {}
+    str body = data.trim()
+    assert(body.preff("\{") AND body.suff("\}"), "json object expected")
+    str inner = body[1..len(body) - 1]
+    if inner.trim() == "":
+        return out
+    list items = inner.part(",")
+    for item0 in items:
+        str item = item0
+        item = item.trim()
+        flint p = item.find(":")
+        if p is NONE:
+            continue
+        str k = item[..p].trim()
+        if k.preff("\"") AND k.suff("\""):
+            k = k[1..len(k) - 1]
+        str v = item[p + 1..len(item)].trim()
+        if v == "TRUE":
+            out.add(k, TRUE)
+        elif v == "FALSE":
+            out.add(k, FALSE)
+        elif v == "NONE":
+            out.add(k, NONE)
+        elif v.preff("\"") AND v.suff("\""):
+            out.add(k, v[1..len(v) - 1])
+        else:
+            out.add(k, flint(v))
+    return out

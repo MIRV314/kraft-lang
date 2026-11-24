@@ -97,7 +97,7 @@ out=$(./kraft --version)
 [ "$out" = "kraft 0.1.0" ]
 check "kraft-version" $?
 out=$(./xkraft --version)
-[ "$out" = "xkraft 0.2.0" ]
+[ "$out" = "xkraft 0.3.0" ]
 check "xkraft-version" $?
 
 # 8a. Забытую подстановку в show() нужно объяснять, а не ругаться на ')'.
@@ -114,6 +114,24 @@ else
   check "show-brace-hint" 1
   printf '%s\n' "$err" | sed 's/^/     /'
 fi
+
+# 8b. Готовый dist/xkraft самодостаточен: рядом нет src/, но prelude вшит.
+repo_root=$(CDPATH= cd -- .. && pwd)
+printf 'show({path_join("a", "b")})\n' > "$tmp/distcheck.kraft"
+expected='a/b'
+out=$(cd "$tmp" && "$repo_root/dist/xkraft" distcheck.kraft 2>&1)
+[ "$out" = "$expected" ]
+check "dist-xkraft-standalone" $?
+
+# 8c. Windows-Lua-вариант того же компилятора тоже работает без src/.
+out=$(cd "$tmp" && luajit "$repo_root/dist/xkraft-win.lua" distcheck.kraft > distcheck.win.lua 2>&1)
+code=$?
+if [ "$code" -eq 0 ]; then
+  out=$(cd "$tmp" && luajit distcheck.win.lua 2>&1)
+  code=$?
+fi
+[ "$code" -eq 0 ] && [ "$out" = "$expected" ]
+check "dist-xkraft-win-standalone" $?
 
 # 9. Все примеры запускаются новой моделью и дают ожидаемый вывод.
 for f in ../examples/*.kraft; do

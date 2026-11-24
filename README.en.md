@@ -1,9 +1,9 @@
 # Kraft
 
 [![CI](https://github.com/MIRV314/kraft-lang/actions/workflows/ci.yml/badge.svg)](https://github.com/MIRV314/kraft-lang/actions/workflows/ci.yml)
-[![release v0.2.0](https://img.shields.io/badge/release-v0.2.0-blue.svg)](https://github.com/MIRV314/kraft-lang/releases/tag/v0.2.0)
+[![release v0.3.0](https://img.shields.io/badge/release-v0.3.0-blue.svg)](https://github.com/MIRV314/kraft-lang/releases/tag/v0.3.0)
 
-[Русская версия](README.md) · [Cheatsheet](docs/cheatsheet.md) · [Built-ins](docs/builtins.md) · [Release](https://github.com/MIRV314/kraft-lang/releases/tag/v0.2.0)
+[Русская версия](README.md) · [Cheatsheet](docs/cheatsheet.md) · [Built-ins](docs/builtins.md) · [Release](https://github.com/MIRV314/kraft-lang/releases/tag/v0.3.0)
 
 Kraft is a small statically typed language: one numeric type (`flint`),
 indentation instead of braces, and `{}` interpolation instead of string
@@ -28,7 +28,7 @@ curl -fsSL https://raw.githubusercontent.com/MIRV314/kraft-lang/main/install-aut
 Or install from a clone: `sh install.sh` (defaults to `~/.local/bin`).
 
 ```sh
-xkraft --version                    # xkraft 0.2.0
+xkraft --version                    # xkraft 0.3.0
 kraft --version                     # same binary, alias name
 
 xkraft program.kraft                # compile and run
@@ -62,11 +62,12 @@ Declarations always need an explicit type; assignments do not repeat it.
 | `bool` | `TRUE`, `FALSE` |
 | `list` | `[1, 2, 3]` |
 | `dict` | `{name: "Kraft", age: 25}` |
-| model | `Counter(5)` |
+| `froz` | `[4, 5, 6]` — read-only |
+| `model` | `Counter(5)` |
 
-`NONE` is the empty value. Only `FALSE` and `NONE` are falsy — `0`, `""` and
-`[]` are truthy. `show` prints a template: everything outside `{}` is text,
-everything inside is an expression.
+`NONE` is the empty value. In conditions only `FALSE` and `NONE` are falsy;
+`0`, `""`, `[]` and `{}` produce `TYPE_ERROR`. `show` prints a template:
+everything outside `{}` is text, everything inside is an expression.
 
 ```kraft
 show(hello, {name}!)       # hello, Kraft!
@@ -194,6 +195,11 @@ finally:
 `error` is available in every branch and is read-only: `cat`, `msg`, `file`,
 `line`, `col`, plus the `text()` method. `ANY_ERROR` catches everything else
 and must come last. `finally` runs on every path, including `return`.
+
+`panic("CATEGORY"[, "message"])` raises a known category; without a message
+the category becomes `error.msg`. It is caught by `trigger CATEGORY` or
+`trigger ANY_ERROR` just like a runtime error.
+
 Compile-time errors print the category, file, line, source line and a caret:
 
 ```text
@@ -233,21 +239,34 @@ parameters or models (`NAME_ERROR`).
 - In `xkraft` the new model is always on: top-level declarations only, mutation
   zones, type blocks, models, index assignment, the full set of built-ins, and
   `try`/`trigger`/`finally`.
-- Not implemented yet: `froz`, `panic`, stdlib prelude, modules/imports, and
-  Windows setup.
-- Typed collections are planned too; the syntax is already fixed:
+- Implemented: `froz`, `panic`, prelude and Windows setup.
+- Not implemented yet: modules/imports and a package manager. The current
+  `trigger CATEGORY` syntax stays; grouped handlers under a single `trigger:`
+  are deferred to that stage.
+
+Type parameters are optional and only for specific tasks:
 
 ```kraft
-list[flint] nums = [1, 2, 3]
-dict[str|flint] cfg = {age: 25}
-froz[flint] frozen = [4, 5, 6]   # read-only list of flint
+list nums = [1, 2, 3]             # plain list, as before
+list[flint] ints = [1, 2, 3]      # flint elements only
+dict[str|flint] cfg = {age: 25}   # str key, flint value
+froz[flint] frozen = [4, 5, 6]    # read-only
 ```
 
-`froz[T]` is intended as a read-only collection built like `list[T]`. These
-forms are currently rejected by the compiler and will arrive with the prelude.
+`dict[str, flint]` is equivalent to `dict[str|flint]`: the left type is the
+key (always `str`), the right type is the value. Type parameters are optional;
+inside `[]` only `str`, `flint` and `bool` are allowed. Nesting and `NONE`
+are rejected. `froz[T]` supports reads, indexes, slices and `for in`, but
+no writes or mutating methods.
 
-Roadmap: frozen v0.1 → self-compilation → post-v0.1 core (done) → standard
-library prelude in Kraft → `froz`/`panic`/modules → Windows installer.
+The prelude needs no `import`: `path_join`, `now_ms`, `parse_args`,
+`parse_csv`, `parse_json`, `prelude_cat`. Use `--no-prelude` to disable it.
+
+On Windows, unpack `kraft-win.zip` and run `install-win.cmd` with LuaJIT
+available in `PATH`. `xkraft` and `kraft` run the same program.
+
+Roadmap: frozen v0.1 → self-compilation → post-v0.1 core → prelude, `froz`,
+`panic`, Windows package (done) → modules/imports and package manager.
 
 ## Repository layout
 
@@ -267,7 +286,7 @@ editors/vscode/   syntax highlighting and snippets
 ```
 
 ```sh
-make check                                              # 22 + 16 + 25 + 71 tests
+make check                                              # 22 + 18 + 25 + 89 tests
 make dist                                               # rebuild dist/xkraft and ./xkraft
 (cd dev && ./kraft xkraft.kraft xkraft.kraft > xkraft.lua)  # self-compilation
 ```

@@ -1,0 +1,3 @@
+TYPE_ERROR: tests/new/err_typed_none_param.kraft:1
+    1 | list[NONE] xs = []
+             ^ expected str, flint or bool, found kw 1:6 NONE

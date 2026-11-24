@@ -1,0 +1,15 @@
+if TRUE:
+    show("true")
+if FALSE:
+    show("wrong")
+else:
+    show("false-else")
+if NONE:
+    show("wrong-none")
+else:
+    show("none-else")
+
+bool b = TRUE
+while b:
+    show("loop")
+    b = FALSE

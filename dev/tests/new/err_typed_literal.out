@@ -1,0 +1,3 @@
+TYPE_ERROR: tests/new/err_typed_literal.kraft:1
+    1 | list[flint] xs = ["a"]
+                         ^ expected declaration of 'xs': type list[flint], found list

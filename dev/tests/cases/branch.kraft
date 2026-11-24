@@ -17,7 +17,7 @@ show({hidden})
 show({hidden is NONE})
 
 flint n = 0
-if n:
+if n == 0:
     show(ноль истинен)
 else:
     show(ноль ложен)

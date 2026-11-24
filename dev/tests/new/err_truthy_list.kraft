@@ -1,0 +1,3 @@
+list xs = []
+if xs:
+    show("never")

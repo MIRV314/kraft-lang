@@ -177,7 +177,7 @@ func is_template_func(str w) -> bool:
     return w == "show" OR w == "show_err" OR w == "input"
 
 func is_op1(str c) -> bool:
-    return c != "" AND "+-*/%<>=()[]\{\},:.".contains(c)
+    return c != "" AND "+-*/%<>=()[]\{\},:.|".contains(c)
 
 func is_op2(str s) -> bool:
     if s == "**" OR s == "//" OR s == "==" OR s == "!=":
@@ -306,7 +306,7 @@ func scan_line(str line, flint i, flint lineno, list tokens) -> dict:
             return {err: NONE}
         elif c == "\"" OR c == "'":
             dict r = scan_parts(line, i + 1, lineno, TRUE, c)
-            if r[err]:
+            if NOT (r[err] is NONE):
                 dict e = r[err]
                 e.add("line", lineno)
                 return {err: e}
@@ -338,7 +338,7 @@ func scan_line(str line, flint i, flint lineno, list tokens) -> dict:
                     tokens.add({type: "name", value: word, line: lineno, col: col})
                     tokens.add({type: "op", value: "(", line: lineno, col: k + 1})
                     dict r2 = scan_parts(line, k + 1, lineno, FALSE, "")
-                    if r2[err]:
+                    if NOT (r2[err] is NONE):
                         dict e2 = r2[err]
                         e2.add("line", lineno)
                         return {err: e2}
@@ -437,7 +437,7 @@ func lex(str src, str path) -> dict:
                         return {tokens: tokens, err: {msg: "inconsistent indentation", line: lineno, col: 1}}
 
             dict r = scan_line(line, len(indent), lineno, tokens)
-            if r[err]:
+            if NOT (r[err] is NONE):
                 return {tokens: tokens, err: r[err]}
             tokens.add({type: "newline", line: lineno, col: len(line) + 1})
 
@@ -503,7 +503,7 @@ func peek_value(dict st) -> str:
     return ""
 
 func fail(dict st, dict t, str ecat, str expected, str found):
-    if st[err]:
+    if NOT (st[err] is NONE):
         return:
     dict e = {cat: ecat, line: 1, col: 1, expected: expected, found: found, path: st[path]}
     if len(t) > 0:
@@ -522,7 +522,85 @@ func expect_tok(dict st, str ty, str val, str what) -> dict:
 # ---------- парсер: типы и имена ----------
 
 func is_type_keyword(str w) -> bool:
-    return w == "str" OR w == "flint" OR w == "bool" OR w == "list" OR w == "dict"
+    if w == "str" OR w == "flint" OR w == "bool":
+        return TRUE
+    if w == "list" OR w == "dict" OR w == "froz":
+        return TRUE
+    return FALSE
+
+func is_base_type(str w) -> bool:
+    return w == "str" OR w == "flint" OR w == "bool"
+
+# Имя типа без параметров: "list[flint,str]" -> "list".
+func base_type(str t) -> str:
+    flint i = 0
+    while i < len(t):
+        if t[i] == "[":
+            return t[..i]
+        i += 1
+    return t
+
+func is_typed_spec(str t) -> bool:
+    return t.contains("[")
+
+# Список аргументов без пробелов: "dict[str,flint]" -> ["str", "flint"].
+func type_args(str t) -> list:
+    list out = []
+    flint i = 0
+    while i < len(t):
+        if t[i] == "[":
+            str inner = t[i + 1..len(t) - 1]
+            flint start = 0
+            flint j = 0
+            while j <= len(inner):
+                if j == len(inner) OR inner[j] == ",":
+                    out.add(inner[start..j])
+                    start = j + 1
+                j += 1
+            break
+        i += 1
+    return out
+
+# str / flint / bool / list[T,...] / froz[T,...] / dict[K,V].
+func parse_type_spec(dict st) -> str:
+    dict t = tk(st)
+    if t[type] != "kw":
+        fail(st, t, "TYPE_ERROR", "type name", describe_tok(t))
+        return ""
+    str base = t[value]
+    if NOT is_type_keyword(base) OR base == "NONE":
+        fail(st, t, "TYPE_ERROR", "type name", describe_tok(t))
+        return ""
+    advance(st)
+    if is_base_type(base) OR NOT tok_is(tk(st), "op", "["):
+        return base
+    expect_tok(st, "op", "[", "'['")
+    if NOT (st[err] is NONE):
+        return ""
+    list targs = []
+    while TRUE:
+        dict at = tk(st)
+        if at[type] != "kw" OR NOT is_base_type(at[value]):
+            fail(st, at, "TYPE_ERROR", "str, flint or bool", describe_tok(at))
+            return ""
+        str av = at[value]
+        advance(st)
+        targs.add(av)
+        if tok_is(tk(st), "op", ",") OR (base == "dict" AND tok_is(tk(st), "op", "|")):
+            advance(st)
+        else:
+            break
+    expect_tok(st, "op", "]", "']'")
+    if NOT (st[err] is NONE):
+        return ""
+    if base == "dict":
+        if len(targs) != 2:
+            fail(st, t, "TYPE_ERROR", "dict[key type,value type]", "wrong number of type arguments")
+            return ""
+        if targs[0] != "str":
+            fail(st, t, "TYPE_ERROR", "str dict key", targs[0])
+            return ""
+    return cat([base, "[", targs.join(","), "]"])
 
 func is_numeric(str t) -> bool:
     return t == "flint" OR t == "NONE" OR t == "any"
@@ -554,19 +632,22 @@ func builtin_arg_ok(str spec, str t) -> bool:
         return TRUE
     if t == "NONE" OR t == "any":
         return TRUE
+    if t == spec:
+        return TRUE
+    str b = base_type(t)
     if spec == "strlistdict":
-        return t == "str" OR t == "list" OR t == "dict"
+        return b == "str" OR b == "list" OR b == "froz" OR b == "dict"
     if spec == "listdict":
-        return t == "list" OR t == "dict"
-    return t == spec
+        return b == "list" OR b == "froz" OR b == "dict"
+    return b == spec
 
 func builtin_arg_desc(str spec) -> str:
     if spec == "any":
         return "any value"
     if spec == "strlistdict":
-        return "str, list, dict"
+        return "str, list, froz, dict"
     if spec == "listdict":
-        return "list, dict"
+        return "list, froz, dict"
     return spec
 
 func builtin_info(str name) -> dict:
@@ -646,7 +727,8 @@ func is_builtin(str name) -> bool:
     return builtin_info(name)[ok]
 
 func method_info(str base, str name) -> dict:
-    if base == "str":
+    str b = base_type(base)
+    if b == "str":
         if name == "part":
             return {ok: TRUE, min: 0, max: 2, a1: "str", a2: "flint", rt: "str_part", ret: "list", nullable: FALSE}
         if name == "find":
@@ -669,7 +751,9 @@ func method_info(str base, str name) -> dict:
             return {ok: TRUE, min: 2, max: 2, a1: "str", a2: "str", rt: "str_replace", ret: "str", nullable: FALSE}
         if name == "count":
             return {ok: TRUE, min: 1, max: 1, a1: "str", a2: "any", rt: "str_count", ret: "flint", nullable: FALSE}
-    elif base == "list":
+    elif b == "list" OR b == "froz":
+        if b == "froz" AND (name == "add" OR name == "del" OR name == "remove" OR name == "replace" OR name == "replace_value"):
+            return {ok: FALSE}
         if name == "add":
             return {ok: TRUE, min: 1, max: 2, a1: "any", a2: "any", rt: "list_add", ret: "NONE", nullable: FALSE}
         if name == "del":
@@ -688,7 +772,7 @@ func method_info(str base, str name) -> dict:
             return {ok: TRUE, min: 1, max: 1, a1: "any", a2: "any", rt: "list_index_of", ret: "flint", nullable: TRUE}
         if name == "join":
             return {ok: TRUE, min: 1, max: 1, a1: "str", a2: "any", rt: "list_join", ret: "str", nullable: FALSE}
-    elif base == "dict":
+    elif b == "dict":
         if name == "add":
             return {ok: TRUE, min: 2, max: 2, a1: "str", a2: "any", rt: "dict_add", ret: "NONE", nullable: FALSE}
         if name == "take":
@@ -699,7 +783,7 @@ func method_info(str base, str name) -> dict:
             return {ok: TRUE, min: 1, max: 1, a1: "str", a2: "any", rt: "dict_contains", ret: "bool", nullable: FALSE}
         if name == "merge":
             return {ok: TRUE, min: 1, max: 1, a1: "dict", a2: "any", rt: "dict_merge", ret: "dict", nullable: FALSE}
-    elif base == "expect":
+    elif b == "expect":
         if name == "equals":
             return {ok: TRUE, min: 1, max: 1, a1: "any", a2: "any", rt: "expect_equals", ret: "NONE", nullable: FALSE}
         if name == "is_true":
@@ -743,6 +827,8 @@ func is_error_category(str c) -> bool:
         return TRUE
     if c == "TYPE_MISMATCH_ERROR" OR c == "VALUE_ERROR":
         return TRUE
+    if c == "PANIC_ERROR":
+        return TRUE
     return FALSE
 
 func is_scalar_type(str t) -> bool:
@@ -781,16 +867,81 @@ func add_model_field(dict st, dict m, dict tok, str nm, str fty, bool computed):
 
 func parse_type_name(dict st) -> str:
     dict t = tk(st)
-    if t[type] == "kw":
-        str v = t[value]
-        if v == "str" OR v == "flint" OR v == "bool" OR v == "list" OR v == "dict" OR v == "NONE":
-            advance(st)
-            return v
     if t[type] == "name" AND is_model_type(st, t[value]):
         advance(st)
         return t[value]
-    fail(st, t, "TYPE_ERROR", "type name", describe_tok(t))
-    return ""
+    if tok_is(t, "kw", "NONE"):
+        advance(st)
+        return "NONE"
+    return parse_type_spec(st)
+
+# Обычная строка без интерполяции: для ключей dict и сообщения panic.
+func plain_string_of(dict st, dict t) -> str:
+    list parts = t[parts]
+    list buf = []
+    for p0 in parts:
+        dict p = p0
+        if p[kind] != "text":
+            fail(st, t, "TYPE_ERROR", "plain string", "interpolated string")
+            return ""
+        buf.add(p[value])
+    return buf.join("")
+
+# Соответствует ли литерал параметризованному типу.
+func literal_ok(dict st, dict e, str spec) -> bool:
+    str base = base_type(spec)
+    list targs = type_args(spec)
+    if base == "list" OR base == "froz":
+        if e[k] != "list":
+            return FALSE
+        list its = e[items]
+        for it0 in its:
+            dict it = it0
+            bool ok = FALSE
+            for a0 in targs:
+                str want = a0
+                if it[t] == want:
+                    ok = TRUE
+            if NOT ok:
+                return FALSE
+        return TRUE
+    if base == "dict":
+        if e[k] != "dict":
+            return FALSE
+        list prs = e[pairs]
+        for pd0 in prs:
+            dict pd = pd0
+            dict pv = pd[value]
+            if pv[t] != targs[1]:
+                return FALSE
+        return TRUE
+    return FALSE
+
+# В новой модели условием может быть только bool (и NONE как ложь).
+func check_condition(dict st, dict e, dict tok):
+    str et = base_type(e[t])
+    if et != "bool" AND et != "NONE" AND et != "any":
+        fail(st, tok, "TYPE_ERROR", "bool condition (TRUE, FALSE or NONE)", e[t])
+
+# Prelude объявляет функции для проверки типов до разбора пользовательского кода.
+func add_prelude_func(dict st, str name, str lua, list ptypes, str ret):
+    list params = []
+    for pt0 in ptypes:
+        str pt = pt0
+        params.add({name: "arg", type: pt, line: 1, col: 1})
+    dict info = {params: params, ret: ret, ret_nullable: FALSE, inferring: FALSE}
+    dict funcs = st[funcs]
+    funcs.add(name, info)
+    dict fnames = st[fnames]
+    fnames.add(name, lua)
+
+func add_prelude(dict st):
+    add_prelude_func(st, "prelude_cat", "prelude_f_1", ["str"], "str")
+    add_prelude_func(st, "path_join", "prelude_f_2", ["str", "str"], "str")
+    add_prelude_func(st, "now_ms", "prelude_f_3", [], "flint")
+    add_prelude_func(st, "parse_args", "prelude_f_4", [], "dict")
+    add_prelude_func(st, "parse_csv", "prelude_f_5", ["str"], "list")
+    add_prelude_func(st, "parse_json", "prelude_f_6", ["str"], "dict")
 
 func mangle_var(dict st, str name) -> str:
     st.add("vcounter", st[vcounter] + 1)
@@ -832,7 +983,7 @@ func template_state(dict st, dict p) -> dict:
     dict lx = lex(p[src], st[path])
     list ts = lx[tokens]
     dict e0 = NONE
-    if lx[err]:
+    if NOT (lx[err] is NONE):
         dict le = lx[err]
         flint eline = p[line] + le[line] - 1
         flint ecol = le[col]
@@ -847,7 +998,7 @@ func template_state(dict st, dict p) -> dict:
     return {toks: ts, pos: 0, path: st[path], vars: st[vars], nullable: st[nullable], maybe_unset: st[maybe_unset], gvars: st[gvars], gnullable: st[gnullable], gmaybe: st[gmaybe], for_names: st[for_names], funcs: st[funcs], in_func: st[in_func], func_ret: st[func_ret], func_returns: st[func_returns], block_depth: st[block_depth], loop_depth: st[loop_depth], cond_depth: st[cond_depth], err: e0, names: st[names], fnames: st[fnames], vcounter: st[vcounter], fcounter: st[fcounter], models: st[models], model_ctx: st[model_ctx]}
 
 func parse_expr(dict st, flint min_bp) -> dict:
-    if st[err]:
+    if NOT (st[err] is NONE):
         return {}
     dict t = tk(st)
     str ty = t[type]
@@ -882,7 +1033,7 @@ func parse_expr(dict st, flint min_bp) -> dict:
             if NOT tok_is(tk(st), "op", ")"):
                 while TRUE:
                     dict snt = expect_tok(st, "name", "", "parameter name in self(...)")
-                    if st[err]:
+                    if NOT (st[err] is NONE):
                         return {}
                     snames.add(snt)
                     if tok_is(tk(st), "op", ","):
@@ -890,7 +1041,7 @@ func parse_expr(dict st, flint min_bp) -> dict:
                     else:
                         break
             expect_tok(st, "op", ")", "')'")
-            if st[err]:
+            if NOT (st[err] is NONE):
                 return {}
             e = {k: "self_init", names: snames, t: "NONE", line: t[line], col: t[col]}
         else:
@@ -908,7 +1059,7 @@ func parse_expr(dict st, flint min_bp) -> dict:
         if NOT tok_is(tk(st), "op", ")"):
             while TRUE:
                 dict cma = parse_expr(st, 0)
-                if st[err]:
+                if NOT (st[err] is NONE):
                     return {}
                 cmargs.add(cma)
                 if tok_is(tk(st), "op", ","):
@@ -916,7 +1067,7 @@ func parse_expr(dict st, flint min_bp) -> dict:
                 else:
                     break
         expect_tok(st, "op", ")", "')'")
-        if st[err]:
+        if NOT (st[err] is NONE):
             return {}
         list cmparams = ccons[params]
         if len(cmargs) != len(cmparams):
@@ -940,14 +1091,14 @@ func parse_expr(dict st, flint min_bp) -> dict:
         list bargs = []
         if bn == "map" OR bn == "filter" OR bn == "reduce":
             dict hcoll = parse_expr(st, 0)
-            if st[err]:
+            if NOT (st[err] is NONE):
                 return {}
             bargs.add(hcoll)
             expect_tok(st, "op", ",", "','")
-            if st[err]:
+            if NOT (st[err] is NONE):
                 return {}
             dict hft = expect_tok(st, "name", "", "function name")
-            if st[err]:
+            if NOT (st[err] is NONE):
                 return {}
             str hfn = hft[value]
             dict hfuncs = st[funcs]
@@ -965,10 +1116,10 @@ func parse_expr(dict st, flint min_bp) -> dict:
             bargs.add({k: "func_ref", name: hfn, lua: hnames.take(hfn), t: "func", line: hft[line], col: hft[col]})
             if bn == "reduce":
                 expect_tok(st, "op", ",", "','")
-                if st[err]:
+                if NOT (st[err] is NONE):
                     return {}
                 dict hstart = parse_expr(st, 0)
-                if st[err]:
+                if NOT (st[err] is NONE):
                     return {}
                 bargs.add(hstart)
             expect_tok(st, "op", ")", "')'")
@@ -976,7 +1127,7 @@ func parse_expr(dict st, flint min_bp) -> dict:
             if NOT tok_is(tk(st), "op", ")"):
                 while TRUE:
                     dict ba1 = parse_expr(st, 0)
-                    if st[err]:
+                    if NOT (st[err] is NONE):
                         return {}
                     bargs.add(ba1)
                     if tok_is(tk(st), "op", ","):
@@ -984,7 +1135,7 @@ func parse_expr(dict st, flint min_bp) -> dict:
                     else:
                         break
             expect_tok(st, "op", ")", "')'")
-        if st[err]:
+        if NOT (st[err] is NONE):
             return {}
         dict bi = builtin_info(bn)
         bool bvari = FALSE
@@ -1003,7 +1154,7 @@ func parse_expr(dict st, flint min_bp) -> dict:
         while bai < len(bargs):
             dict ba2 = bargs[bai]
             if bvari:
-                if len(bargs) == 1 AND (ba2[t] == "list" OR ba2[t] == "any" OR ba2[t] == "NONE"):
+                if len(bargs) == 1 AND (base_type(ba2[t]) == "list" OR ba2[t] == "any" OR ba2[t] == "NONE"):
                     bai += 1
                 else:
                     if NOT builtin_arg_ok(bi[a1], ba2[t]):
@@ -1032,7 +1183,7 @@ func parse_expr(dict st, flint min_bp) -> dict:
         expect_tok(st, "op", "(", "'('")
         dict tpl = expect_tok(st, "template", "", "template")
         expect_tok(st, "op", ")", "')'")
-        if st[err]:
+        if NOT (st[err] is NONE):
             return {}
         ptok = tpl
     elif ty == "name":
@@ -1055,7 +1206,7 @@ func parse_expr(dict st, flint min_bp) -> dict:
             if NOT tok_is(tk(st), "op", ")"):
                 while TRUE:
                     dict ca1 = parse_expr(st, 0)
-                    if st[err]:
+                    if NOT (st[err] is NONE):
                         return {}
                     cargs.add(ca1)
                     if tok_is(tk(st), "op", ","):
@@ -1063,7 +1214,7 @@ func parse_expr(dict st, flint min_bp) -> dict:
                     else:
                         break
             expect_tok(st, "op", ")", "')'")
-            if st[err]:
+            if NOT (st[err] is NONE):
                 return {}
             list params = fi[params]
             if len(cargs) != len(params):
@@ -1134,10 +1285,10 @@ func parse_expr(dict st, flint min_bp) -> dict:
     elif ty == "op" AND t[value] == "(":
         advance(st)
         e = parse_expr(st, 0)
-        if st[err]:
+        if NOT (st[err] is NONE):
             return {}
         expect_tok(st, "op", ")", "')'")
-        if st[err]:
+        if NOT (st[err] is NONE):
             return {}
     elif ty == "op" AND t[value] == "[":
         advance(st)
@@ -1145,7 +1296,7 @@ func parse_expr(dict st, flint min_bp) -> dict:
         if NOT tok_is(tk(st), "op", "]"):
             while TRUE:
                 dict it = parse_expr(st, 0)
-                if st[err]:
+                if NOT (st[err] is NONE):
                     return {}
                 items.add(it)
                 if tok_is(tk(st), "op", ","):
@@ -1153,7 +1304,7 @@ func parse_expr(dict st, flint min_bp) -> dict:
                 else:
                     break
         expect_tok(st, "op", "]", "']'")
-        if st[err]:
+        if NOT (st[err] is NONE):
             return {}
         e = {k: "list", items: items, t: "list", line: t[line], col: t[col]}
     elif ty == "op" AND t[value] == "\{":
@@ -1167,22 +1318,16 @@ func parse_expr(dict st, flint min_bp) -> dict:
                     advance(st)
                     dkey = dkt[value]
                 elif dkt[type] == "string":
+                    dkey = plain_string_of(st, dkt)
                     advance(st)
-                    list drawk = dkt[parts]
-                    list dbuf = []
-                    for dp0 in drawk:
-                        dict dpd = dp0
-                        if dpd[kind] != "text":
-                            fail(st, dkt, "TYPE_ERROR", "plain string dkey", "interpolated string")
-                            return {}
-                        dbuf.add(dpd[value])
-                    dkey = dbuf.join("")
+                    if NOT (st[err] is NONE):
+                        return {}
                 else:
                     fail(st, dkt, "TYPE_ERROR", "dict dkey as bare name or string literal", describe_tok(dkt))
                     return {}
                 expect_tok(st, "op", ":", "':'")
                 dict dval = parse_expr(st, 0)
-                if st[err]:
+                if NOT (st[err] is NONE):
                     return {}
                 pairs.add({key: dkey, value: dval})
                 if tok_is(tk(st), "op", ","):
@@ -1190,13 +1335,13 @@ func parse_expr(dict st, flint min_bp) -> dict:
                 else:
                     break
         expect_tok(st, "op", "\}", "'\}'")
-        if st[err]:
+        if NOT (st[err] is NONE):
             return {}
         e = {k: "dict", pairs: pairs, t: "dict", line: t[line], col: t[col]}
     elif ty == "op" AND t[value] == "-":
         advance(st)
         dict ua = parse_expr(st, 60)
-        if st[err]:
+        if NOT (st[err] is NONE):
             return {}
         if NOT is_numeric(ua[t]):
             fail(st, t, "TYPE_ERROR", "operand of unary '-' to be flint", ua[t])
@@ -1205,7 +1350,10 @@ func parse_expr(dict st, flint min_bp) -> dict:
     elif ty == "kw" AND t[value] == "NOT":
         advance(st)
         dict na = parse_expr(st, 25)
-        if st[err]:
+        if NOT (st[err] is NONE):
+            return {}
+        check_condition(st, na, {line: na[line], col: na[col]})
+        if NOT (st[err] is NONE):
             return {}
         e = {k: "un", op: "NOT", a: na, t: "bool", line: t[line], col: t[col]}
     else:
@@ -1223,10 +1371,10 @@ func parse_expr(dict st, flint min_bp) -> dict:
             else:
                 dict sub = template_state(st, p)
                 dict ex = parse_expr(sub, 0)
-                if sub[err]:
+                if NOT (sub[err] is NONE):
                     st.add("err", sub[err])
                     return {}
-                if st[err]:
+                if NOT (st[err] is NONE):
                     return {}
                 dict rest = tk(sub)
                 if rest[type] != "newline" AND rest[type] != "eof":
@@ -1253,7 +1401,7 @@ func parse_expr(dict st, flint min_bp) -> dict:
         if nt[type] == "op" AND nt[value] == "[":
             advance(st)
             str bt = e[t]
-            if bt == "dict":
+            if base_type(bt) == "dict":
                 dict pkt = tk(st)
                 str pkey = ""
                 if pkt[type] == "name":
@@ -1274,18 +1422,19 @@ func parse_expr(dict st, flint min_bp) -> dict:
                     fail(st, pkt, "TYPE_ERROR", "dict pkey as bare name or string literal", describe_tok(pkt))
                     return {}
                 expect_tok(st, "op", "]", "']'")
-                if st[err]:
+                if NOT (st[err] is NONE):
                     return {}
                 e = {k: "dget", base: e, key: pkey, t: "any", nullable: TRUE, line: nt[line], col: nt[col]}
             else:
-                if bt != "str" AND bt != "list" AND bt != "NONE" AND bt != "any":
-                    fail(st, nt, "TYPE_ERROR", "str, list or dict receiver of an index", bt)
+                str bbt = base_type(bt)
+                if bbt != "str" AND bbt != "list" AND bbt != "froz" AND bt != "NONE" AND bt != "any":
+                    fail(st, nt, "TYPE_ERROR", "str, list, froz or dict receiver of an index", bt)
                     return {}
                 dict from = {}
                 bool has_from = FALSE
                 if NOT tok_is(tk(st), "op", ".."):
                     from = parse_expr(st, 0)
-                    if st[err]:
+                    if NOT (st[err] is NONE):
                         return {}
                     has_from = TRUE
                 if tok_is(tk(st), "op", ".."):
@@ -1294,7 +1443,7 @@ func parse_expr(dict st, flint min_bp) -> dict:
                     bool has_to = FALSE
                     if NOT tok_is(tk(st), "op", "]"):
                         to = parse_expr(st, 0)
-                        if st[err]:
+                        if NOT (st[err] is NONE):
                             return {}
                         has_to = TRUE
                     dict step = {}
@@ -1302,11 +1451,11 @@ func parse_expr(dict st, flint min_bp) -> dict:
                     if tok_is(tk(st), "op", ".."):
                         advance(st)
                         step = parse_expr(st, 0)
-                        if st[err]:
+                        if NOT (st[err] is NONE):
                             return {}
                         has_step = TRUE
                     expect_tok(st, "op", "]", "']'")
-                    if st[err]:
+                    if NOT (st[err] is NONE):
                         return {}
                     list bounds = []
                     if has_from:
@@ -1321,9 +1470,9 @@ func parse_expr(dict st, flint min_bp) -> dict:
                             fail(st, {line: sb[line], col: sb[col]}, "TYPE_ERROR", "slice bound to be flint", sb[t])
                             return {}
                     str stype = "any"
-                    if bt == "list":
-                        stype = "list"
-                    elif bt == "str":
+                    if bbt == "list" OR bbt == "froz":
+                        stype = bt
+                    elif bbt == "str":
                         stype = "str"
                     dict node = {k: "slice", base: e, t: stype, line: nt[line], col: nt[col]}
                     if has_from:
@@ -1341,7 +1490,7 @@ func parse_expr(dict st, flint min_bp) -> dict:
                     e = node
                 else:
                     expect_tok(st, "op", "]", "']'")
-                    if st[err]:
+                    if NOT (st[err] is NONE):
                         return {}
                     if from[t] != "flint" AND from[t] != "NONE" AND from[t] != "any":
                         fail(st, {line: from[line], col: from[col]}, "TYPE_ERROR", "index to be flint", from[t])
@@ -1374,7 +1523,7 @@ func parse_expr(dict st, flint min_bp) -> dict:
                     if NOT tok_is(tk(st), "op", ")"):
                         while TRUE:
                             dict ma = parse_expr(st, 0)
-                            if st[err]:
+                            if NOT (st[err] is NONE):
                                 return {}
                             margs.add(ma)
                             if tok_is(tk(st), "op", ","):
@@ -1382,7 +1531,7 @@ func parse_expr(dict st, flint min_bp) -> dict:
                             else:
                                 break
                     expect_tok(st, "op", ")", "')'")
-                    if st[err]:
+                    if NOT (st[err] is NONE):
                         return {}
                     list mparams = mm[params]
                     if len(margs) != len(mparams):
@@ -1425,7 +1574,7 @@ func parse_expr(dict st, flint min_bp) -> dict:
                 if NOT tok_is(tk(st), "op", ")"):
                     while TRUE:
                         dict ma2 = parse_expr(st, 0)
-                        if st[err]:
+                        if NOT (st[err] is NONE):
                             return {}
                         bmargs.add(ma2)
                         if tok_is(tk(st), "op", ","):
@@ -1433,17 +1582,18 @@ func parse_expr(dict st, flint min_bp) -> dict:
                         else:
                             break
                 expect_tok(st, "op", ")", "')'")
-                if st[err]:
+                if NOT (st[err] is NONE):
                     return {}
                 if mbt == "any":
                     fail(st, mt, "TYPE_ERROR", cat(["typed receiver of method '", mname, "' (bind the value to a type first)"]), "any")
                     return {}
                 dict mi = method_info(mbt, mname)
                 if NOT mi[ok]:
-                    if mbt == "str" OR mbt == "list" OR mbt == "dict" OR mbt == "expect":
-                        fail(st, mt, "NAME_ERROR", cat([mbt, " method"]), cat(["unknown method '", mname, "'"]))
+                    str mbb = base_type(mbt)
+                    if mbb == "str" OR mbb == "list" OR mbb == "froz" OR mbb == "dict" OR mbb == "expect":
+                        fail(st, mt, "NAME_ERROR", cat([mbb, " method"]), cat(["unknown method '", mname, "'"]))
                     else:
-                        fail(st, mt, "TYPE_ERROR", cat(["str, list or dict receiver of '", mname, "'"]), mbt)
+                        fail(st, mt, "TYPE_ERROR", cat(["str, list, froz or dict receiver of '", mname, "'"]), mbt)
                     return {}
                 flint mn = mi[min]
                 flint mx = mi[max]
@@ -1470,7 +1620,7 @@ func parse_expr(dict st, flint min_bp) -> dict:
     # инфиксные операторы
     more = TRUE
     while more:
-        if st[err]:
+        if NOT (st[err] is NONE):
             return {}
         dict it2 = tk(st)
         str nty = it2[type]
@@ -1488,7 +1638,7 @@ func parse_expr(dict st, flint min_bp) -> dict:
                         if ot[type] == "op" AND is_compare(ot[value]):
                             advance(st)
                             dict rhs = parse_expr(st, 31)
-                            if st[err]:
+                            if NOT (st[err] is NONE):
                                 return {}
                             ops.add({op: ot[value], line: ot[line], col: ot[col]})
                             operands.add(rhs)
@@ -1521,7 +1671,11 @@ func parse_expr(dict st, flint min_bp) -> dict:
                 else:
                     advance(st)
                     dict orhs = parse_expr(st, obp)
-                    if st[err]:
+                    if NOT (st[err] is NONE):
+                        return {}
+                    check_condition(st, e, {line: e[line], col: e[col]})
+                    check_condition(st, orhs, {line: orhs[line], col: orhs[col]})
+                    if NOT (st[err] is NONE):
                         return {}
                     e = {k: "bin", op: op, a: e, b: orhs, t: "bool", line: it2[line], col: it2[col]}
             elif op == "+" OR op == "-" OR op == "*" OR op == "/" OR op == "//" OR op == "%":
@@ -1533,7 +1687,7 @@ func parse_expr(dict st, flint min_bp) -> dict:
                 else:
                     advance(st)
                     dict arhs = parse_expr(st, abp)
-                    if st[err]:
+                    if NOT (st[err] is NONE):
                         return {}
                     if op == "+" AND (e[t] == "str" OR arhs[t] == "str"):
                         fail(st, it2, "CONCATENATE_NOT_SUPPORT", "numeric operands of '+'", "str")
@@ -1548,7 +1702,7 @@ func parse_expr(dict st, flint min_bp) -> dict:
                 else:
                     advance(st)
                     dict prhs = parse_expr(st, 69)
-                    if st[err]:
+                    if NOT (st[err] is NONE):
                         return {}
                     if NOT (is_numeric(e[t]) AND is_numeric(prhs[t])):
                         fail(st, it2, "TYPE_ERROR", "operands of '**' to be flint", cat([e[t], " and ", prhs[t]]))
@@ -1566,7 +1720,11 @@ func parse_expr(dict st, flint min_bp) -> dict:
             else:
                 advance(st)
                 dict lrhs = parse_expr(st, lbp)
-                if st[err]:
+                if NOT (st[err] is NONE):
+                    return {}
+                check_condition(st, e, {line: e[line], col: e[col]})
+                check_condition(st, lrhs, {line: lrhs[line], col: lrhs[col]})
+                if NOT (st[err] is NONE):
                     return {}
                 e = {k: "bin", op: lop, a: e, b: lrhs, t: "bool", line: it2[line], col: it2[col]}
         elif nty == "kw" AND it2[value] == "is":
@@ -1575,13 +1733,49 @@ func parse_expr(dict st, flint min_bp) -> dict:
             else:
                 advance(st)
                 str tn = parse_type_name(st)
-                if st[err]:
+                if NOT (st[err] is NONE):
                     return {}
                 e = {k: "is", a: e, typename: tn, t: "bool", line: it2[line], col: it2[col]}
         else:
             more = FALSE
 
     return e
+
+# panic("CATEGORY"[, "message"]). Категория и сообщение — plain-строки.
+func parse_panic(dict st) -> dict:
+    dict ptok = advance(st)
+    expect_tok(st, "op", "(", "'('")
+    if NOT (st[err] is NONE):
+        return {}
+    dict ct = parse_expr(st, 0)
+    if NOT (st[err] is NONE):
+        return {}
+    if ct[k] != "str":
+        fail(st, {line: ct[line], col: ct[col]}, "TYPE_ERROR", "string panic category", ct[t])
+        return {}
+    str catv = plain_string_of(st, ct)
+    if NOT (st[err] is NONE):
+        return {}
+    if NOT is_error_category(catv):
+        fail(st, {line: ct[line], col: ct[col]}, "VALUE_ERROR", "known error category", catv)
+        return {}
+    str msg = catv
+    if tok_is(tk(st), "op", ","):
+        advance(st)
+        dict mt = parse_expr(st, 0)
+        if NOT (st[err] is NONE):
+            return {}
+        if mt[k] != "str":
+            fail(st, {line: mt[line], col: mt[col]}, "TYPE_ERROR", "string panic message", mt[t])
+            return {}
+        msg = plain_string_of(st, mt)
+        if NOT (st[err] is NONE):
+            return {}
+    expect_tok(st, "op", ")", "')'")
+    if NOT (st[err] is NONE):
+        return {}
+    return {k: "panic", cat: catv, msg: msg, line: ptok[line], col: ptok[col]}
+
 # ---------- парсер: операторы ----------
 
 func stmt_is_decl(dict st) -> bool:
@@ -1673,7 +1867,7 @@ func parse_typed_decl(dict st, str dty, dict dname_tok) -> dict:
             fail(st, dname_tok, "REDECLARE_ERROR", "local name", cat(["model member '", dname, "'"]))
             return {}
     expect_tok(st, "op", "=", "'='")
-    if st[err]:
+    if NOT (st[err] is NONE):
         return {}
     dict dexpr = {}
     if is_model_type(st, dty) AND tok_is(tk(st), "kw", "init"):
@@ -1696,7 +1890,7 @@ func parse_typed_decl(dict st, str dty, dict dname_tok) -> dict:
         if NOT tok_is(tk(st), "op", ")"):
             while TRUE:
                 dict iat = expect_tok(st, "name", "", "init argument name")
-                if st[err]:
+                if NOT (st[err] is NONE):
                     return {}
                 str ian = iat[value]
                 if iseen.contains(ian):
@@ -1705,7 +1899,7 @@ func parse_typed_decl(dict st, str dty, dict dname_tok) -> dict:
                 iseen.add(ian, TRUE)
                 expect_tok(st, "op", ":", "':'")
                 dict iav = parse_expr(st, 0)
-                if st[err]:
+                if NOT (st[err] is NONE):
                     return {}
                 bool iok = FALSE
                 str iwant = "any"
@@ -1743,7 +1937,7 @@ func parse_typed_decl(dict st, str dty, dict dname_tok) -> dict:
                 else:
                     break
         expect_tok(st, "op", ")", "')'")
-        if st[err]:
+        if NOT (st[err] is NONE):
             return {}
         flint mi2 = 0
         while mi2 < len(iparams):
@@ -1756,11 +1950,15 @@ func parse_typed_decl(dict st, str dty, dict dname_tok) -> dict:
         dexpr = {k: "model_init", mname: dty, args: iargs, t: dty, line: inittok[line], col: inittok[col]}
     else:
         dexpr = parse_expr(st, 0)
-        if st[err]:
+        if NOT (st[err] is NONE):
             return {}
         if NOT assignable(dexpr[t], dty):
-            fail(st, {line: dexpr[line], col: dexpr[col]}, "TYPE_ERROR", cat(["declaration of '", dname, "': type ", dty]), dexpr[t])
-            return {}
+            bool litok = FALSE
+            if is_typed_spec(dty) AND dexpr[t] != "NONE":
+                litok = literal_ok(st, dexpr, dty)
+            if NOT litok:
+                fail(st, {line: dexpr[line], col: dexpr[col]}, "TYPE_ERROR", cat(["declaration of '", dname, "': type ", dty]), dexpr[t])
+                return {}
     str dlua = mangle_var(st, dname)
     dvars.add(dname, dty)
     # Любое объявление вне функции — глобальная («верх файла»).
@@ -1802,11 +2000,11 @@ func restore_parser(dict st, dict sv):
 func parse_model_field_decl(dict st, dict m) -> dict:
     str mfty = advance(st)[value]
     dict mfnt = expect_tok(st, "name", "", "field name")
-    if st[err]:
+    if NOT (st[err] is NONE):
         return {}
     str mfname = mfnt[value]
     check_field_name(st, mfnt, mfname)
-    if st[err]:
+    if NOT (st[err] is NONE):
         return {}
     dict mf = m[model_fields]
     dict ft = m[field_types]
@@ -1819,7 +2017,7 @@ func parse_model_field_decl(dict st, dict m) -> dict:
     st.add("model_ctx", NONE)
     dict mfexpr = parse_expr(st, 0)
     st.add("model_ctx", sv)
-    if st[err]:
+    if NOT (st[err] is NONE):
         return {}
     if NOT assignable(mfexpr[t], mfty):
         fail(st, {line: mfexpr[line], col: mfexpr[col]}, "TYPE_ERROR", cat(["field '", mfname, "': type ", mfty]), mfexpr[t])
@@ -1839,13 +2037,13 @@ func parse_model_params(dict st, dict m, bool is_cons) -> list:
         while TRUE:
             dict pty_tok = tk(st)
             str pty = parse_type_name(st)
-            if st[err]:
+            if NOT (st[err] is NONE):
                 return out
             if pty == "NONE":
                 fail(st, pty_tok, "TYPE_ERROR", "parameter type", "NONE")
                 return out
             dict pnt = expect_tok(st, "name", "", "parameter name")
-            if st[err]:
+            if NOT (st[err] is NONE):
                 return out
             str pnm = pnt[value]
             if is_reserved(pnm) OR is_const_name(pnm):
@@ -1876,10 +2074,10 @@ func parse_construct_header(dict st, dict m) -> dict:
     advance(st)
     expect_tok(st, "op", "(", "'('")
     list params = parse_model_params(st, m, TRUE)
-    if st[err]:
+    if NOT (st[err] is NONE):
         return {}
     expect_tok(st, "op", ":", "':'")
-    if st[err]:
+    if NOT (st[err] is NONE):
         return {}
     m.add("ctor", {params: params, body: []})
     list mparams = m[params]
@@ -1898,7 +2096,7 @@ func parse_construct_header(dict st, dict m) -> dict:
 func parse_method_header(dict st, dict m) -> dict:
     advance(st)
     dict mtok = expect_tok(st, "name", "", "method name")
-    if st[err]:
+    if NOT (st[err] is NONE):
         return {}
     str mn = mtok[value]
     if is_reserved(mn) OR is_const_name(mn):
@@ -1912,7 +2110,7 @@ func parse_method_header(dict st, dict m) -> dict:
         return {}
     expect_tok(st, "op", "(", "'('")
     list params = parse_model_params(st, m, FALSE)
-    if st[err]:
+    if NOT (st[err] is NONE):
         return {}
     str mret = "NONE"
     bool mhas = FALSE
@@ -1920,14 +2118,14 @@ func parse_method_header(dict st, dict m) -> dict:
         advance(st)
         dict mrt = tk(st)
         mret = parse_type_name(st)
-        if st[err]:
+        if NOT (st[err] is NONE):
             return {}
         if mret == "NONE":
             fail(st, mrt, "SYNTAX_ERROR", "return type (omit '->' for NONE)", "NONE")
             return {}
         mhas = TRUE
     expect_tok(st, "op", ":", "':'")
-    if st[err]:
+    if NOT (st[err] is NONE):
         return {}
     dict info = {params: params, ret: NONE, ret_nullable: FALSE, inferring: TRUE}
     if mhas:
@@ -2038,7 +2236,7 @@ func parse_block(dict st, bool top) -> list:
     bool going = TRUE
     while going:
         dict t = tk(st)
-        if st[err]:
+        if NOT (st[err] is NONE):
             return stmts
         bool skip = FALSE
         if top:
@@ -2068,13 +2266,13 @@ func parse_block(dict st, bool top) -> list:
                 advance(st)
                 expect_tok(st, "newline", "", "end of line after ':'")
                 expect_tok(st, "indent", "", "indented block")
-                if st[err]:
+                if NOT (st[err] is NONE):
                     return stmts
                 flint dcount = 0
                 bool dbgoing = TRUE
                 while dbgoing:
                     dict dbt = tk(st)
-                    if st[err]:
+                    if NOT (st[err] is NONE):
                         return stmts
                     if dbt[type] == "dedent" OR dbt[type] == "eof":
                         dbgoing = FALSE
@@ -2082,10 +2280,10 @@ func parse_block(dict st, bool top) -> list:
                         advance(st)
                     else:
                         dict dbnt = expect_tok(st, "name", "", "variable name")
-                        if st[err]:
+                        if NOT (st[err] is NONE):
                             return stmts
                         dict dbdecl = parse_typed_decl(st, dbty, dbnt)
-                        if st[err]:
+                        if NOT (st[err] is NONE):
                             return stmts
                         stmts.add(dbdecl)
                         dcount += 1
@@ -2102,17 +2300,28 @@ func parse_block(dict st, bool top) -> list:
                     return stmts
                 decl_block = TRUE
             elif stmt_is_decl(st):
-                str dty = advance(st)[value]
+                str dty = parse_type_name(st)
+                if NOT (st[err] is NONE):
+                    return stmts
                 dict dname_tok = expect_tok(st, "name", "", "variable name")
-                if st[err]:
+                if NOT (st[err] is NONE):
                     return stmts
                 node = parse_typed_decl(st, dty, dname_tok)
-                if st[err]:
+                if NOT (st[err] is NONE):
+                    return stmts
+            elif t[type] == "kw" AND t[value] == "panic":
+                node = parse_panic(st)
+                if NOT (st[err] is NONE):
                     return stmts
             elif t[type] == "kw" AND t[value] == "if":
                 dict iftok = advance(st)
                 list branches = []
                 dict cond = parse_expr(st, 0)
+                if NOT (st[err] is NONE):
+                    return stmts
+                check_condition(st, cond, {line: cond[line], col: cond[col]})
+                if NOT (st[err] is NONE):
+                    return stmts
                 expect_tok(st, "op", ":", "':'")
                 st.add("cond_depth", st[cond_depth] + 1)
                 list ibody = parse_block(st, FALSE)
@@ -2121,6 +2330,11 @@ func parse_block(dict st, bool top) -> list:
                 while tok_is(tk(st), "kw", "elif"):
                     advance(st)
                     dict c2 = parse_expr(st, 0)
+                    if NOT (st[err] is NONE):
+                        return stmts
+                    check_condition(st, c2, {line: c2[line], col: c2[col]})
+                    if NOT (st[err] is NONE):
+                        return stmts
                     expect_tok(st, "op", ":", "':'")
                     st.add("cond_depth", st[cond_depth] + 1)
                     list b2 = parse_block(st, FALSE)
@@ -2138,6 +2352,11 @@ func parse_block(dict st, bool top) -> list:
             elif t[type] == "kw" AND t[value] == "while":
                 dict wtok = advance(st)
                 dict wcond = parse_expr(st, 0)
+                if NOT (st[err] is NONE):
+                    return stmts
+                check_condition(st, wcond, {line: wcond[line], col: wcond[col]})
+                if NOT (st[err] is NONE):
+                    return stmts
                 expect_tok(st, "op", ":", "':'")
                 st.add("loop_depth", st[loop_depth] + 1)
                 list wbody = parse_block(st, FALSE)
@@ -2151,7 +2370,7 @@ func parse_block(dict st, bool top) -> list:
                 enter_try_zone(st, zbase)
                 list try_body = parse_block(st, FALSE)
                 leave_try_zone(st, zbase)
-                if st[err]:
+                if NOT (st[err] is NONE):
                     return stmts
                 list ztriggers = []
                 dict zany = NONE
@@ -2159,7 +2378,7 @@ func parse_block(dict st, bool top) -> list:
                 while tok_is(tk(st), "kw", "trigger"):
                     dict trtok = advance(st)
                     dict zcattok = expect_tok(st, "name", "", "error category")
-                    if st[err]:
+                    if NOT (st[err] is NONE):
                         return stmts
                     if NOT is_error_category(zcattok[value]):
                         fail(st, zcattok, "NAME_ERROR", "known error category", zcattok[value])
@@ -2178,7 +2397,7 @@ func parse_block(dict st, bool top) -> list:
                     list hbody = parse_block(st, FALSE)
                     remove_handler_error(st, hsv)
                     leave_try_zone(st, zbase)
-                    if st[err]:
+                    if NOT (st[err] is NONE):
                         return stmts
                     dict hnode = {cat: zcattok[value], body: hbody, line: trtok[line], col: trtok[col]}
                     if zcattok[value] == "ANY_ERROR":
@@ -2196,7 +2415,7 @@ func parse_block(dict st, bool top) -> list:
                 enter_try_zone(st, zbase)
                 list zfinally = parse_block(st, FALSE)
                 leave_try_zone(st, zbase)
-                if st[err]:
+                if NOT (st[err] is NONE):
                     return stmts
                 node = {k: "try", body: try_body, triggers: ztriggers, any: zany, "finally": zfinally, block_stmt: TRUE, line: trytok[line], col: trytok[col]}
                 block_stmt = TRUE
@@ -2212,13 +2431,18 @@ func parse_block(dict st, bool top) -> list:
                 if tok_is(tk(st), "kw", "in"):
                     advance(st)
                     dict coll = parse_expr(st, 0)
-                    if st[err]:
+                    if NOT (st[err] is NONE):
                         return stmts
                     list ftypes = []
-                    str cty = coll[t]
+                    str cty = base_type(coll[t])
                     if cty == "list":
                         if len(nts) != 1:
                             fail(st, nts[1], "TYPE_ERROR", "one loop variable for a list", "two variables")
+                            return stmts
+                        ftypes.add("any")
+                    elif cty == "froz":
+                        if len(nts) != 1:
+                            fail(st, nts[1], "TYPE_ERROR", "one loop variable for a froz", "two variables")
                             return stmts
                         ftypes.add("any")
                     elif cty == "dict":
@@ -2292,7 +2516,7 @@ func parse_block(dict st, bool top) -> list:
                     rfor.add(rname, TRUE)
                     str rlua = mangle_var(st, rname)
                     dict first = parse_expr(st, 0)
-                    if st[err]:
+                    if NOT (st[err] is NONE):
                         return stmts
                     if NOT is_numeric(first[t]):
                         fail(st, first, "TYPE_ERROR", "loop bound to be flint", first[t])
@@ -2301,7 +2525,7 @@ func parse_block(dict st, bool top) -> list:
                     if tok_is(tk(st), "op", ".."):
                         advance(st)
                         dict last = parse_expr(st, 0)
-                        if st[err]:
+                        if NOT (st[err] is NONE):
                             return stmts
                         if NOT is_numeric(last[t]):
                             fail(st, last, "TYPE_ERROR", "loop bound to be flint", last[t])
@@ -2312,7 +2536,7 @@ func parse_block(dict st, bool top) -> list:
                         if tok_is(tk(st), "op", ".."):
                             advance(st)
                             dict step = parse_expr(st, 0)
-                            if st[err]:
+                            if NOT (st[err] is NONE):
                                 return stmts
                             if NOT is_numeric(step[t]):
                                 fail(st, step, "TYPE_ERROR", "loop step to be flint", step[t])
@@ -2355,7 +2579,7 @@ func parse_block(dict st, bool top) -> list:
                     while TRUE:
                         dict pty_tok = tk(st)
                         str pty = parse_type_name(st)
-                        if st[err]:
+                        if NOT (st[err] is NONE):
                             return stmts
                         if pty == "NONE":
                             fail(st, pty_tok, "TYPE_ERROR", "parameter type", "NONE")
@@ -2388,7 +2612,7 @@ func parse_block(dict st, bool top) -> list:
                     advance(st)
                     dict rtok = tk(st)
                     fret = parse_type_name(st)
-                    if st[err]:
+                    if NOT (st[err] is NONE):
                         return stmts
                     if fret == "NONE":
                         fail(st, rtok, "SYNTAX_ERROR", "return type (omit '->' for NONE)", "NONE")
@@ -2480,7 +2704,7 @@ func parse_block(dict st, bool top) -> list:
                     fail(st, mtok, "SCOPE_ERROR", "model at top level", "nested model")
                     return stmts
                 dict mnt = expect_tok(st, "name", "", "model name")
-                if st[err]:
+                if NOT (st[err] is NONE):
                     return stmts
                 str mname = mnt[value]
                 if is_reserved(mname) OR is_const_name(mname):
@@ -2497,7 +2721,7 @@ func parse_block(dict st, bool top) -> list:
                 expect_tok(st, "op", ":", "':'")
                 expect_tok(st, "newline", "", "end of line after ':'")
                 expect_tok(st, "indent", "", "indented block")
-                if st[err]:
+                if NOT (st[err] is NONE):
                     return stmts
                 list mfield_nodes = []
                 bool mseen_construct = FALSE
@@ -2505,7 +2729,7 @@ func parse_block(dict st, bool top) -> list:
                 bool mgoing = TRUE
                 while mgoing:
                     dict mbt = tk(st)
-                    if st[err]:
+                    if NOT (st[err] is NONE):
                         return stmts
                     if mbt[type] == "dedent" OR mbt[type] == "eof":
                         mgoing = FALSE
@@ -2519,7 +2743,7 @@ func parse_block(dict st, bool top) -> list:
                             fail(st, mbt, "SYNTAX_ERROR", "construct before methods", "construct after method")
                             return stmts
                         dict mch = parse_construct_header(st, mschema)
-                        if st[err]:
+                        if NOT (st[err] is NONE):
                             return stmts
                         list mparams = mch[params]
                         dict mctx = mch[mctx]
@@ -2543,7 +2767,7 @@ func parse_block(dict st, bool top) -> list:
                             pv.add(p[name], p[type])
                         list mbody = parse_block(st, FALSE)
                         restore_parser(st, sv)
-                        if st[err]:
+                        if NOT (st[err] is NONE):
                             return stmts
                         if NOT mctx[self_seen]:
                             fail(st, mtok, "SYNTAX_ERROR", "self(...) as the first statement of construct", "missing self(...)")
@@ -2556,7 +2780,7 @@ func parse_block(dict st, bool top) -> list:
                             fail(st, mbt, "SYNTAX_ERROR", "construct before methods", "method before construct")
                             return stmts
                         dict mmh = parse_method_header(st, mschema)
-                        if st[err]:
+                        if NOT (st[err] is NONE):
                             return stmts
                         dict mctx2 = {model_name: mname, schema: mschema, in_construct: FALSE, level: 0, self_seen: TRUE, self_done: TRUE, param_set: {}}
                         dict sv2 = snapshot_parser(st)
@@ -2581,10 +2805,10 @@ func parse_block(dict st, bool top) -> list:
                         list mbody2 = parse_block(st, FALSE)
                         list mrets = st[func_returns]
                         restore_parser(st, sv2)
-                        if st[err]:
+                        if NOT (st[err] is NONE):
                             return stmts
                         finish_method(st, mmh[info], mbody2, mmh[ret], mmh[has_ret], mrets)
-                        if st[err]:
+                        if NOT (st[err] is NONE):
                             return stmts
                         mseen_method = TRUE
                     elif mbt[type] == "kw" AND is_scalar_type(mbt[value]):
@@ -2592,7 +2816,7 @@ func parse_block(dict st, bool top) -> list:
                             fail(st, mbt, "SYNTAX_ERROR", "model fields before construct", "field after construct")
                             return stmts
                         dict mfnode = parse_model_field_decl(st, mschema)
-                        if st[err]:
+                        if NOT (st[err] is NONE):
                             return stmts
                         mfield_nodes.add(mfnode)
                         dict mfnx = tk(st)
@@ -2622,7 +2846,7 @@ func parse_block(dict st, bool top) -> list:
                     advance(st)
                 else:
                     rexpr = parse_expr(st, 0)
-                    if st[err]:
+                    if NOT (st[err] is NONE):
                         return stmts
                     has_expr = TRUE
                 list cur_rets = st[func_returns]
@@ -2645,11 +2869,11 @@ func parse_block(dict st, bool top) -> list:
                 dict atok = advance(st)
                 str aname = atok[value]
                 dict aw = resolve_write(st, atok, aname)
-                if st[err]:
+                if NOT (st[err] is NONE):
                     return stmts
                 advance(st)
                 dict aexpr = parse_expr(st, 0)
-                if st[err]:
+                if NOT (st[err] is NONE):
                     return stmts
                 str avt = aw[type]
                 if NOT assignable(aexpr[t], avt):
@@ -2667,13 +2891,13 @@ func parse_block(dict st, bool top) -> list:
                 dict ctok = advance(st)
                 str cname = ctok[value]
                 dict cw = resolve_write(st, ctok, cname)
-                if st[err]:
+                if NOT (st[err] is NONE):
                     return stmts
                 dict cop_tok = advance(st)
                 str cop_full = cop_tok[value]
                 str cop = cop_full[..len(cop_full) - 1]
                 dict cexpr = parse_expr(st, 0)
-                if st[err]:
+                if NOT (st[err] is NONE):
                     return stmts
                 str cvt = cw[type]
                 if cvt != "flint" OR NOT is_numeric(cexpr[t]):
@@ -2699,7 +2923,7 @@ func parse_block(dict st, bool top) -> list:
                 node = {k: "compound", name: cname, lua: cw[lua], op: cop, expr: cexpr, nullable: cmaybe, line: ctok[line], col: ctok[col]}
             else:
                 dict e = parse_expr(st, 0)
-                if st[err]:
+                if NOT (st[err] is NONE):
                     return stmts
                 if e[k] == "self_init":
                     dict sctx = st[model_ctx]
@@ -2740,7 +2964,7 @@ func parse_block(dict st, bool top) -> list:
                         slast = sfound
                         dict sp = sps[sfound]
                         add_model_field(st, sctx[schema], sat, san, sp[type], FALSE)
-                        if st[err]:
+                        if NOT (st[err] is NONE):
                             return stmts
                         sfields.add({name: san, type: sp[type], lua: sp[lua], line: sat[line], col: sat[col]})
                         si += 1
@@ -2779,7 +3003,7 @@ func parse_block(dict st, bool top) -> list:
                                 return stmts
                         dict eq = advance(st)
                         dict fexpr = parse_expr(st, 0)
-                        if st[err]:
+                        if NOT (st[err] is NONE):
                             return stmts
                         str fexpty = fexpr[t]
                         if ftypes6.contains(fld):
@@ -2792,7 +3016,7 @@ func parse_block(dict st, bool top) -> list:
                                 fail(st, {line: fexpr[line], col: fexpr[col]}, "TYPE_ERROR", "scalar instance field (str, flint, bool)", fexpty)
                                 return stmts
                             add_model_field(st, fschema, e, fld, fexpty, TRUE)
-                            if st[err]:
+                            if NOT (st[err] is NONE):
                                 return stmts
                             node = {k: "field_create", base: fb, mname: e[mname], name: fld, expr: fexpr, type: fexpty, line: eq[line], col: eq[col]}
                     else:
@@ -2806,7 +3030,7 @@ func parse_block(dict st, bool top) -> list:
                                 return stmts
                         dict eq2 = advance(st)
                         dict eval2 = parse_expr(st, 0)
-                        if st[err]:
+                        if NOT (st[err] is NONE):
                             return stmts
                         node = {k: "setindex", target: e, expr: eval2, line: eq2[line], col: eq2[col]}
                 else:
@@ -2855,39 +3079,54 @@ func wrap_dict(str x, str ty, bool nullable) -> str:
         return cat(["krt.as_dict(", x, ")"])
     return x
 
+func wrap_froz(str x, str ty, bool nullable) -> str:
+    if ty == "NONE" OR ty == "any" OR nullable:
+        return cat(["krt.as_froz(", x, ")"])
+    return x
+
 func wrap_bool(str x, str ty, bool nullable) -> str:
     if ty == "NONE" OR ty == "any" OR nullable:
         return cat(["krt.as_bool(", x, ")"])
     return x
 
+# Приводит значение к базовому типу назначения; параметры типа проверяет рантайм.
+func as_base(str x, str target) -> str:
+    str b = base_type(target)
+    if b == "flint":
+        return cat(["krt.as_flint(", x, ")"])
+    if b == "str":
+        return cat(["krt.as_str(", x, ")"])
+    if b == "bool":
+        return cat(["krt.as_bool(", x, ")"])
+    if b == "list":
+        return cat(["krt.as_list(", x, ")"])
+    if b == "froz":
+        return cat(["krt.as_froz(", x, ")"])
+    if b == "dict":
+        return cat(["krt.as_dict(", x, ")"])
+    return cat(["krt.as_model(", x, lua_str(target), ")"])
+
+# Присоединяет спецификацию параметризованного типа к коллекции.
+func typed_wrap(str x, str target) -> str:
+    if NOT is_typed_spec(target):
+        return x
+    str b = base_type(target)
+    if b == "list":
+        return cat(["krt.typed_list(", lua_str(target), ", ", x, ")"])
+    if b == "froz":
+        return cat(["krt.typed_froz(", lua_str(target), ", ", x, ")"])
+    if b == "dict":
+        return cat(["krt.typed_dict(", lua_str(target), ", ", x, ")"])
+    return x
+
 func checked(str x, str ety, bool nullable, str target) -> str:
     if ety == "any" AND NOT nullable:
-        if target == "flint":
-            return cat(["krt.as_flint(", x, ")"])
-        if target == "str":
-            return cat(["krt.as_str(", x, ")"])
-        if target == "bool":
-            return cat(["krt.as_bool(", x, ")"])
-        if target == "list":
-            return cat(["krt.as_list(", x, ")"])
-        if target == "dict":
-            return cat(["krt.as_dict(", x, ")"])
-        return cat(["krt.as_model(", x, lua_str(target), ")"])
+        return as_base(x, target)
     return x
 
 func wrap_to(str x, str ety, bool nullable, str target) -> str:
     if ety == "NONE" OR ety == "any" OR nullable:
-        if target == "flint":
-            return cat(["krt.as_flint(", x, ")"])
-        if target == "str":
-            return cat(["krt.as_str(", x, ")"])
-        if target == "bool":
-            return cat(["krt.as_bool(", x, ")"])
-        if target == "list":
-            return cat(["krt.as_list(", x, ")"])
-        if target == "dict":
-            return cat(["krt.as_dict(", x, ")"])
-        return cat(["krt.as_model(", x, lua_str(target), ")"])
+        return as_base(x, target)
     return x
 
 func ordered_x(str x, dict e, dict other) -> str:
@@ -2911,6 +3150,8 @@ func emit_line(dict st, str s):
 
 func stmt_pos(dict s) -> dict:
     str sk = s[k]
+    if sk == "panic":
+        return {line: s[line], col: s[col]}
     if sk == "decl" OR sk == "assign" OR sk == "compound" OR sk == "exprstmt" OR sk == "return":
         if s.contains("expr"):
             dict e = s[expr]
@@ -3048,7 +3289,7 @@ func emit_expr(dict st, dict e) -> str:
             list mvals = []
             for mn0 in ba:
                 dict mnode = mn0
-                if mnode[t] == "list":
+                if base_type(mnode[t]) == "list":
                     mvals.add(wrap_list(emit_expr(st, mnode), mnode[t], e_nullable(mnode)))
                 else:
                     mvals.add(wrap_flint(emit_expr(st, mnode), mnode[t], e_nullable(mnode)))
@@ -3062,7 +3303,7 @@ func emit_expr(dict st, dict e) -> str:
         if bn == "values":
             return cat(["krt.coll_values(", wrap_dict(emit_expr(st, a0), a0[t], e_nullable(a0)), ")"])
         if bn == "upk":
-            if a0[t] == "dict":
+            if base_type(a0[t]) == "dict":
                 return cat(["krt.coll_upk(", wrap_dict(emit_expr(st, a0), a0[t], e_nullable(a0)), ")"])
             return cat(["krt.coll_upk(", wrap_list(emit_expr(st, a0), a0[t], e_nullable(a0)), ")"])
         if bn == "sort":
@@ -3070,7 +3311,7 @@ func emit_expr(dict st, dict e) -> str:
         if bn == "reverse":
             return cat(["krt.coll_reverse(", wrap_list(emit_expr(st, a0), a0[t], e_nullable(a0)), ")"])
         if bn == "clear":
-            if a0[t] == "dict":
+            if base_type(a0[t]) == "dict":
                 return cat(["krt.coll_clear(", wrap_dict(emit_expr(st, a0), a0[t], e_nullable(a0)), ")"])
             return cat(["krt.coll_clear(", wrap_list(emit_expr(st, a0), a0[t], e_nullable(a0)), ")"])
         if bn == "map" OR bn == "filter":
@@ -3084,7 +3325,7 @@ func emit_expr(dict st, dict e) -> str:
             return cat(["krt.system(", wrap_str(emit_expr(st, a0), a0[t], e_nullable(a0)), ")"])
         if bn == "assert":
             dict amsg = ba[1]
-            return cat(["krt.do_assert(", emit_expr(st, a0), ", ", wrap_str(emit_expr(st, amsg), amsg[t], e_nullable(amsg)), ")"])
+            return cat(["krt.do_assert_strict(", emit_expr(st, a0), ", ", wrap_str(emit_expr(st, amsg), amsg[t], e_nullable(amsg)), ")"])
         if bn == "expect":
             return cat(["krt.expect_new(", emit_expr(st, a0), ")"])
         if bn == "read_file":
@@ -3136,8 +3377,11 @@ func emit_expr(dict st, dict e) -> str:
         dict ib = e[base]
         dict ii = e[index]
         str ix = wrap_flint(emit_expr(st, ii), ii[t], e_nullable(ii))
-        if ib[t] == "list":
+        str ibb = base_type(ib[t])
+        if ibb == "list":
             return cat(["krt.list_index(", wrap_list(emit_expr(st, ib), ib[t], e_nullable(ib)), ", ", ix, ")"])
+        if ibb == "froz":
+            return cat(["krt.list_index(", wrap_froz(emit_expr(st, ib), ib[t], e_nullable(ib)), ", ", ix, ")"])
         if ib[t] == "any":
             return cat(["krt.index(", emit_expr(st, ib), ", ", ix, ")"])
         return cat(["krt.str_index(", wrap_str(emit_expr(st, ib), ib[t], e_nullable(ib)), ", ", ix, ")"])
@@ -3147,9 +3391,13 @@ func emit_expr(dict st, dict e) -> str:
         str sx = emit_expr(st, sb)
         str sfn = "str_slice"
         str recv = wrap_str(sx, sb[t], e_nullable(sb))
-        if sb[t] == "list":
+        str sbb = base_type(sb[t])
+        if sbb == "list":
             sfn = "list_slice"
             recv = wrap_list(sx, sb[t], e_nullable(sb))
+        elif sbb == "froz":
+            sfn = "list_slice"
+            recv = wrap_froz(sx, sb[t], e_nullable(sb))
         elif sb[t] == "any":
             sfn = "slice"
             recv = sx
@@ -3173,9 +3421,12 @@ func emit_expr(dict st, dict e) -> str:
         dict mb = e[base]
         str mx = emit_expr(st, mb)
         str mrecv = wrap_str(mx, mb[t], e_nullable(mb))
-        if mb[t] == "list":
+        str mbb = base_type(mb[t])
+        if mbb == "list":
             mrecv = wrap_list(mx, mb[t], e_nullable(mb))
-        elif mb[t] == "dict":
+        elif mbb == "froz":
+            mrecv = wrap_froz(mx, mb[t], e_nullable(mb))
+        elif mbb == "dict":
             mrecv = wrap_dict(mx, mb[t], e_nullable(mb))
         list mar = e[args]
         list mp = [mrecv]
@@ -3200,7 +3451,7 @@ func emit_expr(dict st, dict e) -> str:
         dict ua = e[a]
         if e[op] == "-":
             return cat(["(-(", wrap_flint(emit_expr(st, ua), ua[t], e_nullable(ua)), "))"])
-        return cat(["(not krt.truthy(", emit_expr(st, ua), "))"])
+        return cat(["(not krt.truthy_strict(", emit_expr(st, ua), "))"])
 
     if k == "is":
         dict ia = e[a]
@@ -3212,9 +3463,12 @@ func emit_expr(dict st, dict e) -> str:
             return cat(["(type(", ix2, ") == \"string\")"])
         if ty2 == "bool":
             return cat(["(type(", ix2, ") == \"boolean\")"])
-        if ty2 == "list":
+        str tyb = base_type(ty2)
+        if tyb == "list":
             return cat(["krt.is_list(", ix2, ")"])
-        if ty2 == "dict":
+        if tyb == "froz":
+            return cat(["krt.is_froz(", ix2, ")"])
+        if tyb == "dict":
             return cat(["krt.is_dict(", ix2, ")"])
         if is_model_type(st, ty2):
             return cat(["krt.is_model(", ix2, ", ", lua_str(ty2), ")"])
@@ -3256,9 +3510,9 @@ func emit_expr(dict st, dict e) -> str:
                 return cat(["krt.", cfn, "(", xa, ", ", xb, ")"])
             return cat(["(", ordered_x(xa, bna, bnb), " ", op, " ", ordered_x(xb, bnb, bna), ")"])
         if op == "AND":
-            return cat(["(krt.truthy(", xa, ") and krt.truthy(", xb, "))"])
+            return cat(["(krt.truthy_strict(", xa, ") and krt.truthy_strict(", xb, "))"])
         if op == "OR":
-            return cat(["(krt.truthy(", xa, ") or krt.truthy(", xb, "))"])
+            return cat(["(krt.truthy_strict(", xa, ") or krt.truthy_strict(", xb, "))"])
         return "krt.NONE"
 
     if k == "chain":
@@ -3483,10 +3737,14 @@ func emit_stmts(dict st, list stmts) -> str:
         elif sk == "decl":
             dict de = s[expr]
             str dx = checked(emit_expr(st, de), de[t], e_nullable(de), s[type])
+            if de[t] != "NONE":
+                dx = typed_wrap(dx, s[type])
             emit_line(st, cat([s[lua], " = ", dx]))
         elif sk == "assign":
             dict ae = s[expr]
             str ax = checked(emit_expr(st, ae), ae[t], e_nullable(ae), s[type])
+            if ae[t] != "NONE":
+                ax = typed_wrap(ax, s[type])
             emit_line(st, cat([s[lua], " = ", ax]))
         elif sk == "compound":
             dict ce = s[expr]
@@ -3522,10 +3780,18 @@ func emit_stmts(dict st, list stmts) -> str:
                 dict tii = tg[index]
                 str tbx = emit_expr(st, tib)
                 str tix = wrap_flint(emit_expr(st, tii), tii[t], e_nullable(tii))
-                if tib[t] == "list":
-                    emit_line(st, cat(["krt.list_replace(", wrap_list(tbx, tib[t], e_nullable(tib)), ", ", tix, ", ", tvx, ")"]))
+                str tibb = base_type(tib[t])
+                if tibb == "list" OR tibb == "froz":
+                    str tbx2 = ""
+                    if tibb == "froz":
+                        tbx2 = wrap_froz(tbx, tib[t], e_nullable(tib))
+                    else:
+                        tbx2 = wrap_list(tbx, tib[t], e_nullable(tib))
+                    emit_line(st, cat(["krt.list_replace(", tbx2, ", ", tix, ", ", tvx, ")"]))
                 else:
                     emit_line(st, cat(["krt.index_set(", tbx, ", ", tix, ", ", tvx, ")"]))
+        elif sk == "panic":
+            emit_line(st, cat(["krt.fail(", lua_str(s[cat]), ", ", lua_str(s[msg]), ")"]))
         elif sk == "exprstmt":
             emit_line(st, emit_expr(st, s[expr]))
         elif sk == "if":
@@ -3537,7 +3803,7 @@ func emit_stmts(dict st, list stmts) -> str:
                 str kw = "elseif"
                 if bi == 0:
                     kw = "if"
-                emit_line(st, cat([kw, " krt.truthy(", emit_expr(st, bc), ") then"]))
+                emit_line(st, cat([kw, " krt.truthy_strict(", emit_expr(st, bc), ") then"]))
                 st.add("indent", st[indent] + 1)
                 emit_stmts(st, br[body])
                 st.add("indent", st[indent] - 1)
@@ -3617,7 +3883,7 @@ func emit_stmts(dict st, list stmts) -> str:
             str cont = cat(["__continue_", lid])
             str brk = cat(["__break_", lid])
             dict wc2 = s[cond]
-            emit_line(st, cat(["while krt.truthy(", emit_expr(st, wc2), ") do"]))
+            emit_line(st, cat(["while krt.truthy_strict(", emit_expr(st, wc2), ") do"]))
             st.add("indent", st[indent] + 1)
             list ls = st[loop_stack]
             ls.add({cont: cont, brk: brk})
@@ -3690,12 +3956,18 @@ func emit_stmts(dict st, list stmts) -> str:
             emit_line(st, "do")
             st.add("indent", st[indent] + 1)
             bool list_mode = FALSE
-            if ice[t] == "list":
+            str iceb = base_type(ice[t])
+            if iceb == "list" OR iceb == "froz":
                 list_mode = TRUE
             elif ice[t] == "any" AND len(inames) == 1:
                 list_mode = TRUE
             if list_mode:
-                emit_line(st, cat(["local ", icoll, " = ", wrap_list(emit_expr(st, ice), ice[t], e_nullable(ice))]))
+                str iwrap = ""
+                if iceb == "froz":
+                    iwrap = wrap_froz(emit_expr(st, ice), ice[t], e_nullable(ice))
+                else:
+                    iwrap = wrap_list(emit_expr(st, ice), ice[t], e_nullable(ice))
+                emit_line(st, cat(["local ", icoll, " = ", iwrap]))
                 emit_line(st, cat(["local ", iidx, " = 0"]))
                 emit_line(st, cat(["while ", iidx, " < #", icoll, " do"]))
                 st.add("indent", st[indent] + 1)
@@ -3793,6 +4065,10 @@ func generate(dict ast, dict opts) -> str:
 
     emit_line(st, "krt.run(function()")
     st.add("indent", 1)
+    if len(opts[prelude]) > 0:
+        list prelude_lines = split_lines(opts[prelude])
+        for pl in prelude_lines:
+            emit_line(st, pl)
     emit_hoist(st, collect_scope(ast[stmts]))
     emit_stmts(st, ast[stmts])
     st.add("indent", 0)
@@ -3847,7 +4123,7 @@ func write_compiled(str path, str out_lua):
 
 list argv = args()
 if len(argv) >= 2 AND argv[1] == "--version":
-    show(xkraft 0.2.0)
+    show(xkraft 0.3.0)
     exit(0)
 if len(argv) < 2:
     show_err(usage: xkraft [--tokens] [-c] file.kraft)
@@ -3857,6 +4133,7 @@ func parse_cli(list av, flint start) -> dict:
     str m = "run"
     flint i = start
     bool scan = TRUE
+    bool use_prelude = TRUE
     while scan AND i < len(av):
         str cur = av[i]
         flint step = 0
@@ -3869,14 +4146,18 @@ func parse_cli(list av, flint start) -> dict:
         elif cur == "--emit-lua":
             m = "run"
             step = 1
+        elif cur == "--no-prelude":
+            use_prelude = FALSE
+            step = 1
         else:
             scan = FALSE
         i += step
-    return {mode: m, index: i}
+    return {mode: m, index: i, prelude: use_prelude}
 
 dict cli = parse_cli(argv, 1)
 str mode = cli.take("mode")
 flint ai = cli.take("index")
+bool use_prelude = cli.take("prelude")
 if ai >= len(argv):
     show_err(usage: xkraft [--tokens] [-c] file.kraft)
     exit(1)
@@ -3884,7 +4165,7 @@ if ai >= len(argv):
 str path = argv[ai]
 str src = read_file(path)
 dict lx = lex(src, path)
-if lx[err]:
+if NOT (lx[err] is NONE):
     dict e = lx[err]
     e.add("path", path)
     report_error(e, src)
@@ -3894,8 +4175,10 @@ if mode == "tokens":
     exit(0)
 
 dict st = {toks: lx[tokens], pos: 0, path: path, vars: {}, nullable: {}, maybe_unset: {}, gvars: {}, gnullable: {}, gmaybe: {}, for_names: {}, funcs: {}, in_func: FALSE, func_ret: "NONE", func_returns: [], block_depth: 0, loop_depth: 0, cond_depth: 0, err: NONE, names: {}, fnames: {}, vcounter: 0, fcounter: 0, models: {Error: error_schema()}, model_ctx: NONE, try_id: 0, try_depth: 0, try_loop_base: 0}
+if use_prelude:
+    add_prelude(st)
 list prog = parse_block(st, TRUE)
-if st[err]:
+if NOT (st[err] is NONE):
     dict e2 = st[err]
     report_error(e2, src)
     exit(1)
@@ -3907,8 +4190,14 @@ if NOT file_exists(krt_path):
     show_err(cannot read runtime: {krt_path})
     exit(1)
 str krt_src = read_file(krt_path)
+str prelude_path = cat([dirname(self_path), "/src/prelude.lua"])
+dict prelude_data = {src: ""}
+if use_prelude:
+    if file_exists(prelude_path):
+        prelude_data.add("src", read_file(prelude_path))
+str prelude_src = prelude_data.take("src")
 
-str out_lua = generate(ast, {path: path, krt: krt_src, source: src, stdin: extract_stdin(src), models: st[models]})
+str out_lua = generate(ast, {path: path, krt: krt_src, prelude: prelude_src, source: src, stdin: extract_stdin(src), models: st[models]})
 if mode == "compile":
     write_compiled(path, out_lua)
     exit(0)

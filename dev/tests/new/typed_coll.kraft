@@ -1,0 +1,24 @@
+list[flint] nums = [1, 2]
+nums.add(3)
+show({nums})
+show({nums[1]})
+
+dict[str, flint] scores = {"a": 1}
+scores.add("b", 2)
+show({scores["b"]})
+
+list[flint, str] mixed = [1, "x"]
+mixed.add("y")
+show({mixed})
+
+froz[flint] frozen = [4, 5]
+show({frozen})
+show({frozen[0]})
+show({frozen[0..1]})
+
+try:
+    nums.add("bad")
+trigger TYPE_MISMATCH_ERROR:
+    show("bad add caught")
+finally:
+    show("after")

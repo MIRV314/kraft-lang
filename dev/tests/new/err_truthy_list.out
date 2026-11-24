@@ -1,0 +1,3 @@
+TYPE_ERROR: tests/new/err_truthy_list.kraft:2
+    2 | if xs:
+           ^ expected bool condition (TRUE, FALSE or NONE), found list

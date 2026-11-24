@@ -31,7 +31,7 @@ case "$1" in
     fi
     exit "$code"
     ;;
-  --tokens|--emit-lua)
+  --tokens|--emit-lua|--no-prelude)
     exec luajit "$cache" "$@"
     ;;
 esac

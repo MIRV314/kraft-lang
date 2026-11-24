@@ -1,0 +1,6 @@
+try:
+    panic("RUNTIME_ERROR", "boom")
+trigger RUNTIME_ERROR:
+    show("caught: {error.msg}")
+finally:
+    show("done")
