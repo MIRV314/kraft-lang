@@ -99,7 +99,18 @@ while i < 3:
     i += 1
 ```
 
-The `-> type` clause is optional and checked when present; recursion needs it.
+`-> type` is a return-type annotation — an optional specification of the result
+type. When omitted, the compiler infers it from `return`; recursion requires the
+annotation.
+
+```kraft
+func inc(flint n):              # no annotation — type is inferred
+    return n + 1
+
+func dec(flint n) -> flint:     # annotation given explicitly
+    return n - 1
+```
+
 Functions are visible only after their declaration. Conditions use `AND`, `OR`,
 `NOT`, and comparisons chain like in Python (`0 <= x <= 10`).
 
