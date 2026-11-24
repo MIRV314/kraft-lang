@@ -740,10 +740,20 @@ func builtin_info(str name) -> dict:
         return {ok: TRUE, n: 2, ret: "bool", a1: "str", a2: "str"}
     if name == "file_exists":
         return {ok: TRUE, n: 1, ret: "bool", a1: "str"}
+    if name == "copy_file":
+        return {ok: TRUE, n: 2, ret: "bool", a1: "str", a2: "str"}
+    if name == "remove_file":
+        return {ok: TRUE, n: 1, ret: "bool", a1: "str"}
+    if name == "json_parse":
+        return {ok: TRUE, n: 1, ret: "dict", a1: "str"}
+    if name == "json_stringify":
+        return {ok: TRUE, n: 1, ret: "str", a1: "any"}
     if name == "args":
         return {ok: TRUE, n: 0, ret: "list", a1: "any"}
     if name == "exit":
         return {ok: TRUE, n: 1, ret: "NONE", a1: "flint"}
+    if name == "raise":
+        return {ok: TRUE, n: 2, ret: "NONE", a1: "str", a2: "str"}
     if name == "time_ms":
         return {ok: TRUE, n: 0, ret: "flint", a1: "any"}
     if name == "is_tty":
@@ -830,6 +840,15 @@ func is_reserved(str name) -> bool:
         return TRUE
     # Методы типов — тоже занятые имена: `add`, `take`, `contains`, `text` и т.д.
     return method_info("str", name)[ok] OR method_info("list", name)[ok] OR method_info("dict", name)[ok] OR method_info("expect", name)[ok] OR name == "text"
+
+# Имена функций могут совпадать с методами типов: вызов `x.add(...)` всё равно
+# разрешается как метод, а отдельная функция `add(...)` — как обычная.
+func is_func_name_free(str name) -> bool:
+    if is_builtin(name) OR name == "show" OR name == "show_err" OR name == "input" OR name == "Error":
+        return FALSE
+    if name == "error" OR name == "ANY_ERROR":
+        return FALSE
+    return TRUE
 
 # Встроенная модель Error: схема известна компилятору, объект создаёт рантайм.
 func error_schema() -> dict:
@@ -1341,7 +1360,7 @@ func parse_expr(dict st, flint min_bp) -> dict:
                 dict pp = params[cai]
                 str pt = pp[type]
                 ptypes.add(pt)
-                if ca2[t] != "NONE" AND ca2[t] != "any" AND ca2[t] != pt:
+                if ca2[t] != "NONE" AND ca2[t] != "any" AND pt != "any" AND ca2[t] != pt:
                     fail(st, {line: ca2[line], col: ca2[col]}, "TYPE_ERROR", cat(["argument ", str(cai + 1), " of '", fn, "' to be ", pt]), ca2[t])
                     return {}
                 cai += 1
@@ -2442,7 +2461,7 @@ func parse_func_head(dict st) -> dict:
         return {}
     str fn_name = fntok[value]
     str fn_key = decl_key(st, fn_name)
-    if is_reserved(fn_name):
+    if NOT is_func_name_free(fn_name):
         fail(st, fntok, "NAME_ERROR", "free name", cat(["reserved '", fn_name, "'"]))
         return {}
     if is_const_name(fn_name):
@@ -2670,8 +2689,19 @@ func module_full_path(dict st, str kind, str mpath, dict tok) -> str:
         return cat([st[self_dir], "/stdlib/", short, ".kraft"])
     return cat([dirname(st[path]), "/", mpath])
 
+func module_short_name(str mpath) -> str:
+    flint i = len(mpath)
+    while i > 0:
+        if mpath[i - 1] == "/":
+            return mpath[i..len(mpath)]
+        i -= 1
+    return mpath
+
 func bind_export(dict st, dict md, dict nt):
     str name = nt[value]
+    str target = name
+    if nt.contains("bind_as"):
+        target = nt[bind_as]
     dict ex = md[exports]
     if NOT ex.contains(name):
         fail(st, nt, "NAME_ERROR", "exported name", cat(["module does not export '", name, "'"]))
@@ -2681,8 +2711,8 @@ func bind_export(dict st, dict md, dict nt):
         return:
     dict tvars = st[vars]
     dict tfuncs = st[funcs]
-    if tvars.contains(name) OR tfuncs.contains(name):
-        fail(st, nt, "REDECLARE_ERROR", "unique import name", cat(["name '", name, "' is already declared"]))
+    if tvars.contains(target) OR tfuncs.contains(target):
+        fail(st, nt, "REDECLARE_ERROR", "unique import name", cat(["name '", target, "' is already declared"]))
         return:
     str kind = ex.take(name)
     if kind == "func":
@@ -2691,34 +2721,34 @@ func bind_export(dict st, dict md, dict nt):
         if NOT pf.contains(name):
             fail(st, nt, "NAME_ERROR", "exported function", name)
             return:
-        tfuncs.add(name, pf.take(name))
+        tfuncs.add(target, pf.take(name))
         dict tfn = st[fnames]
-        tfn.add(name, pfn.take(name))
+        tfn.add(target, pfn.take(name))
     else:
         dict pv = md[vars]
         dict pn = md[names]
         if NOT pv.contains(name):
             fail(st, nt, "NAME_ERROR", "exported variable", name)
             return:
-        tvars.add(name, pv.take(name))
+        tvars.add(target, pv.take(name))
         dict tn = st[names]
-        tn.add(name, pn.take(name))
+        tn.add(target, pn.take(name))
         dict pnl = md[nullable]
         if pnl.contains(name):
             dict tnl = st[nullable]
-            tnl.add(name, TRUE)
+            tnl.add(target, TRUE)
         dict pgv = md[gvars]
         if pgv.contains(name):
             dict tgv = st[gvars]
-            tgv.add(name, pgv.take(name))
+            tgv.add(target, pgv.take(name))
         dict pgn = md[gnullable]
         if pgn.contains(name):
             dict tgn = st[gnullable]
-            tgn.add(name, TRUE)
+            tgn.add(target, TRUE)
         dict pgm = md[gmaybe]
         if pgm.contains(name):
             dict tgm = st[gmaybe]
-            tgm.add(name, TRUE)
+            tgm.add(target, TRUE)
     bound.add(name, TRUE)
     st.add("vcounter", md[vcounter])
     st.add("fcounter", md[fcounter])
@@ -3607,10 +3637,13 @@ func process_source(dict st, str path, str src, bool fresh, bool capture_body) -
             usemd.add("bound", {})
             dict rtk = req[tok]
             list reqnames = req[names]
+            str bind_prefix = ""
+            if req[kind] == "import_lib":
+                bind_prefix = cat([module_short_name(req[path]), "."])
             if len(reqnames) == 0:
                 dict ex0 = usemd[exports]
                 for nm0, nvv0 in ex0:
-                    dict nt0 = {value: nm0, line: rtk[line], col: rtk[col]}
+                    dict nt0 = {value: nm0, bind_as: cat([bind_prefix, nm0]), line: rtk[line], col: rtk[col]}
                     bind_export(st, usemd, nt0)
                     if NOT (st[err] is NONE):
                         break
@@ -3642,9 +3675,11 @@ func process_source(dict st, str path, str src, bool fresh, bool capture_body) -
         st.add("pos", 0)
         list body = parse_block(st, TRUE)
         result = {path: path, body: body, exports: st[exports], vars: st[vars], nullable: st[nullable], funcs: st[funcs], names: st[names], fnames: st[fnames], gvars: st[gvars], gnullable: st[gnullable], gmaybe: st[gmaybe], vcounter: st[vcounter], fcounter: st[fcounter], bound: {}}
+    dict finalerr = st[err]
     if fresh:
         for rk3, rv3 in old:
             st.add(rk3, rv3)
+        st.add("err", finalerr)
     return result
 
 # ---------- кодогенератор ----------
@@ -3925,8 +3960,20 @@ func emit_expr(dict st, dict e) -> str:
             return cat(["krt.write_file(", wrap_str(emit_expr(st, a0), a0[t], e_nullable(a0)), ", ", wrap_str(emit_expr(st, a1), a1[t], e_nullable(a1)), ")"])
         if bn == "file_exists":
             return cat(["krt.file_exists(", wrap_str(emit_expr(st, a0), a0[t], e_nullable(a0)), ")"])
+        if bn == "copy_file":
+            dict cfa1 = ba[1]
+            return cat(["krt.copy_file(", wrap_str(emit_expr(st, a0), a0[t], e_nullable(a0)), ", ", wrap_str(emit_expr(st, cfa1), cfa1[t], e_nullable(cfa1)), ")"])
+        if bn == "remove_file":
+            return cat(["krt.remove_file(", wrap_str(emit_expr(st, a0), a0[t], e_nullable(a0)), ")"])
+        if bn == "json_parse":
+            return cat(["krt.json_parse(", wrap_str(emit_expr(st, a0), a0[t], e_nullable(a0)), ")"])
+        if bn == "json_stringify":
+            return cat(["krt.json_stringify(", emit_expr(st, a0), ")"])
         if bn == "exit":
             return cat(["krt.exit(", wrap_flint(emit_expr(st, a0), a0[t], e_nullable(a0)), ")"])
+        if bn == "raise":
+            dict fmsg = ba[1]
+            return cat(["krt.fail(", wrap_str(emit_expr(st, a0), a0[t], e_nullable(a0)), ", ", wrap_str(emit_expr(st, fmsg), fmsg[t], e_nullable(fmsg)), ")"])
         return "krt.NONE"
 
     if k == "call_user":

@@ -9,6 +9,7 @@ fail=0
 total=0
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
+cp -R stdlib "$tmp/"
 
 check() {
   name=$1

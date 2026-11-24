@@ -1,0 +1,7 @@
+# std/cli — системные команды и аварийный выход.
+
+export func run(str command) -> flint:
+    return system(command)
+
+export func die(str message):
+    raise("VALUE_ERROR", message)

@@ -1,0 +1,10 @@
+import_lib "std/cli"
+
+show({cli.run("true")})
+
+try:
+    cli.die("стоп")
+trigger VALUE_ERROR:
+    show("caught: {error.msg}")
+finally:
+    show("done")

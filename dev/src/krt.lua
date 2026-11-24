@@ -1417,6 +1417,174 @@ function krt.file_exists(path)
   return true
 end
 
+function krt.copy_file(src, dst)
+  local f = io.open(src, "rb")
+  if not f then return false end
+  local data = f:read("*a")
+  f:close()
+  local o = io.open(dst, "wb")
+  if not o then return false end
+  o:write(data)
+  o:close()
+  return true
+end
+
+function krt.remove_file(path)
+  local ok = os.remove(path)
+  return ok == true
+end
+
+-- ---------- JSON ----------
+
+local function json_fail(msg)
+  krt.fail("VALUE_ERROR", "json: " .. msg)
+end
+
+local function json_ws(s, i)
+  while i <= #s and s:sub(i, i):match("%s") do i = i + 1 end
+  return i
+end
+
+local function json_utf8(cp)
+  if cp < 0x80 then return string.char(cp) end
+  if cp < 0x800 then
+    return string.char(0xC0 + math.floor(cp / 0x40), 0x80 + cp % 0x40)
+  end
+  return string.char(0xE0 + math.floor(cp / 0x1000),
+    0x80 + math.floor(cp / 0x40) % 0x40, 0x80 + cp % 0x40)
+end
+
+local JSON_ESCAPES = { ['"'] = '"', ['\\'] = '\\', ['/'] = '/',
+  b = '\b', f = '\f', n = '\n', r = '\r', t = '\t' }
+
+local function json_read_string(s, i)
+  if s:sub(i, i) ~= '"' then json_fail("string expected") end
+  i = i + 1
+  local out = {}
+  while i <= #s do
+    local c = s:sub(i, i)
+    if c == '"' then return table.concat(out), i + 1 end
+    if c == '\\' then
+      i = i + 1
+      local e = s:sub(i, i)
+      if e == 'u' then
+        local hex = s:sub(i + 1, i + 4)
+        if #hex ~= 4 or not hex:match("^%x%x%x%x$") then json_fail("bad unicode escape") end
+        out[#out + 1] = json_utf8(tonumber(hex, 16))
+        i = i + 4
+      elseif JSON_ESCAPES[e] then
+        out[#out + 1] = JSON_ESCAPES[e]
+      else
+        json_fail("bad escape")
+      end
+    else
+      out[#out + 1] = c
+    end
+    i = i + 1
+  end
+  json_fail("unterminated string")
+end
+
+local function json_read_value(s, i, depth)
+  if depth > 64 then json_fail("too deep") end
+  i = json_ws(s, i)
+  local c = s:sub(i, i)
+  if c == '{' then
+    local d = krt.dict()
+    i = json_ws(s, i + 1)
+    if s:sub(i, i) == '}' then return d, i + 1 end
+    while true do
+      local key
+      key, i = json_read_string(s, i)
+      i = json_ws(s, i)
+      if s:sub(i, i) ~= ':' then json_fail("':' expected") end
+      local v
+      v, i = json_read_value(s, i + 1, depth + 1)
+      krt.dict_add(d, key, v)
+      i = json_ws(s, i)
+      local sep = s:sub(i, i)
+      if sep == ',' then
+        i = json_ws(s, i + 1)
+      elseif sep == '}' then
+        return d, i + 1
+      else
+        json_fail("',' or '}' expected")
+      end
+    end
+  elseif c == '[' then
+    local xs = {}
+    i = json_ws(s, i + 1)
+    if s:sub(i, i) == ']' then return krt.list(xs), i + 1 end
+    while true do
+      local v
+      v, i = json_read_value(s, i, depth + 1)
+      xs[#xs + 1] = v
+      i = json_ws(s, i)
+      local sep = s:sub(i, i)
+      if sep == ',' then
+        i = json_ws(s, i + 1)
+      elseif sep == ']' then
+        return krt.list(xs), i + 1
+      else
+        json_fail("',' or ']' expected")
+      end
+    end
+  elseif c == '"' then
+    return json_read_string(s, i)
+  elseif s:sub(i, i + 3) == 'true' then
+    return true, i + 4
+  elseif s:sub(i, i + 4) == 'false' then
+    return false, i + 5
+  elseif s:sub(i, i + 3) == 'null' then
+    return krt.NONE, i + 4
+  end
+  local num = s:match("^-?%d+%.?%d*[eE]?[-+]?%d*", i)
+  if num then return tonumber(num), i + #num end
+  json_fail("value expected")
+end
+
+function krt.json_parse(s)
+  local v, i = json_read_value(s, 1, 0)
+  i = json_ws(s, i)
+  if i <= #s then json_fail("trailing data") end
+  if not krt.is_dict(v) then krt.fail("TYPE_ERROR", "json: top-level object expected") end
+  return v
+end
+
+local function json_quote(s)
+  s = s:gsub("\\", "\\\\"):gsub('"', '\\"'):gsub("\n", "\\n")
+    :gsub("\r", "\\r"):gsub("\t", "\\t")
+  return '"' .. s .. '"'
+end
+
+local function json_write(v, depth)
+  if depth > 64 then json_fail("too deep") end
+  if v == nil or v == krt.NONE then return "null" end
+  local t = type(v)
+  if t == "string" then return json_quote(v) end
+  if t == "number" then return krt.num_to_str(v) end
+  if t == "boolean" then return v and "true" or "false" end
+  if krt.is_list(v) or krt.is_froz(v) then
+    local out = {}
+    for i = 1, #v do out[i] = json_write(v[i], depth + 1) end
+    return "[" .. table.concat(out, ", ") .. "]"
+  end
+  if krt.is_dict(v) then
+    local out = {}
+    for i = 1, #v.keys do
+      local k = v.keys[i]
+      local ks = type(k) == "string" and json_quote(k) or krt.num_to_str(k)
+      out[i] = ks .. ": " .. json_write(v.vals[i], depth + 1)
+    end
+    return "{" .. table.concat(out, ", ") .. "}"
+  end
+  krt.fail("TYPE_ERROR", "json: cannot stringify " .. krt.typeof(v))
+end
+
+function krt.json_stringify(v)
+  return json_write(v, 0)
+end
+
 -- ---------- процесс ----------
 
 function krt.args()

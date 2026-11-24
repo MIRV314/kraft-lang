@@ -1,0 +1,11 @@
+import_lib "std/fs"
+
+str path = "/tmp/opencode/xkraft_std_fs_test.txt"
+str copy = "/tmp/opencode/xkraft_std_fs_copy.txt"
+show({fs.write(path, "данные")})
+show({fs.exists(path)})
+show({fs.read(path)})
+show({fs.copy(path, copy)})
+show({fs.read(copy)})
+show({fs.remove(copy)})
+show({fs.remove(path)})
