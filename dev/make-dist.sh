@@ -88,7 +88,31 @@ anchor = 'local __KRAFT_SOURCE = "xkraft.kraft"\n'
 if lua.count(anchor) != 1:
     sys.exit("make-dist: не нашёл объявление __KRAFT_SOURCE")
 
-runtime = "local __KRAFT_DIST_RUNTIME = [==[\n" + krt + "]==]\n\n"
+# Стандартная библиотека встраивается в рантайм каждой собранной программы:
+# установленному xkraft не нужна папка stdlib на диске.
+stdlib_entries = []
+for name in ("fs", "json", "cli"):
+    src = (root / "stdlib" / (name + ".kraft")).read_text()
+    if "]==]" in src or "]===[" in src:
+        sys.exit("make-dist: встроенный stdlib содержит разделитель long-bracket")
+    # Внешний рантайм уже лежит в [==[ ... ]==], поэтому внутри берём уровень выше.
+    stdlib_entries.append('  ["./stdlib/%s.kraft"] = [===[\n%s]===]' % (name, src))
+stdlib_lua = "krt.EMBEDDED_SOURCES = {\n" + ",\n".join(stdlib_entries) + "\n}\n"
+if krt.count("\nreturn krt\n") != 1:
+    sys.exit("make-dist: не нашёл 'return krt' в runtime")
+krt_with_stdlib = krt.replace("\nreturn krt\n", "\n" + stdlib_lua + "return krt\n")
+
+# Сам компилятор тоже должен видеть встроенный stdlib при разборе import_lib.
+rt_open = "local krt = (function()\n"
+rt_close = "\nend)()\n"
+start = lua.find(rt_open)
+end = lua.find(rt_close, start) if start >= 0 else -1
+if start < 0 or end < 0:
+    sys.exit("make-dist: не нашёл встроенный runtime компилятора")
+insert_at = end + len(rt_close)
+lua = lua[:insert_at] + stdlib_lua + lua[insert_at:]
+
+runtime = "local __KRAFT_DIST_RUNTIME = [==[\n" + krt_with_stdlib + "]==]\n\n"
 prelude_lua = "local __KRAFT_DIST_PRELUDE = [==[\n" + prelude + "]==]\n\n"
 lua = lua.replace(anchor, anchor + runtime + prelude_lua, 1)
 lua = lua.replace(runtime_guard, "true", 1)
@@ -157,6 +181,27 @@ marker = "__KRAFT_EMBEDDED_COMPILER__\n"
 if dist_text.count(marker) != 1:
     sys.exit("make-dist: не нашёл метку встроенного компилятора")
 (repo / "dist" / "xkraft-win.lua").write_text(dist_text.split(marker, 1)[1])
+
+# kpm: автономный Lua-скрипт с оболочкой, как у xkraft.
+kpm_src = (root / "kpm.lua").read_text()
+kpm_header = '''#!/bin/sh
+# kpm 1.0.0 — менеджер пакетов Kraft.
+set -eu
+dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/kpm.XXXXXX") || exit 1
+trap 'rm -rf "$tmp"' EXIT HUP INT TERM
+awk 'seen { print } /^__KPM_EMBEDDED__$/ { seen = 1 }' "$0" > "$tmp/kpm.lua"
+XKRAFT="$dir/xkraft" exec luajit "$tmp/kpm.lua" "$@"
+'''
+kpm_out = repo / "dist" / "kpm"
+kpm_out.write_text(kpm_header + "__KPM_EMBEDDED__\n" + kpm_src)
+kpm_out.chmod(0o755)
+(repo / "dist" / "kpm-win.lua").write_text(kpm_src)
+
+kpm_cmd = '''@echo off
+set "XKRAFT=%~dp0xkraft.cmd"
+luajit "%~dp0kpm-win.lua" %*
+'''
 
 xkraft_cmd = r'''@echo off
 setlocal EnableExtensions
@@ -272,6 +317,10 @@ copy /Y "%SRC%xkraft.cmd" "%DEST%\xkraft.cmd" >nul
 if errorlevel 1 goto fail
 copy /Y "%SRC%kraft.cmd" "%DEST%\kraft.cmd" >nul
 if errorlevel 1 goto fail
+copy /Y "%SRC%kpm-win.lua" "%DEST%\kpm-win.lua" >nul
+if errorlevel 1 goto fail
+copy /Y "%SRC%kpm.cmd" "%DEST%\kpm.cmd" >nul
+if errorlevel 1 goto fail
 for %%F in (README.md LICENSE NOTICE VERSION CHANGELOG.md) do (
   if exist "%SRC%%%F" copy /Y "%SRC%%%F" "%DEST%\%%F" >nul
 )
@@ -294,12 +343,14 @@ exit /b 1
 for name, text in [
     ("xkraft.cmd", xkraft_cmd),
     ("kraft.cmd", kraft_cmd),
+    ("kpm.cmd", kpm_cmd),
     ("install-win.cmd", install_win_cmd),
 ]:
     (repo / "dist" / name).write_bytes(text.replace("\n", "\r\n").encode("utf-8"))
 
-win_assets = ["xkraft-win.lua", "xkraft.cmd", "kraft.cmd", "install-win.cmd",
-              "README.md", "LICENSE", "NOTICE", "VERSION", "CHANGELOG.md"]
+win_assets = ["xkraft-win.lua", "xkraft.cmd", "kraft.cmd", "kpm-win.lua",
+              "kpm.cmd", "install-win.cmd", "README.md", "LICENSE", "NOTICE",
+              "VERSION", "CHANGELOG.md"]
 # Фиксируем время и атрибуты: иначе mtime перезаписанных файлов попадает в zip,
 # и повторная сборка меняет SHA256SUMS (CI ловит это через git diff --exit-code).
 with zipfile.ZipFile(repo / "dist" / "kraft-win.zip", "w", zipfile.ZIP_DEFLATED) as z:
@@ -314,7 +365,7 @@ with zipfile.ZipFile(repo / "dist" / "kraft-win.zip", "w", zipfile.ZIP_DEFLATED)
         z.writestr(info, path.read_bytes())
 
 checksum_lines = []
-for name in ["xkraft", "kraft-win.zip"]:
+for name in ["xkraft", "kpm", "kraft-win.zip"]:
     digest = hashlib.sha256((repo / "dist" / name).read_bytes()).hexdigest()
     checksum_lines.append(f"{digest}  {name}\n")
 (repo / "dist" / "SHA256SUMS").write_text("".join(checksum_lines))
@@ -323,6 +374,8 @@ PY
 # Корневой xkraft — тот же бинарник, что и в dist/.
 cp "$repo/dist/xkraft" "$repo/xkraft"
 chmod 755 "$repo/xkraft"
+cp "$repo/dist/kpm" "$repo/kpm"
+chmod 755 "$repo/kpm"
 
 # Windows-вариант — тот же встроенный Lua; проверяем, что он запускается.
 luajit "$repo/dist/xkraft-win.lua" --version >/dev/null

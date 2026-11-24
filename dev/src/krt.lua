@@ -1391,6 +1391,8 @@ end
 -- ---------- файлы ----------
 
 function krt.read_file(path)
+  local embedded = krt.EMBEDDED_SOURCES[path]
+  if embedded then return embedded end
   local f = io.open(path, "rb")
   if not f then
     krt.fail("FILE_ERROR", "cannot read file: " .. path)
@@ -1411,11 +1413,16 @@ function krt.write_file(path, text)
 end
 
 function krt.file_exists(path)
+  if krt.EMBEDDED_SOURCES[path] then return true end
   local f = io.open(path, "rb")
   if not f then return false end
   f:close()
   return true
 end
+
+-- Встроенные в дистрибутив исходники (stdlib). Обычная сборка оставляет
+-- таблицу пустой и читает файлы с диска.
+krt.EMBEDDED_SOURCES = krt.EMBEDDED_SOURCES or {}
 
 function krt.copy_file(src, dst)
   local f = io.open(src, "rb")
