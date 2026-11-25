@@ -1,0 +1,3 @@
+TYPE_MISMATCH_ERROR: tests/stress/age_bad.kraft:1
+    1 | flint age = input()
+                    ^ expected flint, found str: abc

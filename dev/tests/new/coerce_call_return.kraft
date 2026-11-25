@@ -1,0 +1,10 @@
+func twice(flint x) -> flint:
+    return x * 2
+
+func nine() -> flint:
+    str s = "9"
+    return s
+
+str s = "21"
+show({twice(s)})
+show({nine()})

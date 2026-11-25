@@ -1,0 +1,4 @@
+func answer() -> flint:
+    return "x"
+
+show({answer()})

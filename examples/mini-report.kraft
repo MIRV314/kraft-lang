@@ -1,0 +1,21 @@
+# Мини-отчёт: CSV из std/fos; ячейки-строки идут в flint без flint(...).
+
+from_lib "std/fos" import csv_parse
+
+list rows = csv_parse("товар,количество,цена\nяблоко,3,10\nгруша,2,15\n")
+list head = rows[0]
+show({head[0]} | {head[1]} | {head[2]})
+
+flint total = 0
+flint i = 1
+while i < len(rows):
+    list row = rows[i]
+    str name = row[0]
+    flint qty = row[1]
+    flint price = row[2]
+    flint cost = qty * price
+    total += cost
+    show({name}: {qty} x {price} = {cost})
+    i += 1
+
+show(итого: {total})

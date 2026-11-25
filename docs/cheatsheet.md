@@ -1,7 +1,7 @@
 # Kraft cheatsheet
 
-One-page reference for v0.4.0. Full docs: [README](../README.md),
-[builtins](builtins.md), [decisions](decisions.md).
+One-page reference for v0.5.0. Full docs: [README](../README.md),
+[builtins](builtins.md), [decisions](decisions.md), [philosophy](philosophy.md).
 Russian README: [README.ru](../README.md). English guide:
 [README.en](../README.en.md).
 
@@ -12,7 +12,12 @@ xkraft file.kraft [args...]         # installed compiler, new model
 kraft file.kraft [args...]          # same binary under an alias name
 xkraft -c file.kraft                # executable file.lua next to the source
 xkraft --tokens file.kraft
-xkraft --version                    # xkraft 0.4.0 (both names print this)
+xkraft --version                    # xkraft 0.5.0 (both names print this)
+kpm init venv                       # kraft.json, kraft.lock, venv/, packages/
+kpm add ./local-package             # local path or URL
+kpm list
+kpm run                             # run main.kraft through the venv
+kpm del local-package
 ```
 
 From a clone use `./xkraft` in the repo root. The frozen v0.1 reference
@@ -41,6 +46,12 @@ Indentation defines blocks: 4 spaces or tabs, never mixed. One statement per
 line, no semicolons. `NONE` may be false, `FALSE` is false, `TRUE` is true.
 Uppercase names (`MAX`, `MAX_SIZE`) are hard constants: writing to them is
 always `CONST_ERROR`.
+
+`flint` takes external strings without a cast: `flint age = input()`,
+`flint port = args()[1]`. Numeric strings convert at runtime; bad input gives
+`TYPE_MISMATCH_ERROR: expected flint, found str: <value>`. A literal
+`flint n = "x"` is a compile-time error. Explicit `flint(x)` and `str(x)`
+remain; there is no `list()` or `dict()` cast.
 
 Types: `str`, `flint`, `bool`, `list`, `froz`, `dict`, `model`. A block of
 declarations of one type is allowed:
@@ -125,19 +136,21 @@ froz[flint] frozen = [4, 5]         # read-only
 ```
 
 Inside `[]`: only `str`, `flint`, `bool`; no nesting and no `NONE`. In `dict`
-the left type is the key (always `str`), the right type is the value. `froz`
-supports reads, slices and `for in`; writes and mutating methods are errors.
+the left type is the key (`str` or `flint`), the right type is the value. A bare
+name equals the quoted string. `froz` supports reads, slices and `for in`;
+writes and mutating methods are errors.
 
 Prelude is available without `import`: `prelude_cat`, `path_join`, `now_ms`,
 `parse_args`, `parse_csv`, `parse_json`. Add `--no-prelude` to disable it.
 
 Built-ins: `len`, `type`, `str`, `flint`, `up`, `low`, `title`, `abs`, `round`,
-`floor`, `ceil`, `sqrt`, `min`, `max`, `sum`, `avg`, `keys`, `values`, `upk`,
-`sort`, `reverse`, `clear`, `map`, `filter`, `reduce`, `read_file`,
-`write_file`, `file_exists`, `args`, `exit`, `time_ms`, `is_tty`, `system`,
-`assert`, `expect`, `show`, `show_err`, `input`. All names are reserved: a
-user declaration cannot reuse a built-in or a method name (`add`, `take`,
-`contains`, `count`, `text`, …).
+`floor`, `ceil`, `sqrt`, `factorial`, `fib`, `min`, `max`, `sum`, `avg`, `keys`,
+`values`, `upk`, `sort`, `reverse`, `clear`, `map`, `filter`, `reduce`,
+`read_file`, `write_file`, `file_exists`, `args`, `exit`, `time_ms`, `is_tty`,
+`system`, `assert`, `expect`, `show`, `show_err`, `input`. Output and input are
+only `show` / `show_err` / `input`. All names are reserved: a user declaration
+cannot reuse a built-in or a method name (`add`, `take`, `contains`, `count`,
+`text`, …).
 
 ## Models (xkraft)
 
@@ -195,8 +208,28 @@ Categories: `SYNTAX_ERROR`, `NAME_ERROR`, `REDECLARE_ERROR`, `CONST_ERROR`,
 `TYPE_MISMATCH_ERROR`, `PANIC_ERROR`, `RUNTIME_ERROR`, `GENERATE_ERROR`,
 `ASSERT_ERROR`, `EXPECT_ERROR`.
 
-## Not implemented yet
+## Modules, stdlib and packages (0.5)
 
-Modules and imports (`import_file` / `from_file` / `import_lib` /
-`from_lib`), `export`, namespaces and the `kpm` package manager. These
-arrive in `1.x`; `0.4.0` freezes the core grammar.
+`import_file` / `from_file` work with local files, `import_lib` / `from_lib`
+with bundled libraries, and `namespace` groups declarations. `export` is gone:
+every top-level name is importable, and `_` does not hide it.
+
+```kraft
+import_lib "std/fos"
+from_lib "std/fos" import read_json, write_csv
+import_lib "std/cli"
+```
+
+`std/fos` is File Operating System: `exists`, `copy`, `remove`, `read_text`,
+`write_text`, `read_json`, `write_json`, `read_csv`, `write_csv`, plus
+`csv_field`, `csv_line`, `csv_parse`. `std/cli` has only `run` and `kill`.
+There is no `std/fs`, `std/json`, `std/math`, `clamp`, `lerp` or `is_even`;
+`fib` and `factorial` are builtins.
+
+```sh
+kpm init venv        # kraft.json, kraft.lock, venv/, packages/
+kpm add ./pkg        # local path or URL
+kpm list
+kpm run
+kpm del pkg
+```

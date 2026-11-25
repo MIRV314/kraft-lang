@@ -1,4 +1,4 @@
 1
 TYPE_MISMATCH_ERROR: tests/cases/errtype.kraft:3
     3 | flint n = xs[1] + 1
-                        ^ expected flint, found str
+                        ^ expected flint, found str: два

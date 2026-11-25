@@ -1,6 +1,0 @@
-from_lib "std/json" import parse, stringify
-
-dict data = parse("\{\"name\": \"Аня\", \"age\": 30, \"tags\": [\"a\", \"b\"], \"ok\": true\}")
-show({data[name]})
-show({data[age]})
-show({stringify(data)})

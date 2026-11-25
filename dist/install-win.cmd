@@ -22,6 +22,10 @@ copy /Y "%SRC%xkraft.cmd" "%DEST%\xkraft.cmd" >nul
 if errorlevel 1 goto fail
 copy /Y "%SRC%kraft.cmd" "%DEST%\kraft.cmd" >nul
 if errorlevel 1 goto fail
+copy /Y "%SRC%kpm-win.lua" "%DEST%\kpm-win.lua" >nul
+if errorlevel 1 goto fail
+copy /Y "%SRC%kpm.cmd" "%DEST%\kpm.cmd" >nul
+if errorlevel 1 goto fail
 for %%F in (README.md LICENSE NOTICE VERSION CHANGELOG.md) do (
   if exist "%SRC%%%F" copy /Y "%SRC%%%F" "%DEST%\%%F" >nul
 )

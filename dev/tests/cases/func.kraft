@@ -1,10 +1,10 @@
 func plus(flint a, flint b) -> flint:
     return a + b
 
-func fib(flint n) -> flint:
+func myfib(flint n) -> flint:
     if n < 2:
         return n
-    return fib(n - 1) + fib(n - 2)
+    return myfib(n - 1) + myfib(n - 2)
 
 func kind(flint n):
     if n > 0:
@@ -16,6 +16,6 @@ func greet(str who):
 
 greet("Kraft")
 show({plus(2, 3)})
-show({fib(10)})
+show({myfib(10)})
 show({kind(5)} {kind(-5)})
-show({plus(fib(5), 1)})
+show({plus(myfib(5), 1)})

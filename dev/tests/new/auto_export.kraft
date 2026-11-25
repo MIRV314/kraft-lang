@@ -1,0 +1,5 @@
+from_file "./modules/math.kraft" import plus3, base, hidden
+
+show({plus3(1, 2)})
+show({base})
+show({hidden(3)})

@@ -1,0 +1,11 @@
+import_lib "std/fos"
+
+str path = "/tmp/opencode/xkraft_std_fos_test.txt"
+str copy = "/tmp/opencode/xkraft_std_fos_copy.txt"
+show({fos.write_text(path, "данные")})
+show({fos.exists(path)})
+show({fos.read_text(path)})
+show({fos.copy(path, copy)})
+show({fos.read_text(copy)})
+show({fos.remove(copy)})
+show({fos.remove(path)})

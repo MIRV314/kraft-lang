@@ -3,7 +3,7 @@
 -- Зависимости в 1.0 задаются локальным путём или URL; реестр появится в 1.1.
 
 local kpm = {}
-local VERSION = "1.0.0"
+local VERSION = "0.5.0"
 
 local function is_windows()
   return package.config:sub(1, 1) == "\\"
@@ -271,6 +271,18 @@ local function is_standalone(p)
   return head:find("__KRAFT_EMBEDDED_COMPILER__", 1, true) ~= nil
 end
 
+local function is_standalone_lua(p)
+  local f = io.open(p, "rb")
+  if not f then return false end
+  local head = f:read(8192) or ""
+  f:close()
+  return head:find("__KRAFT_DIST_RUNTIME", 1, true) ~= nil
+end
+
+local function is_compiler(p)
+  return is_standalone(p) or is_standalone_lua(p)
+end
+
 local function find_compiler()
   local here = arg and arg[0] or ""
   local cut = 0
@@ -286,8 +298,20 @@ local function find_compiler()
   candidates[#candidates + 1] = dir .. ".." .. sep .. "xkraft"
   candidates[#candidates + 1] = dir .. ".." .. sep .. "dist" .. sep .. "xkraft"
   candidates[#candidates + 1] = "xkraft"
+  if is_windows() then
+    local xk = os.getenv("XKRAFT")
+    if xk and xk:lower():sub(-4) == ".cmd" then
+      local cut = 0
+      for i = 1, #xk do
+        if xk:sub(i, i) == "/" or xk:sub(i, i) == "\\" then cut = i end
+      end
+      candidates[#candidates + 1] = xk:sub(1, cut) .. "xkraft-win.lua"
+    end
+    candidates[#candidates + 1] = dir .. sep .. "xkraft-win.lua"
+    candidates[#candidates + 1] = dir .. ".." .. sep .. "dist" .. sep .. "xkraft-win.lua"
+  end
   for _, p in ipairs(candidates) do
-    if exists(p) and is_standalone(p) then return p end
+    if exists(p) and is_compiler(p) then return p end
   end
   fail("не нашёл автономный xkraft — положите kpm рядом с xkraft или задайте XKRAFT")
 end
@@ -298,7 +322,7 @@ local function load_manifest()
   end
   local ok, data = pcall(kpm.json_decode, read_file("kraft.json"))
   if not ok or type(data) ~= "table" then fail("не могу прочесть kraft.json") end
-  data.dependencies = data.dependencies or {}
+  data.deps = data.deps or {}
   return data
 end
 
@@ -336,14 +360,17 @@ local function command_init(args)
     name = name,
     version = "0.1.0",
     main = "main.kraft",
-    dependencies = {}
+    deps = {}
   }
   save_manifest(manifest)
   save_lock({ packages = {} })
   mkdirp("venv/bin")
   mkdirp("packages")
-  if not is_windows() then
-    local compiler = find_compiler()
+  local compiler = find_compiler()
+  if is_windows() then
+    copy_any(compiler, "venv/bin/xkraft-win.lua")
+    write_file("venv/bin/xkraft.cmd", '@echo off\nluajit "%~dp0xkraft-win.lua" %*\n')
+  else
     copy_any(compiler, "venv/bin/xkraft")
     shell("chmod +x venv/bin/xkraft")
   end
@@ -394,9 +421,9 @@ local function command_add(args)
   if name == "" or name:match("^[./]") then fail("не могу определить имя пакета") end
   local manifest = load_manifest()
   local lock = load_lock()
-  if manifest.dependencies[name] then fail("пакет уже добавлен: " .. name) end
+  if manifest.deps[name] then fail("пакет уже добавлен: " .. name) end
   local target = fetch_source(source, name)
-  manifest.dependencies[name] = source
+  manifest.deps[name] = source
   lock.packages[name] = {
     source = source,
     path = target,
@@ -412,8 +439,8 @@ local function command_del(args)
   if not name then fail("usage: kpm del <name>") end
   local manifest = load_manifest()
   local lock = load_lock()
-  if not manifest.dependencies[name] then fail("нет пакета " .. name) end
-  manifest.dependencies[name] = nil
+  if not manifest.deps[name] then fail("нет пакета " .. name) end
+  manifest.deps[name] = nil
   lock.packages[name] = nil
   save_manifest(manifest)
   save_lock(lock)
@@ -425,7 +452,7 @@ local function command_list()
   local manifest = load_manifest()
   local lock = load_lock()
   local names = {}
-  for name in pairs(manifest.dependencies) do names[#names + 1] = name end
+  for name in pairs(manifest.deps) do names[#names + 1] = name end
   table.sort(names)
   if #names == 0 then
     say("пакетов нет")
@@ -433,7 +460,7 @@ local function command_list()
   end
   for _, name in ipairs(names) do
     local info = lock.packages[name] or {}
-    print(name .. "  " .. (info.source or manifest.dependencies[name] or ""))
+    print(name .. "  " .. (info.source or manifest.deps[name] or ""))
   end
 end
 

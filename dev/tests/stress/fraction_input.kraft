@@ -1,0 +1,2 @@
+flint x = input()
+show({x * 2})

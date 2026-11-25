@@ -1,6 +1,6 @@
-export flint base = 10
+flint base = 10
 
-export func plus3(flint a, flint b) -> flint:
+func plus3(flint a, flint b) -> flint:
     return a + b + base
 
 func hidden(flint a) -> flint:

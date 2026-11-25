@@ -1,0 +1,2 @@
+flint age = input()
+show({age + 1})

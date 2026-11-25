@@ -1,0 +1,3 @@
+TYPE_ERROR: tests/stress/return_literal_bad.kraft:2
+    2 |     return "x"
+            ^ expected return type flint, found str

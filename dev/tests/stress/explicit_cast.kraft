@@ -1,0 +1,4 @@
+str s = "42"
+flint n = flint(s)
+show({n + 1})
+show({str(n)})

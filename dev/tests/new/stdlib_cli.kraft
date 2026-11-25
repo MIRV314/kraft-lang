@@ -3,7 +3,7 @@ import_lib "std/cli"
 show({cli.run("true")})
 
 try:
-    cli.die("стоп")
+    cli.kill("стоп")
 trigger VALUE_ERROR:
     show("caught: {error.msg}")
 finally:

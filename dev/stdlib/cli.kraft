@@ -1,7 +1,7 @@
-# std/cli — системные команды и аварийный выход.
+# std/cli — запуск внешних команд и аварийный выход.
 
-export func run(str command) -> flint:
+func run(str command) -> flint:
     return system(command)
 
-export func die(str message):
+func kill(str message):
     raise("VALUE_ERROR", message)

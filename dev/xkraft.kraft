@@ -167,7 +167,7 @@ func is_keyword(str w) -> bool:
         return TRUE
     if w == "import_lib" OR w == "from_lib":
         return TRUE
-    if w == "export" OR w == "namespace":
+    if w == "namespace":
         return TRUE
     if w == "str" OR w == "flint" OR w == "bool" OR w == "list" OR w == "dict":
         return TRUE
@@ -633,7 +633,51 @@ func is_numeric(str t) -> bool:
     return t == "flint" OR t == "NONE" OR t == "any"
 
 func assignable(str from, str to) -> bool:
+    if from == "str" AND to == "flint":
+        return TRUE
+    if to == "any":
+        return TRUE
     return from == "NONE" OR from == "any" OR from == to
+
+# Числовая ли строка-литерал. Проверка на компиляции: "x" в flint не годится.
+func str_number_literal(str s) -> bool:
+    flint i = 0
+    bool dot = FALSE
+    bool digit = FALSE
+    if len(s) > 0:
+        if s[0] == "-":
+            i = 1
+    while i < len(s):
+        str c = s[i]
+        if c == ".":
+            if dot:
+                return FALSE
+            dot = TRUE
+        elif "0123456789".contains(c):
+            digit = TRUE
+        else:
+            return FALSE
+        i += 1
+    return digit
+
+func str_literal_ok(dict e, str target) -> bool:
+    if target != "flint" OR e[t] != "str" OR e[k] != "str":
+        return TRUE
+    list parts = e[parts]
+    str s = ""
+    flint i = 0
+    while i < len(parts):
+        dict p = parts[i]
+        if p[kind] != "text":
+            return TRUE
+        s = cat([s, p[value]])
+        i += 1
+    return str_number_literal(s)
+
+func coercion_ok(dict e, str target) -> bool:
+    if NOT assignable(e[t], target):
+        return FALSE
+    return str_literal_ok(e, target)
 
 func is_compare(str op) -> bool:
     return op == "==" OR op == "!=" OR op == "<" OR op == "<=" OR op == ">" OR op == ">="
@@ -701,6 +745,10 @@ func builtin_info(str name) -> dict:
     if name == "ceil":
         return {ok: TRUE, n: 1, ret: "flint", a1: "flint"}
     if name == "sqrt":
+        return {ok: TRUE, n: 1, ret: "flint", a1: "flint"}
+    if name == "factorial":
+        return {ok: TRUE, n: 1, ret: "flint", a1: "flint"}
+    if name == "fib":
         return {ok: TRUE, n: 1, ret: "flint", a1: "flint"}
     if name == "min":
         return {ok: TRUE, variadic: TRUE, min: 1, max: 9, ret: "flint", a1: "flint"}
@@ -1209,7 +1257,7 @@ func parse_expr(dict st, flint min_bp) -> dict:
             dict cma2 = cmargs[cmi]
             dict cmp = cmparams[cmi]
             cmpt.add(cmp[type])
-            if NOT assignable(cma2[t], cmp[type]):
+            if NOT coercion_ok(cma2, cmp[type]):
                 fail(st, {line: cma2[line], col: cma2[col]}, "TYPE_ERROR", cat(["argument ", str(cmi + 1), " of '", cmn, "' to be ", cmp[type]]), cma2[t])
                 return {}
             cmi += 1
@@ -1360,7 +1408,7 @@ func parse_expr(dict st, flint min_bp) -> dict:
                 dict pp = params[cai]
                 str pt = pp[type]
                 ptypes.add(pt)
-                if ca2[t] != "NONE" AND ca2[t] != "any" AND pt != "any" AND ca2[t] != pt:
+                if NOT coercion_ok(ca2, pt):
                     fail(st, {line: ca2[line], col: ca2[col]}, "TYPE_ERROR", cat(["argument ", str(cai + 1), " of '", fn, "' to be ", pt]), ca2[t])
                     return {}
                 cai += 1
@@ -1679,7 +1727,7 @@ func parse_expr(dict st, flint min_bp) -> dict:
                         dict mma = margs[mai]
                         dict mmp = mparams[mai]
                         mpt.add(mmp[type])
-                        if NOT assignable(mma[t], mmp[type]):
+                        if NOT coercion_ok(mma, mmp[type]):
                             fail(st, {line: mma[line], col: mma[col]}, "TYPE_ERROR", cat(["argument ", str(mai + 1), " of '", mname, "' to be ", mmp[type]]), mma[t])
                             return {}
                         mai += 1
@@ -2107,7 +2155,7 @@ func parse_typed_decl(dict st, str dty, dict dname_tok) -> dict:
                     else:
                         fail(st, iat, "NAME_ERROR", cat(["field or construct parameter of '", dty, "'"]), cat(["unknown '", ian, "'"]))
                         return {}
-                if NOT assignable(iav[t], iwant):
+                if NOT coercion_ok(iav, iwant):
                     fail(st, {line: iav[line], col: iav[col]}, "TYPE_ERROR", cat(["init argument '", ian, "': type ", iwant]), iav[t])
                     return {}
                 iargs.add({name: ian, expr: iav, type: iwant})
@@ -2131,7 +2179,7 @@ func parse_typed_decl(dict st, str dty, dict dname_tok) -> dict:
         dexpr = parse_expr(st, 0)
         if NOT (st[err] is NONE):
             return {}
-        if NOT assignable(dexpr[t], dty):
+        if NOT coercion_ok(dexpr, dty):
             bool litok = FALSE
             if is_typed_spec(dty) AND dexpr[t] != "NONE":
                 litok = literal_ok(st, dexpr, dty)
@@ -2198,7 +2246,7 @@ func parse_model_field_decl(dict st, dict m) -> dict:
     st.add("model_ctx", sv)
     if NOT (st[err] is NONE):
         return {}
-    if NOT assignable(mfexpr[t], mfty):
+    if NOT coercion_ok(mfexpr, mfty):
         fail(st, {line: mfexpr[line], col: mfexpr[col]}, "TYPE_ERROR", cat(["field '", mfname, "': type ", mfty]), mfexpr[t])
         return {}
     mf.add(mfname, mfty)
@@ -2328,7 +2376,7 @@ func finish_method(dict st, dict info, list body, str declared, bool has_ret, li
         if rr[empty] OR rr[type] == "NONE" OR e_nullable(rr):
             nullable = TRUE
         elif has_ret:
-            if rr[type] != declared AND rr[type] != "any":
+            if NOT rr[empty] AND rr[type] != "NONE" AND NOT coercion_ok(rr[expr], declared):
                 fail(st, rr, "TYPE_ERROR", cat(["return type ", declared]), rr[type])
                 return:
         else:
@@ -2551,8 +2599,7 @@ func bind_func_params(dict st, list params):
         nv.add(pj_p[name], pj_p[type])
         pj += 1
 
-func finish_func(dict st, dict funtok, str fn_name, dict fninfo, list params, str flua, str fret, bool fhas_ret, list fnbody, bool exported) -> dict:
-    list frets = st[func_returns]
+func finish_func(dict st, dict funtok, str fn_name, dict fninfo, list params, str flua, str fret, bool fhas_ret, list fnbody, bool exported, list frets) -> dict:
     bool fallthrough = TRUE
     if len(fnbody) > 0:
         dict last_stmt = fnbody[len(fnbody) - 1]
@@ -2566,7 +2613,7 @@ func finish_func(dict st, dict funtok, str fn_name, dict fninfo, list params, st
         if rr[empty] OR rr[type] == "NONE" OR e_nullable(rr):
             fnullable = TRUE
         elif fhas_ret:
-            if rr[type] != fret AND rr[type] != "any":
+            if NOT rr[empty] AND rr[type] != "NONE" AND NOT coercion_ok(rr[expr], fret):
                 fail(st, rr, "TYPE_ERROR", cat(["return type ", fret]), rr[type])
                 return {}
         else:
@@ -2630,9 +2677,10 @@ func begin_func_body(dict st, dict prep):
     prep.add("scope", fsv)
 
 func complete_func(dict st, dict prep, list fnbody, bool exported) -> dict:
+    list frets = st[func_returns]
     st.add("ns_prefix", prep[prefix])
     leave_func_scope(st, prep[scope])
-    dict fnode = finish_func(st, prep[funtok], prep[key], prep[info], prep[params], prep[lua], prep[fret], prep[has], fnbody, exported)
+    dict fnode = finish_func(st, prep[funtok], prep[key], prep[info], prep[params], prep[lua], prep[fret], prep[has], fnbody, exported, frets)
     if NOT (st[err] is NONE):
         return {}
     if exported:
@@ -2786,15 +2834,7 @@ func parse_block(dict st, bool top) -> list:
             dict node = {}
             bool block_stmt = FALSE
             bool decl_block = FALSE
-            bool exported = FALSE
-            bool export_ok = FALSE
-            if tok_is(tk(st), "kw", "export"):
-                if st[in_func] OR st[block_depth] > 0:
-                    fail(st, tk(st), "SYNTAX_ERROR", "export at top level", "nested export")
-                    return stmts
-                advance(st)
-                exported = TRUE
-                t = tk(st)
+            bool exported = top
             if stmt_is_decl_block(st):
                 dict dbtok = advance(st)
                 str dbty = dbtok[value]
@@ -2849,7 +2889,6 @@ func parse_block(dict st, bool top) -> list:
                     dict dexp = st[exports]
                     dexp.add(node[name], "var")
                     st.add("exports", dexp)
-                    export_ok = TRUE
             elif t[type] == "kw" AND is_import_kw(t[value]):
                 if st[in_func] OR st[block_depth] > 0:
                     fail(st, t, "SYNTAX_ERROR", "import at top level", "nested import")
@@ -2896,10 +2935,7 @@ func parse_block(dict st, bool top) -> list:
                     elif nt[type] == "newline":
                         advance(st)
                     else:
-                        bool nexp = FALSE
-                        if tok_is(tk(st), "kw", "export"):
-                            advance(st)
-                            nexp = TRUE
+                        bool nexp = TRUE
                         dict nn = {}
                         if stmt_is_decl(st):
                             str ndty = parse_type_name(st)
@@ -3171,7 +3207,6 @@ func parse_block(dict st, bool top) -> list:
                 node = complete_func(st, prep, fnbody, exported)
                 if NOT (st[err] is NONE):
                     return stmts
-                export_ok = TRUE
                 block_stmt = TRUE
             elif t[type] == "kw" AND t[value] == "model":
                 dict mtok = advance(st)
@@ -3326,7 +3361,7 @@ func parse_block(dict st, bool top) -> list:
                     has_expr = TRUE
                 list cur_rets = st[func_returns]
                 if has_expr:
-                    cur_rets.add({empty: FALSE, type: rexpr[t], nullable: e_nullable(rexpr), line: rtok2[line], col: rtok2[col]})
+                    cur_rets.add({empty: FALSE, type: rexpr[t], nullable: e_nullable(rexpr), expr: rexpr, line: rtok2[line], col: rtok2[col]})
                     node = {k: "return", expr: rexpr, line: rtok2[line], col: rtok2[col]}
                 else:
                     cur_rets.add({empty: TRUE, type: "NONE", nullable: FALSE, line: rtok2[line], col: rtok2[col]})
@@ -3354,7 +3389,7 @@ func parse_block(dict st, bool top) -> list:
                 if NOT (st[err] is NONE):
                     return stmts
                 str avt = aw[type]
-                if NOT assignable(aexpr[t], avt):
+                if NOT coercion_ok(aexpr, avt):
                     fail(st, {line: aexpr[line], col: aexpr[col]}, "TYPE_ERROR", cat(["assignment to '", aname, "': type ", avt]), aexpr[t])
                     return stmts
                 dict anl = st[nullable]
@@ -3516,9 +3551,6 @@ func parse_block(dict st, bool top) -> list:
                         node = {k: "setindex", target: e, expr: eval2, line: eq2[line], col: eq2[col]}
                 else:
                     node = {k: "exprstmt", expr: e, line: e[line], col: e[col]}
-            if exported AND NOT export_ok:
-                fail(st, t, "SYNTAX_ERROR", "export func or declaration", describe_tok(t))
-                return stmts
             if NOT decl_block:
                 stmts.add(node)
                 if NOT block_stmt:
@@ -3744,12 +3776,19 @@ func typed_wrap(str x, str target) -> str:
         return cat(["krt.typed_dict(", lua_str(target), ", ", x, ")"])
     return x
 
+func coerce_to(str x, str ety, str target) -> str:
+    if ety == "str" AND target == "flint":
+        return cat(["krt.to_flint(", x, ")"])
+    return x
+
 func checked(str x, str ety, bool nullable, str target) -> str:
+    x = coerce_to(x, ety, target)
     if ety == "any" AND NOT nullable:
         return as_base(x, target)
     return x
 
 func wrap_to(str x, str ety, bool nullable, str target) -> str:
+    x = coerce_to(x, ety, target)
     if ety == "NONE" OR ety == "any" OR nullable:
         return as_base(x, target)
     return x
@@ -3823,9 +3862,10 @@ func emit_expr(dict st, dict e) -> str:
         list mna = e[args]
         list mnp = [lua_str(e[mname])]
         flint mni = 0
+        list mnpt = e[ptypes]
         while mni < len(mna):
             dict mnarg = mna[mni]
-            mnp.add(emit_expr(st, mnarg))
+            mnp.add(coerce_to(emit_expr(st, mnarg), mnarg[t], mnpt[mni]))
             mni += 1
         return cat(["krt.model_new(", mnp.join(", "), ")"])
     if k == "model_init":
@@ -3833,7 +3873,8 @@ func emit_expr(dict st, dict e) -> str:
         list mip = []
         for mia0 in mia:
             dict mian = mia0
-            mip.add(cat(["[", lua_str(mian[name]), "] = ", emit_expr(st, mian[expr])]))
+            dict miax = mian[expr]
+            mip.add(cat(["[", lua_str(mian[name]), "] = ", coerce_to(emit_expr(st, miax), miax[t], mian[type])]))
         return cat(["krt.model_init(", lua_str(e[mname]), ", \{", mip.join(", "), "\})"])
     if k == "model_method":
         list mma2 = e[args]
@@ -3910,6 +3951,10 @@ func emit_expr(dict st, dict e) -> str:
             return cat(["krt.num_ceil(", wrap_flint(emit_expr(st, a0), a0[t], e_nullable(a0)), ")"])
         if bn == "sqrt":
             return cat(["krt.num_sqrt(", wrap_flint(emit_expr(st, a0), a0[t], e_nullable(a0)), ")"])
+        if bn == "factorial":
+            return cat(["krt.num_factorial(", wrap_flint(emit_expr(st, a0), a0[t], e_nullable(a0)), ")"])
+        if bn == "fib":
+            return cat(["krt.num_fib(", wrap_flint(emit_expr(st, a0), a0[t], e_nullable(a0)), ")"])
         if bn == "min" OR bn == "max":
             list mvals = []
             for mn0 in ba:
@@ -4349,7 +4394,9 @@ func emit_stmts(dict st, list stmts) -> str:
             list mflds = s[fields]
             for mf0 in mflds:
                 dict mfn2 = mf0
-                emit_line(st, cat(["krt.model_set_value(", lua_str(mn2), ", ", lua_str(mfn2[name]), ", ", emit_expr(st, mfn2[expr]), ")"]))
+                dict mfe = mfn2[expr]
+                str mfx = coerce_to(emit_expr(st, mfe), mfe[t], mfn2[type])
+                emit_line(st, cat(["krt.model_set_value(", lua_str(mn2), ", ", lua_str(mfn2[name]), ", ", mfx, ")"]))
             dict mcons2 = msc[ctor]
             list mcps = mcons2[params]
             list mcpl = ["self"]
@@ -4686,7 +4733,7 @@ func emit_stmts(dict st, list stmts) -> str:
         elif sk == "return":
             if s.contains("expr"):
                 dict re = s[expr]
-                str rv = emit_expr(st, re)
+                str rv = coerce_to(emit_expr(st, re), re[t], st[current_ret])
                 if re[t] == "any" AND st[current_ret] != "any":
                     rv = checked(rv, re[t], e_nullable(re), st[current_ret])
                 st.add("ret_id", st[ret_id] + 1)
@@ -4803,7 +4850,7 @@ func write_compiled(str path, str out_lua):
 
 list argv = args()
 if len(argv) >= 2 AND argv[1] == "--version":
-    show(xkraft 0.4.0)
+    show(xkraft 0.5.0)
     exit(0)
 if len(argv) < 2:
     show_err(usage: xkraft [--tokens] [-c] file.kraft)

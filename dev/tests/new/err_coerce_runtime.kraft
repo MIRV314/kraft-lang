@@ -1,0 +1,3 @@
+str s = "abc"
+flint n = s
+show({n})

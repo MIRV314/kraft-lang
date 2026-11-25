@@ -1,0 +1,22 @@
+# Мини-калькулятор: аргументы приходят строками, flint принимает их сам.
+#   xkraft examples/mini-calc.kraft 2 3 4  -> sum: 9, product: 24
+
+model Acc:
+    construct(flint start):
+        self(start)
+    method inc(flint n) -> flint:
+        self.start = self.start + n
+        return self.start
+
+list av = args()
+Acc acc = Acc(0)
+flint product = 1
+flint i = 1
+while i < len(av):
+    flint n = av[i]
+    acc.inc(n)
+    product *= n
+    i += 1
+
+show(sum: {acc.start})
+show(product: {product})

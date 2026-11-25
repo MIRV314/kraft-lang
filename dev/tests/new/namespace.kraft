@@ -2,7 +2,7 @@ namespace util:
     flint base = 3
     func inc(flint x) -> flint:
         return x + base
-    export flint mark = 7
+    flint mark = 7
 
 show({util.inc(4)})
 show({util.base})

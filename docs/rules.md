@@ -5,6 +5,19 @@
 > `docs/decisions.md`, список функций — `docs/builtins.md`, руководство —
 > `README.md`. Этот файл не обновляется.
 
+## Актуально в 0.5.0
+
+- `export` удалён из языка. Все объявления верхнего уровня модуля
+  импортируемы через `import_file` / `from_file` / `import_lib` / `from_lib`;
+  `_`-префикс приватности не создаёт.
+- Ключ `dict` — `str` или `flint`. Bare-имя и кавычки задают строковый ключ;
+  `bool`, `NONE`, коллекции и модели ключами не являются.
+- Стандартная библиотека — только `std/fos` и `std/cli`, вшитые в
+  дистрибутив. `std/fs`, `std/json`, `std/file`, `std/math`, `clamp`, `lerp`
+  и `is_even` не поставляются; `json_parse` и `json_stringify` внутренние.
+- `fib` и `factorial` — встроенные функции ядра.
+- Манифест — `kraft.json` + `kraft.lock`, зависимости называются `deps`.
+  Каноническая команда — `kpm init venv`, не `kpm venv init`.
 
 > **Актуально на v0.1 (LuaJIT).** Источник истины — `docs/decisions.md`.
 > Разделы про C-бэкенд (`kraftc`, `krt.c`, `cc`, C-слова бэкенда, эмит C)

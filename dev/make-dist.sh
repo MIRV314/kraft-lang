@@ -21,7 +21,7 @@ mkdir -p "$repo/dist"
 
 # Документы копируются до сборки архивов, чтобы VERSION/CHANGELOG внутри
 # kraft-win.zip совпадали с текущей версией.
-for f in LICENSE NOTICE VERSION CHANGELOG.md; do
+for f in README.md LICENSE NOTICE VERSION CHANGELOG.md; do
   cp "$repo/$f" "$repo/dist/$f"
 done
 
@@ -91,7 +91,7 @@ if lua.count(anchor) != 1:
 # Стандартная библиотека встраивается в рантайм каждой собранной программы:
 # установленному xkraft не нужна папка stdlib на диске.
 stdlib_entries = []
-for name in ("fs", "json", "cli"):
+for name in ("fos", "cli"):
     src = (root / "stdlib" / (name + ".kraft")).read_text()
     if "]==]" in src or "]===[" in src:
         sys.exit("make-dist: встроенный stdlib содержит разделитель long-bracket")
@@ -123,7 +123,7 @@ if "__KRAFT_EMBEDDED_COMPILER__" in lua:
     sys.exit("make-dist: метка встроенного компилятора уже встречается в Lua")
 
 header = '''#!/bin/sh
-# xkraft 0.4.0 — автономный компилятор Kraft.
+# xkraft 0.5.0 — автономный компилятор Kraft.
 # lua-код компилятора вшит ниже; внешних файлов и каталога src/ не нужно.
 set -eu
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/xkraft.XXXXXX") || exit 1
@@ -185,7 +185,7 @@ if dist_text.count(marker) != 1:
 # kpm: автономный Lua-скрипт с оболочкой, как у xkraft.
 kpm_src = (root / "kpm.lua").read_text()
 kpm_header = '''#!/bin/sh
-# kpm 1.0.0 — менеджер пакетов Kraft.
+# kpm 0.5.0 — менеджер пакетов Kraft.
 set -eu
 dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/kpm.XXXXXX") || exit 1

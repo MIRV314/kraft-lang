@@ -1,0 +1,2 @@
+show({factorial(0)}, {factorial(5)}, {factorial(10)})
+show({fib(0)}, {fib(1)}, {fib(10)})

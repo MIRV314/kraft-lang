@@ -1,0 +1,6 @@
+str s = "42"
+flint n = s
+show({n + 1})
+
+flint lit = "7"
+show({lit})

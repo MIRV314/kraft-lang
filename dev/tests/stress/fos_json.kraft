@@ -1,0 +1,6 @@
+from_lib "std/fos" import read_json
+
+dict data = read_json("tests/stress/data.json")
+show({data[name]})
+show({data[age]})
+show({data[ok]})

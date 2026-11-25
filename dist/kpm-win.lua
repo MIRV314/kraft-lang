@@ -1,0 +1,520 @@
+-- kpm — менеджер пакетов Kraft.
+-- Работает с kraft.json / kraft.lock и локальным venv.
+-- Зависимости в 1.0 задаются локальным путём или URL; реестр появится в 1.1.
+
+local kpm = {}
+local VERSION = "0.5.0"
+
+local function is_windows()
+  return package.config:sub(1, 1) == "\\"
+end
+
+local function fail(msg)
+  io.stderr:write("kpm: " .. msg .. "\n")
+  os.exit(1)
+end
+
+local function say(msg)
+  print("kpm: " .. msg)
+end
+
+-- ---------- JSON (обычные таблицы Lua) ----------
+
+local function json_escape(s)
+  s = s:gsub("\\", "\\\\"):gsub('"', '\\"'):gsub("\n", "\\n")
+    :gsub("\r", "\\r"):gsub("\t", "\\t")
+  return '"' .. s .. '"'
+end
+
+local function is_array(t)
+  local n = 0
+  for k in pairs(t) do
+    if type(k) ~= "number" then return false end
+    n = n + 1
+  end
+  for i = 1, n do
+    if t[i] == nil then return false end
+  end
+  return true
+end
+
+kpm.json_encode = function(v, depth)
+  depth = depth or 0
+  if depth > 64 then fail("JSON слишком глубокий") end
+  if v == nil then return "null" end
+  if type(v) == "boolean" then return v and "true" or "false" end
+  if type(v) == "number" then
+    if v == math.floor(v) then return string.format("%d", v) end
+    return string.format("%.17g", v)
+  end
+  if type(v) == "string" then return json_escape(v) end
+  if type(v) ~= "table" then fail("нельзя записать в JSON: " .. type(v)) end
+  if next(v) == nil then return "{}" end
+  if is_array(v) then
+    local out = {}
+    for i = 1, #v do out[i] = kpm.json_encode(v[i], depth + 1) end
+    return "[" .. table.concat(out, ", ") .. "]"
+  end
+  local out = {}
+  for k, val in pairs(v) do
+    if type(k) ~= "string" then fail("ключ JSON должен быть строкой") end
+    out[#out + 1] = json_escape(k) .. ": " .. kpm.json_encode(val, depth + 1)
+  end
+  table.sort(out)
+  return "{" .. table.concat(out, ", ") .. "}"
+end
+
+local function json_ws(s, i)
+  while i <= #s and s:sub(i, i):match("%s") do i = i + 1 end
+  return i
+end
+
+local function json_utf8(cp)
+  if cp < 0x80 then return string.char(cp) end
+  if cp < 0x800 then
+    return string.char(0xC0 + math.floor(cp / 0x40), 0x80 + cp % 0x40)
+  end
+  return string.char(0xE0 + math.floor(cp / 0x1000),
+    0x80 + math.floor(cp / 0x40) % 0x40, 0x80 + cp % 0x40)
+end
+
+local JSON_ESCAPES = { ['"'] = '"', ["\\"] = "\\", ["/"] = "/",
+  b = "\b", f = "\f", n = "\n", r = "\r", t = "\t" }
+
+local function json_string(s, i)
+  if s:sub(i, i) ~= '"' then fail("ожидалась строка JSON") end
+  i = i + 1
+  local out = {}
+  while i <= #s do
+    local c = s:sub(i, i)
+    if c == '"' then return table.concat(out), i + 1 end
+    if c == "\\" then
+      i = i + 1
+      local e = s:sub(i, i)
+      if e == "u" then
+        local hex = s:sub(i + 1, i + 4)
+        if #hex ~= 4 or not hex:match("^%x%x%x%x$") then
+          fail("плохой unicode-escape в JSON")
+        end
+        out[#out + 1] = json_utf8(tonumber(hex, 16))
+        i = i + 4
+      elseif JSON_ESCAPES[e] then
+        out[#out + 1] = JSON_ESCAPES[e]
+      else
+        fail("плохой escape в JSON")
+      end
+    else
+      out[#out + 1] = c
+    end
+    i = i + 1
+  end
+  fail("незакрытая строка JSON")
+end
+
+local function json_value(s, i, depth)
+  if depth > 64 then fail("JSON слишком глубокий") end
+  i = json_ws(s, i)
+  local c = s:sub(i, i)
+  if c == "{" then
+    local obj = {}
+    i = json_ws(s, i + 1)
+    if s:sub(i, i) == "}" then return obj, i + 1 end
+    while true do
+      local key
+      key, i = json_string(s, i)
+      i = json_ws(s, i)
+      if s:sub(i, i) ~= ":" then fail("':' ожидалось в JSON") end
+      local val
+      val, i = json_value(s, i + 1, depth + 1)
+      obj[key] = val
+      i = json_ws(s, i)
+      local sep = s:sub(i, i)
+      if sep == "," then
+        i = json_ws(s, i + 1)
+      elseif sep == "}" then
+        return obj, i + 1
+      else
+        fail("',' или '}' ожидалось в JSON")
+      end
+    end
+  elseif c == "[" then
+    local arr = {}
+    i = json_ws(s, i + 1)
+    if s:sub(i, i) == "]" then return arr, i + 1 end
+    while true do
+      local val
+      val, i = json_value(s, i, depth + 1)
+      arr[#arr + 1] = val
+      i = json_ws(s, i)
+      local sep = s:sub(i, i)
+      if sep == "," then
+        i = json_ws(s, i + 1)
+      elseif sep == "]" then
+        return arr, i + 1
+      else
+        fail("',' или ']' ожидалось в JSON")
+      end
+    end
+  elseif c == '"' then
+    return json_string(s, i)
+  elseif s:sub(i, i + 3) == "true" then
+    return true, i + 4
+  elseif s:sub(i, i + 4) == "false" then
+    return false, i + 5
+  elseif s:sub(i, i + 3) == "null" then
+    return nil, i + 4
+  end
+  local num = s:match("^-?%d+%.?%d*[eE]?[-+]?%d*", i)
+  if num then return tonumber(num), i + #num end
+  fail("значение JSON ожидалось")
+end
+
+kpm.json_decode = function(s)
+  local v, i = json_value(s, 1, 0)
+  i = json_ws(s, i)
+  if i <= #s then fail("лишние данные после JSON") end
+  return v
+end
+
+-- ---------- файлы ----------
+
+local function read_file(path)
+  local f = io.open(path, "rb")
+  if not f then return nil end
+  local data = f:read("*a")
+  f:close()
+  return data
+end
+
+local function write_file(path, data)
+  local f = io.open(path, "wb")
+  if not f then fail("не могу записать " .. path) end
+  f:write(data)
+  f:close()
+end
+
+local function exists(path)
+  local f = io.open(path, "rb")
+  if not f then return false end
+  f:close()
+  return true
+end
+
+local function shell(cmd)
+  local ok = os.execute(cmd)
+  if is_windows() then return ok == true or ok == 0 end
+  return ok == 0
+end
+
+local function mkdirp(path)
+  if is_windows() then
+    if not shell('if not exist "' .. path .. '" mkdir "' .. path .. '"') then
+      fail("не могу создать " .. path)
+    end
+  elseif not shell("mkdir -p '" .. path .. "'") then
+    fail("не могу создать " .. path)
+  end
+end
+
+local function rmrf(path)
+  if is_windows() then
+    shell('rmdir /S /Q "' .. path .. '"')
+  else
+    shell("rm -rf '" .. path .. "'")
+  end
+end
+
+local function copy_any(src, dst)
+  if is_windows() then
+    local attr = io.popen('attrib "' .. src .. '"')
+    local line = attr and attr:read("*l") or ""
+    if attr then attr:close() end
+    if line:match("^%s*D") then
+      if not shell('xcopy "' .. src .. '" "' .. dst .. '" /E /I /Y /Q >nul') then
+        fail("не могу скопировать " .. src)
+      end
+    elseif not shell('copy /Y "' .. src .. '" "' .. dst .. '" >nul') then
+      fail("не могу скопировать " .. src)
+    end
+  else
+    if not shell("cp -R '" .. src .. "' '" .. dst .. "'") then
+      fail("не могу скопировать " .. src)
+    end
+  end
+end
+
+local function hash_file(path)
+  local data = read_file(path) or ""
+  local h = 2166136261
+  for i = 1, #data do
+    h = (h ~ data:byte(i)) * 16777619
+    h = h % 4294967296
+  end
+  return string.format("%08x-%08x", math.floor(h / 65536), h % 65536)
+end
+
+local function basename(path)
+  local cut = 0
+  for i = 1, #path do
+    if path:sub(i, i) == "/" or path:sub(i, i) == "\\" then cut = i end
+  end
+  local name = path:sub(cut + 1)
+  name = name:gsub("%.zip$", ""):gsub("%.tar%.gz$", ""):gsub("%.tgz$", "")
+  return name
+end
+
+local function is_standalone(p)
+  local f = io.open(p, "rb")
+  if not f then return false end
+  local head = f:read(8192) or ""
+  f:close()
+  return head:find("__KRAFT_EMBEDDED_COMPILER__", 1, true) ~= nil
+end
+
+local function is_standalone_lua(p)
+  local f = io.open(p, "rb")
+  if not f then return false end
+  local head = f:read(8192) or ""
+  f:close()
+  return head:find("__KRAFT_DIST_RUNTIME", 1, true) ~= nil
+end
+
+local function is_compiler(p)
+  return is_standalone(p) or is_standalone_lua(p)
+end
+
+local function find_compiler()
+  local here = arg and arg[0] or ""
+  local cut = 0
+  for i = 1, #here do
+    if here:sub(i, i) == "/" or here:sub(i, i) == "\\" then cut = i end
+  end
+  local dir = here:sub(1, cut)
+  if dir == "" then dir = "." end
+  local sep = is_windows() and "\\" or "/"
+  local candidates = {}
+  if os.getenv("XKRAFT") then candidates[#candidates + 1] = os.getenv("XKRAFT") end
+  candidates[#candidates + 1] = dir .. sep .. "xkraft"
+  candidates[#candidates + 1] = dir .. ".." .. sep .. "xkraft"
+  candidates[#candidates + 1] = dir .. ".." .. sep .. "dist" .. sep .. "xkraft"
+  candidates[#candidates + 1] = "xkraft"
+  if is_windows() then
+    local xk = os.getenv("XKRAFT")
+    if xk and xk:lower():sub(-4) == ".cmd" then
+      local cut = 0
+      for i = 1, #xk do
+        if xk:sub(i, i) == "/" or xk:sub(i, i) == "\\" then cut = i end
+      end
+      candidates[#candidates + 1] = xk:sub(1, cut) .. "xkraft-win.lua"
+    end
+    candidates[#candidates + 1] = dir .. sep .. "xkraft-win.lua"
+    candidates[#candidates + 1] = dir .. ".." .. sep .. "dist" .. sep .. "xkraft-win.lua"
+  end
+  for _, p in ipairs(candidates) do
+    if exists(p) and is_compiler(p) then return p end
+  end
+  fail("не нашёл автономный xkraft — положите kpm рядом с xkraft или задайте XKRAFT")
+end
+
+local function load_manifest()
+  if not exists("kraft.json") then
+    fail("нет kraft.json — сначала выполните kpm init venv")
+  end
+  local ok, data = pcall(kpm.json_decode, read_file("kraft.json"))
+  if not ok or type(data) ~= "table" then fail("не могу прочесть kraft.json") end
+  data.deps = data.deps or {}
+  return data
+end
+
+local function load_lock()
+  if not exists("kraft.lock") then return { packages = {} } end
+  local ok, data = pcall(kpm.json_decode, read_file("kraft.lock"))
+  if not ok or type(data) ~= "table" then fail("не могу прочесть kraft.lock") end
+  data.packages = data.packages or {}
+  return data
+end
+
+local function save_manifest(m)
+  write_file("kraft.json", kpm.json_encode(m) .. "\n")
+end
+
+local function save_lock(l)
+  write_file("kraft.lock", kpm.json_encode(l) .. "\n")
+end
+
+-- ---------- команды ----------
+
+local function command_init(args)
+  local name = args[1]
+  if name == nil or name == "venv" then
+    if name == "venv" then name = args[2] end
+  end
+  if exists("kraft.json") then fail("kraft.json уже существует") end
+  if name == nil or name == "" then
+    local cwd = io.popen(is_windows() and "cd" or "pwd")
+    local p = cwd and cwd:read("*l") or "project"
+    if cwd then cwd:close() end
+    name = basename(p)
+  end
+  local manifest = {
+    name = name,
+    version = "0.1.0",
+    main = "main.kraft",
+    deps = {}
+  }
+  save_manifest(manifest)
+  save_lock({ packages = {} })
+  mkdirp("venv/bin")
+  mkdirp("packages")
+  local compiler = find_compiler()
+  if is_windows() then
+    copy_any(compiler, "venv/bin/xkraft-win.lua")
+    write_file("venv/bin/xkraft.cmd", '@echo off\nluajit "%~dp0xkraft-win.lua" %*\n')
+  else
+    copy_any(compiler, "venv/bin/xkraft")
+    shell("chmod +x venv/bin/xkraft")
+  end
+  say("создан venv для " .. name)
+end
+
+local function fetch_source(source, name)
+  local target = "packages/" .. name
+  if source:match("^https?://") then
+    local tmp = "packages/." .. name .. ".download"
+    mkdirp("packages")
+    local cmd
+    if is_windows() then
+      cmd = 'powershell -NoProfile -Command "Invoke-WebRequest -Uri \'' .. source ..
+        "' -OutFile '" .. tmp .. "'\""
+    else
+      cmd = "curl -fsSL '" .. source .. "' -o '" .. tmp .. "'"
+    end
+    if not shell(cmd) then fail("не могу скачать " .. source) end
+    if source:match("%.zip$") then
+      if is_windows() then
+        shell('powershell -NoProfile -Command "Expand-Archive -Force -Path \'' ..
+          tmp .. "' -DestinationPath '" .. target .. "'\"")
+      else
+        mkdirp(target)
+        shell("unzip -oq '" .. tmp .. "' -d '" .. target .. "'")
+      end
+    elseif source:match("%.tar%.gz$") or source:match("%.tgz$") then
+      mkdirp(target)
+      shell("tar xzf '" .. tmp .. "' -C '" .. target .. "' --strip-components=1")
+    else
+      mkdirp(target)
+      copy_any(tmp, target .. "/main.kraft")
+    end
+    os.remove(tmp)
+  else
+    if not exists(source) then fail("нет такого пути: " .. source) end
+    mkdirp("packages")
+    copy_any(source, target)
+  end
+  return target
+end
+
+local function command_add(args)
+  local source = args[1]
+  if not source then fail("usage: kpm add <path|url>") end
+  local name = args[2] or basename(source)
+  if name == "" or name:match("^[./]") then fail("не могу определить имя пакета") end
+  local manifest = load_manifest()
+  local lock = load_lock()
+  if manifest.deps[name] then fail("пакет уже добавлен: " .. name) end
+  local target = fetch_source(source, name)
+  manifest.deps[name] = source
+  lock.packages[name] = {
+    source = source,
+    path = target,
+    hash = hash_file(target .. "/main.kraft")
+  }
+  save_manifest(manifest)
+  save_lock(lock)
+  say("добавлен " .. name)
+end
+
+local function command_del(args)
+  local name = args[1]
+  if not name then fail("usage: kpm del <name>") end
+  local manifest = load_manifest()
+  local lock = load_lock()
+  if not manifest.deps[name] then fail("нет пакета " .. name) end
+  manifest.deps[name] = nil
+  lock.packages[name] = nil
+  save_manifest(manifest)
+  save_lock(lock)
+  rmrf("packages/" .. name)
+  say("удалён " .. name)
+end
+
+local function command_list()
+  local manifest = load_manifest()
+  local lock = load_lock()
+  local names = {}
+  for name in pairs(manifest.deps) do names[#names + 1] = name end
+  table.sort(names)
+  if #names == 0 then
+    say("пакетов нет")
+    return
+  end
+  for _, name in ipairs(names) do
+    local info = lock.packages[name] or {}
+    print(name .. "  " .. (info.source or manifest.deps[name] or ""))
+  end
+end
+
+local function command_run(args)
+  local manifest = load_manifest()
+  local main = manifest.main or "main.kraft"
+  if not exists(main) then fail("нет файла " .. main) end
+  local compiler = is_windows() and "venv/bin/xkraft.cmd" or "venv/bin/xkraft"
+  if not exists(compiler) then compiler = find_compiler() end
+  local cmd = compiler .. " '" .. main .. "'"
+  for _, a in ipairs(args) do
+    cmd = cmd .. " '" .. a:gsub("'", "'\\''") .. "'"
+  end
+  if is_windows() then
+    cmd = "call " .. cmd
+  end
+  if not shell(cmd) then os.exit(1) end
+end
+
+local function usage()
+  io.stderr:write("kpm " .. VERSION .. "\n")
+  io.stderr:write("usage: kpm init venv [name]\n")
+  io.stderr:write("       kpm add <path|url> [name]\n")
+  io.stderr:write("       kpm del <name>\n")
+  io.stderr:write("       kpm list\n")
+  io.stderr:write("       kpm run [args...]\n")
+  os.exit(1)
+end
+
+local function main(args)
+  local cmd = args[1]
+  if not cmd or cmd == "--version" then
+    print("kpm " .. VERSION)
+    if not cmd then usage() end
+    return
+  end
+  local rest = {}
+  for i = 2, #args do rest[i - 1] = args[i] end
+  if cmd == "init" then
+    if rest[1] ~= "venv" then
+      fail("ожидалось: kpm init venv [name]")
+    end
+    command_init(rest)
+  elseif cmd == "add" then
+    command_add(rest)
+  elseif cmd == "del" then
+    command_del(rest)
+  elseif cmd == "list" then
+    command_list()
+  elseif cmd == "run" then
+    command_run(rest)
+  else
+    usage()
+  end
+end
+
+main(arg)

@@ -1,0 +1,3 @@
+# Windows-обёртки создаются dev/make-dist.sh и всегда имеют CRLF.
+# Текстовый diff по ним не нужен: источник — dev/make-dist.sh.
+*.cmd -diff

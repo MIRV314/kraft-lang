@@ -1,0 +1,3 @@
+TYPE_MISMATCH_ERROR: tests/new/err_coerce_runtime.kraft:2
+    2 | flint n = s
+                  ^ expected flint, found str: abc

@@ -1,0 +1,9 @@
+model Box:
+    flint size = "4"
+    construct(flint n):
+        self(n)
+
+Box b = Box("7")
+show({b.size})
+show({type(b.size)})
+show({b.size + 1})

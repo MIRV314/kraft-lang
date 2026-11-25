@@ -1,7 +1,0 @@
-# std/json — разбор и сериализация JSON.
-
-export func parse(str data) -> dict:
-    return json_parse(data)
-
-export func stringify(any value) -> str:
-    return json_stringify(value)

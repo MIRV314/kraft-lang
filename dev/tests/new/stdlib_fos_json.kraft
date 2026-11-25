@@ -1,0 +1,10 @@
+from_lib "std/fos" import write_json, read_json
+
+str path = "/tmp/opencode/xkraft_std_fos_json_test.json"
+dict data = {name: "Аня", age: 30, tags: ["a", "b"], ok: TRUE}
+show({write_json(path, data)})
+dict loaded = read_json(path)
+show({loaded[name]})
+show({loaded[age]})
+show({loaded[tags]})
+show({loaded[ok]})

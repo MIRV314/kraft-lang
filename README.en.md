@@ -1,15 +1,16 @@
 # Kraft
 
 [![CI](https://github.com/MIRV314/kraft-lang/actions/workflows/ci.yml/badge.svg)](https://github.com/MIRV314/kraft-lang/actions/workflows/ci.yml)
-[![release v0.4.0](https://img.shields.io/badge/release-v0.4.0-blue.svg)](https://github.com/MIRV314/kraft-lang/releases/tag/v0.4.0)
+[![release v0.5.0](https://img.shields.io/badge/release-v0.5.0-blue.svg)](https://github.com/MIRV314/kraft-lang/releases/tag/v0.5.0)
 
-[Русская версия](README.md) · [Cheatsheet](docs/cheatsheet.md) · [Built-ins](docs/builtins.md) · [Release](https://github.com/MIRV314/kraft-lang/releases/tag/v0.4.0)
+[Русская версия](README.md) · [Cheatsheet](docs/cheatsheet.md) · [Built-ins](docs/builtins.md) · [Philosophy](docs/philosophy.md) · [Release](https://github.com/MIRV314/kraft-lang/releases/tag/v0.5.0)
 
 Kraft is a small statically typed language: one numeric type (`flint`),
 indentation instead of braces, and `{}` interpolation instead of string
-concatenation. The core is deliberately tiny and frozen; everything else is
-meant to grow as a library written in Kraft itself. The compiler `xkraft` is
-written in Kraft and compiles itself.
+concatenation. Errors speak plainly: category, file, line and a caret. The core
+stays tiny and grows through libraries, not new keywords. The compiler `xkraft`
+is written in Kraft and compiles itself — proof that the language can carry
+real programs.
 
 - **One command.** `.kraft` → Lua → LuaJIT. No C toolchain, no build step.
 - **One binary.** After installation `xkraft` and `kraft` are two names for the
@@ -28,7 +29,7 @@ curl -fsSL https://raw.githubusercontent.com/MIRV314/kraft-lang/main/install-aut
 Or install from a clone: `sh install.sh` (defaults to `~/.local/bin`).
 
 ```sh
-xkraft --version                    # xkraft 0.4.0
+xkraft --version                    # xkraft 0.5.0
 kraft --version                     # same binary, alias name
 
 xkraft program.kraft                # compile and run
@@ -36,10 +37,18 @@ kraft program.kraft                 # exactly the same
 xkraft -c program.kraft             # write program.lua next to the source
 xkraft --tokens program.kraft       # inspect tokens
 xkraft program.kraft 1 2 3          # program arguments
+
+kpm init venv                       # kraft.json, kraft.lock, venv/, packages/
+kpm add ./local-package             # or a URL: kpm add https://…/pkg.zip
+kpm list                            # installed packages
+kpm run                             # run main.kraft through venv/bin/xkraft
+kpm del local-package               # remove a dependency
 ```
 
 From a clone, the ready binary sits in the repo root:
 `./xkraft examples/features.kraft`.
+Two small complete projects: `examples/mini-calc.kraft` (arguments and models)
+and `examples/mini-report.kraft` (CSV via `std/fos`).
 
 ## Language tour
 
@@ -54,6 +63,12 @@ flint MAX = 100                         # uppercase name = constant
 ```
 
 Declarations always need an explicit type; assignments do not repeat it.
+
+`flint` accepts strings from the outside without an explicit cast — `input()`,
+`args()[i]`, `read_text()`, CSV cells. A numeric string is converted at runtime;
+non-numeric input gives `TYPE_MISMATCH_ERROR: expected flint, found str: <value>`.
+A literal `flint n = "x"` is a compile-time error: a letter cannot be a number.
+Explicit `flint(x)` and `str(x)` remain.
 
 | Type | Example |
 | --- | --- |
@@ -74,7 +89,7 @@ show(\{x\})                # {x}
 ```
 
 Writing `show(f(1))` instead of `show({f(1)})` is a common typo; the compiler
-now tells you exactly where to put the braces.
+tells you exactly where to put the braces.
 
 ### Functions, conditions, loops
 
@@ -130,7 +145,7 @@ if age in 0..17:            # half-open interval membership
 `in` iterates `list`/`froz` and `dict` keys (`for x in xs`, `for k, v in d`)
 or checks membership. The numeric range loop is written without `in`.
 
-### The post-v0.1 global model
+### Globals in xkraft
 
 In `xkraft` the top level only declares. A global can be reassigned only
 directly inside a `func`, `for` or `while`; `if`/`elif`/`else` do not open a
@@ -170,9 +185,9 @@ for k, v in user:
 ```
 
 Lists and dictionaries are passed by reference. Common methods include `add`,
-`del`, `remove`, `contains`, `count`, `index`, `join`, `take` and `merge`;
-slicing and index assignment work on `str` and `list`. See
-[builtins.md](docs/builtins.md) for the full list.
+`del`, `remove`, `contains`, `count`, `index`, `join`, `take`, `merge`,
+slicing and index assignment. See [builtins.md](docs/builtins.md) for the full
+list. A dict key is `str` or `flint`; a bare name equals the quoted string.
 
 ### Models
 
@@ -190,6 +205,9 @@ model Counter:
 Counter c = Counter(5)
 show({c.inc(3)})        # 8
 ```
+
+No inheritance, polymorphism, encapsulation, properties, `class` or operator
+overloading before 1.0.
 
 ### Errors
 
@@ -232,6 +250,91 @@ syntax, so literal parentheses must be escaped: `show(a \(b\))` → `a (b)`.
 String concatenation with `+` is not allowed — use interpolation or
 `list.join(separator)`.
 
+## Modules and namespaces
+
+Every top-level declaration of a module is importable — there is no `export`,
+and a `_` prefix does not create privacy:
+
+```kraft
+# math.kraft
+flint LIMIT = 10
+
+func twice(flint x) -> flint:
+    return x * 2
+```
+
+```kraft
+import_file "./math.kraft"                  # all names: LIMIT, twice
+from_file "./math.kraft" import twice       # selected names only
+
+show({twice(3)})
+```
+
+A `namespace` grouping accepts declarations and functions; members are reached
+with a dot from outside, while short names work inside:
+
+```kraft
+namespace util:
+    flint base = 3
+    func inc(flint x) -> flint:
+        return x + base
+
+show({util.inc(4)})     # 7
+```
+
+Imported namespaces work the same way: `import_file "./grid.kraft"` gives
+`grid.size` and `grid.area(2, 3)`.
+
+## Standard library
+
+Two modules are embedded in the distribution — no separate files and no venv
+needed:
+
+```kraft
+import_lib "std/fos"                        # fos.exists/copy/remove/read_text/...
+from_lib "std/fos" import read_json, write_json, read_csv, write_csv
+import_lib "std/cli"                        # cli.run/kill
+
+show({fos.exists("data.txt")})
+```
+
+`std/fos` means File Operating System: `exists`, `copy`, `remove`, `read_text`,
+`write_text`, `read_json`, `write_json`, `read_csv`, `write_csv`. `csv_field`,
+`csv_line` and `csv_parse` are ordinary top-level names available through
+`from_lib`. `std/cli` has only `run(command)` and `kill(message)`.
+
+`std/fs`, `std/json`, `std/file`, `std/math`, `clamp`, `lerp` and `is_even` are
+not shipped. `json_parse` and `json_stringify` stay internal builtins.
+
+The prelude needs no `import`: `path_join`, `now_ms`, `parse_args`,
+`parse_csv`, `parse_json`, `prelude_cat`. Use `--no-prelude` to disable it.
+
+## Packages and venv
+
+`kpm init venv` creates `kraft.json`, `kraft.lock`, `venv/` and `packages/`,
+plus a copy of `xkraft` in `venv/bin/`. On Windows it also writes
+`venv/bin/xkraft.cmd` next to `xkraft-win.lua`. Dependencies are local paths
+or URLs and land in `packages/<name>/`:
+
+```sh
+kpm init venv my-game
+kpm add ./libs/helpers
+kpm add https://example.org/tiles.zip
+kpm run                 # run main.kraft through venv/bin/xkraft
+```
+
+```json
+{
+  "name": "my-game",
+  "version": "0.1.0",
+  "main": "main.kraft",
+  "deps": {"helpers": "./libs/helpers"}
+}
+```
+
+`kraft.lock` pins the source, path and hash of each installed package. The
+registry and moderation arrive in `1.1`; `1.0` supports paths and URLs only.
+
 ## Built-ins in a nutshell
 
 ```kraft
@@ -239,11 +342,13 @@ show({type(42)}, {type("x")}, {type(NONE)})          # flint, str, NONE
 show({len("Привет")}, {len([1, 2])})                 # 6, 2
 show({flint("42") + 1})                              # 43
 show({sum([1, 2, 3])}, {avg([2, 4])})                # 6, 3
+show({factorial(5)}, {fib(10)})                      # 120, 55
 show({sort([3, 1, 2])})                              # [1, 2, 3]
 ```
 
 There are also `map`, `filter`, `reduce`, `read_file`, `write_file`, `args`,
-`exit`, `system`, `assert`, `expect`, `time_ms` and more.
+`exit`, `system`, `assert`, `expect`, `time_ms` and more. Output and input are
+`show`, `show_err` and `input` — no `read()`, `ask()`, `echo` or `$` syntax.
 `map`/`filter`/`reduce` take function names, not lambdas: `map(xs, double)`.
 Built-in names are reserved and cannot be reused for variables, functions,
 parameters or models (`NAME_ERROR`).
@@ -252,14 +357,19 @@ parameters or models (`NAME_ERROR`).
 
 - v0.1 is frozen (`v0.1.0`). `xkraft` compiles itself and produces byte-identical
   Lua on all compatibility tests.
-- In `xkraft` the new model is always on: top-level declarations only, mutation
+- In `xkraft` the 1.0 model is always on: top-level declarations only, mutation
   zones, type blocks, models, index assignment, the full set of built-ins, and
   `try`/`trigger`/`finally`.
 - Implemented: `froz`, `panic`, prelude, `..` ranges, `in`, grouped
-  `trigger CAT1, CAT2:` and Windows setup.
-- Not implemented yet: modules/imports (`import_file`, `from_file`,
-  `import_lib`, `from_lib`), `export`, namespaces and the `kpm` package
-  manager. They are planned for `1.x`.
+  `trigger CAT1, CAT2:`, modules and imports (`import_file`, `from_file`,
+  `import_lib`, `from_lib`), namespaces, `std/fos`, `std/cli` and `kpm` with
+  venv. `export` is gone; all top-level names are importable and `_` does not
+  mean private.
+- `fib` and `factorial` are builtins. There is no `std/math`, `clamp`, `lerp`
+  or `is_even`.
+- Models have no inheritance, polymorphism, encapsulation, properties,
+  `class` or operator overloading.
+- The package registry and moderation are planned for `1.1`.
 
 Type parameters are optional and only for specific tasks:
 
@@ -271,19 +381,17 @@ froz[flint] frozen = [4, 5, 6]    # read-only
 ```
 
 `dict[str, flint]` is equivalent to `dict[str|flint]`: the left type is the
-key (always `str`), the right type is the value. Type parameters are optional;
-inside `[]` only `str`, `flint` and `bool` are allowed. Nesting and `NONE`
-are rejected. `froz[T]` supports reads, indexes, slices and `for in`, but
-no writes or mutating methods.
-
-The prelude needs no `import`: `path_join`, `now_ms`, `parse_args`,
-`parse_csv`, `parse_json`, `prelude_cat`. Use `--no-prelude` to disable it.
+key (`str` or `flint`), the right type is the value. Inside `[]` only `str`,
+`flint` and `bool` are allowed; nesting and `NONE` are rejected. `froz[T]`
+supports reads, indexes, slices and `for in`, but no writes or mutating
+methods.
 
 On Windows, unpack `kraft-win.zip` and run `install-win.cmd` with LuaJIT
 available in `PATH`. `xkraft` and `kraft` run the same program.
 
 Roadmap: frozen v0.1 → self-compilation → post-v0.1 core → prelude, `froz`,
-`panic`, Windows package (done) → modules/imports and package manager.
+`panic`, Windows (done) → modules/imports, stdlib and `kpm` (done) → registry
+in `1.1`.
 
 ## Repository layout
 
@@ -292,20 +400,25 @@ binary.
 
 ```text
 xkraft            ready standalone binary (same file as dist/xkraft)
+kpm               standalone package manager
 dist/             minimal distribution plus documentation
 dev/kraft         frozen v0.1 reference compiler
 dev/xkraft.kraft  compiler written in Kraft
 dev/src/          runtime and reference compiler sources
+dev/stdlib/       embedded modules std/fos, std/cli
+dev/kpm.lua       package manager (LuaJIT)
 dev/tests/        test suites
 examples/         example programs
-docs/             decisions, built-ins, cheatsheet
+docs/             decisions, built-ins, cheatsheet, philosophy
 editors/vscode/   syntax highlighting and snippets
 ```
 
 ```sh
-make check                                              # 22 + 18 + 25 + 89 tests
+make check                                              # 22 + 20 + 25 + 111 + 11 tests
 make dist                                               # rebuild dist/xkraft and ./xkraft
 (cd dev && ./kraft xkraft.kraft xkraft.kraft > xkraft.lua)  # self-compilation
+(cd dev && sh tests/stress.sh)          # outside release: stress + docs/API audit
+(cd dev && sh tests/style.sh)           # outside release: basic style check
 ```
 
 ## License

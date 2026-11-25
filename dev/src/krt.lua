@@ -410,6 +410,22 @@ function krt.num_sqrt(n)
   return math.sqrt(n)
 end
 
+function krt.num_factorial(n)
+  n = krt.as_flint(n)
+  if n <= 1 then return 1 end
+  local r = 1
+  for i = 2, n do r = r * i end
+  return r
+end
+
+function krt.num_fib(n)
+  n = krt.as_flint(n)
+  if n <= 1 then return n end
+  local a, b = 0, 1
+  for i = 2, n do a, b = b, a + b end
+  return b
+end
+
 local function extrema(args, count, want_max)
   local m
   if count == 1 and krt.is_list(args[1]) then
@@ -450,6 +466,11 @@ end
 -- ---------- проверки типов в рантайме ----------
 
 function krt.as_flint(v)
+  if type(v) == "string" then
+    local n = tonumber(v)
+    if n ~= nil then return n end
+    krt.fail("TYPE_MISMATCH_ERROR", "expected flint, found str: " .. v)
+  end
   if type(v) ~= "number" then
     krt.fail("TYPE_MISMATCH_ERROR", "expected flint, found " .. krt.typeof(v))
   end
@@ -470,14 +491,14 @@ function krt.as_bool(v)
   return v
 end
 
--- flint(x): число как есть, bool → 1/0, str → разбор (мусор — VALUE_ERROR).
+-- flint(x): число как есть, bool → 1/0, str → разбор (мусор — TYPE_MISMATCH_ERROR).
 function krt.to_flint(v)
   if type(v) == "number" then return v end
   if type(v) == "boolean" then return v and 1 or 0 end
   if type(v) == "string" then
     local n = tonumber(v)
     if n == nil then
-      krt.fail("VALUE_ERROR", "cannot convert str to flint: " .. v)
+      krt.fail("TYPE_MISMATCH_ERROR", "expected flint, found str: " .. v)
     end
     return n
   end

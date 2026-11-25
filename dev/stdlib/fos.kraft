@@ -1,0 +1,74 @@
+# std/fos — File Operating System: работа с файлами и форматами.
+# Имена action_format: read_text, read_json, read_csv.
+
+func exists(str path) -> bool:
+    return file_exists(path)
+
+func copy(str src, str dst) -> bool:
+    return copy_file(src, dst)
+
+func remove(str path) -> bool:
+    return remove_file(path)
+
+func read_text(str path) -> str:
+    return read_file(path)
+
+func write_text(str path, str data) -> bool:
+    return write_file(path, data)
+
+func read_json(str path) -> dict:
+    return json_parse(read_text(path))
+
+func write_json(str path, any value) -> bool:
+    return write_text(path, json_stringify(value))
+
+func csv_field(str s) -> str:
+    if s.contains(",") OR s.contains("\"") OR s.contains("\n") OR s.contains("\r"):
+        return ["\"", s.replace("\"", "\"\""), "\""].join("")
+    return s
+
+func csv_line(str line) -> list:
+    list fields = []
+    str cur = ""
+    bool quoted = FALSE
+    flint i = 0
+    while i < len(line):
+        str c = line[i]
+        if quoted AND c == "\"" AND i + 1 < len(line) AND line[i + 1] == "\"":
+            cur = [cur, "\""].join("")
+            i += 2
+            continue
+        if c == "\"":
+            quoted = NOT quoted
+        elif c == "," AND NOT quoted:
+            fields.add(cur)
+            cur = ""
+        else:
+            cur = [cur, c].join("")
+        i += 1
+    fields.add(cur)
+    return fields
+
+func csv_parse(str data) -> list:
+    list rows = []
+    list lines = data.part("\n")
+    for line0 in lines:
+        str line = line0
+        if line.suff("\r"):
+            line = line[..len(line) - 1]
+        if line.trim() == "":
+            continue
+        rows.add(csv_line(line))
+    return rows
+
+func read_csv(str path) -> list:
+    return csv_parse(read_text(path))
+
+func write_csv(str path, list rows) -> bool:
+    list lines = []
+    for row in rows:
+        list fields = []
+        for cell in row:
+            fields.add(csv_field(str(cell)))
+        lines.add(fields.join(","))
+    return write_text(path, lines.join("\n"))

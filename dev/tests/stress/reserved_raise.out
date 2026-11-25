@@ -1,0 +1,3 @@
+NAME_ERROR: tests/stress/reserved_raise.kraft:1
+    1 | str raise = "x"
+            ^ expected free name, found reserved 'raise'
