@@ -243,11 +243,26 @@ local function copy_any(src, dst)
   end
 end
 
+-- XOR без побитового оператора: старые сборки LuaJIT его не понимают.
+-- Возвращаем знаковое 32-битное значение, как LuaJIT, чтобы хэш пакетов
+-- в kraft.lock не изменился.
+local function bxor32(a, b)
+  local res, bit = 0, 1
+  for _ = 1, 32 do
+    if (a % 2) ~= (b % 2) then res = res + bit end
+    a = math.floor(a / 2)
+    b = math.floor(b / 2)
+    bit = bit * 2
+  end
+  if res >= 2147483648 then res = res - 4294967296 end
+  return res
+end
+
 local function hash_file(path)
   local data = read_file(path) or ""
   local h = 2166136261
   for i = 1, #data do
-    h = (h ~ data:byte(i)) * 16777619
+    h = bxor32(h, data:byte(i)) * 16777619
     h = h % 4294967296
   end
   return string.format("%08x-%08x", math.floor(h / 65536), h % 65536)
