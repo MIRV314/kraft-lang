@@ -9,10 +9,9 @@ Russian README: [README.ru](../README.md). English guide:
 
 ```sh
 xkraft file.kraft [args...]         # installed compiler, new model
-kraft file.kraft [args...]          # same binary under an alias name
 xkraft -c file.kraft                # executable file.lua next to the source
 xkraft --tokens file.kraft
-xkraft --version                    # xkraft 0.5.0 (both names print this)
+xkraft --version                    # xkraft 0.5.0
 kpm init venv                       # kraft.json, kraft.lock, venv/, packages/
 kpm add ./local-package             # local path or URL
 kpm list

@@ -2,7 +2,7 @@
 # Базовый проверяющий стиля: НЕ входит в make check и не попадает в dist.
 # Запуск вручную: dev/tests/style.sh. Источник правил — docs/style.md.
 set -u
-cd "$(dirname "$0")/.." || exit 1
+cd "$(dirname "$0")/../.." || exit 1
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
@@ -32,10 +32,18 @@ for p in root.rglob('*'):
     files.append((p, data))
 
 kraft = [(p, d) for p, d in files if p.suffix == '.kraft']
-# Пользовательские программы: в err_* намеренно живут нарушения для тестов.
-users = [(p, d) for p, d in kraft
-         if p.parts[0] in ('examples', 'dev')
-         and not (p.name.startswith('err_') and 'tests' in p.parts)]
+# Пользовательские программы. Исходник компилятора и prelude не проверяем:
+# там те же имена встречаются в строках и диагностике. В err_* нарушения
+# намеренные — это фикстуры тестов.
+users = []
+for p, d in kraft:
+    s = str(p).replace('\\', '/')
+    if not (s.startswith('examples/') or s.startswith('dev/stdlib/')
+            or s.startswith('dev/tests/')):
+        continue
+    if p.name.startswith('err_') and 'tests' in p.parts:
+        continue
+    users.append((p, d))
 
 problems = []
 
