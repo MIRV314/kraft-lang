@@ -6,7 +6,7 @@
 # Переменные окружения:
 #   KRAFT_SRC    — использовать готовый каталог исходников вместо клона;
 #   KRAFT_REPO   — URL репозитория (по умолчанию официальный);
-#   KRAFT_TAG    — тег для клона (по умолчанию v0.6.0, при отсутствии v0.5.0);
+#   KRAFT_TAG    — тег для клона (по умолчанию v0.8.0, при отсутствии v0.6.0);
 #   KRAFT_PREFIX — префикс установки (по умолчанию /usr/local).
 # Ставится xkraft и псевдоним kraft; замороженный v0.1 в систему не ставится.
 set -eu
@@ -30,11 +30,11 @@ else
     exit 1
   fi
   repo=${KRAFT_REPO:-https://github.com/MIRV314/kraft-lang.git}
-  tag=${KRAFT_TAG:-v0.6.0}
+  tag=${KRAFT_TAG:-v0.8.0}
   echo "install: скачиваем $tag ..."
   if ! git -c advice.detachedHead=false clone --quiet --depth 1 --branch "$tag" "$repo" "$tmp/src"; then
-    echo "install: $tag ещё не опубликован, пробуем v0.5.0" >&2
-    tag=v0.5.0
+    echo "install: $tag ещё не опубликован, пробуем v0.6.0" >&2
+    tag=v0.6.0
     git -c advice.detachedHead=false clone --quiet --depth 1 --branch "$tag" "$repo" "$tmp/src"
   fi
   src="$tmp/src"

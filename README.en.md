@@ -1,7 +1,7 @@
 # Kraft
 
 [![CI](https://github.com/MIRV314/kraft-lang/actions/workflows/ci.yml/badge.svg)](https://github.com/MIRV314/kraft-lang/actions/workflows/ci.yml)
-[![release v0.6.0](https://img.shields.io/badge/release-v0.6.0-blue.svg)](https://github.com/MIRV314/kraft-lang/releases)
+[![release v0.8.0](https://img.shields.io/badge/release-v0.8.0-blue.svg)](https://github.com/MIRV314/kraft-lang/releases)
 
 [Русская версия](README.md) · [Releases](https://github.com/MIRV314/kraft-lang/releases)
 
@@ -11,7 +11,7 @@ concatenation. Errors show the category, file, line and a caret. The core grows
 through libraries, not new keywords. The compiler `xkraft` is written in Kraft
 and compiles itself.
 
-Current version: **0.6.0**.
+Current version: **0.8.0**.
 
 ## Installation
 
@@ -20,8 +20,9 @@ LuaJIT is the only requirement (`luajit` must be in `PATH`).
 ```sh
 curl -fsSL https://raw.githubusercontent.com/MIRV314/kraft-lang/main/install-auto.sh | sh
 # or from a clone: sh install.sh
-xkraft --version                    # xkraft 0.6.0
+xkraft --version                    # xkraft 0.8.0
 xkraft --update                     # update from GitHub Releases
+xkraft lint [path...]               # basic style rules
 ```
 
 The ready binary sits in the repository root (`./xkraft`) and in the
@@ -109,7 +110,6 @@ Packages land in `packages/<name>/`; the source is recorded in `kraft.json`
 - No LSP or completion: only syntax highlighting and snippets for VS Code.
 - No inheritance, polymorphism, encapsulation, properties or `class`.
 - No `std/math`, `clamp`, `lerp` or `is_even`.
-- A fractional range prints `1, 1.5, 2`, not `1.0, 1.5, 2.0`.
 - No package registry yet: local paths and URLs only.
 - No `std/http`, decorators or `async`/auto-await: planned after `1.0`.
 
@@ -126,7 +126,7 @@ Packages land in `packages/<name>/`; the source is recorded in `kraft.json`
 | Complete small projects | [examples/README.md](examples/README.md) |
 | Build and test instructions | "For developers" below |
 
-Release plan: `0.7` — public `xkraft lint`; `0.8` — fractional range prints
+Release plan: `0.8` — public `xkraft lint` and fractional range printing
 `1.0, 1.5, 2.0`; `1.0` — site, registry, AUR and the project showcase. Then
 `std/http` (`1.1`), decorators (`1.2`), `async` with auto-await (`1.3`) and LSP.
 

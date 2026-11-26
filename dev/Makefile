@@ -7,6 +7,7 @@ check:
 	./tests/new.sh
 	./tests/kpm.sh
 	./tests/update.sh
+	./tests/lint.sh
 
 dist:
 	./make-dist.sh

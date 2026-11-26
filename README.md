@@ -1,7 +1,7 @@
 # Kraft
 
 [![CI](https://github.com/MIRV314/kraft-lang/actions/workflows/ci.yml/badge.svg)](https://github.com/MIRV314/kraft-lang/actions/workflows/ci.yml)
-[![release v0.6.0](https://img.shields.io/badge/release-v0.6.0-blue.svg)](https://github.com/MIRV314/kraft-lang/releases)
+[![release v0.8.0](https://img.shields.io/badge/release-v0.8.0-blue.svg)](https://github.com/MIRV314/kraft-lang/releases)
 
 [English](README.en.md) · [Релизы](https://github.com/MIRV314/kraft-lang/releases)
 
@@ -11,7 +11,7 @@ Kraft — небольшой статически типизированный �
 а не новыми ключевыми словами. Компилятор `xkraft` написан на Kraft и собирает
 сам себя.
 
-Текущая версия — **0.6.0**.
+Текущая версия — **0.8.0**.
 
 ## Установка
 
@@ -20,8 +20,9 @@ Kraft — небольшой статически типизированный �
 ```sh
 curl -fsSL https://raw.githubusercontent.com/MIRV314/kraft-lang/main/install-auto.sh | sh
 # или из клона: sh install.sh
-xkraft --version                    # xkraft 0.6.0
+xkraft --version                    # xkraft 0.8.0
 xkraft --update                     # обновить из GitHub Releases
+xkraft lint [path...]               # базовые правила стиля
 ```
 
 Готовый бинарник лежит в корне репозитория (`./xkraft`) и в
@@ -109,7 +110,6 @@ kpm run                    # main.kraft через venv/bin/xkraft
 - LSP и автодополнения: есть только подсветка и сниппеты для VS Code.
 - Наследования, полиморфизма, инкапсуляции, свойств и `class`.
 - `std/math`, `clamp`, `lerp`, `is_even`.
-- Вывода `1.0, 1.5, 2.0` для дробного range: сейчас печатается `1, 1.5, 2`.
 - Реестра пакетов: пока только локальные пути и URL.
 - `std/http`, декораторов и `async`/авто-await: запланированы после `1.0`.
 
@@ -126,8 +126,8 @@ kpm run                    # main.kraft через venv/bin/xkraft
 | Посмотреть законченные примеры | [examples/README.md](examples/README.md) |
 | Собирать и тестировать | раздел «Для разработчика» ниже |
 
-План релизов: `0.7` — публичный `xkraft lint`; `0.8` — вывод `1.0, 1.5, 2.0`
-для дробного range; `1.0` — сайт, реестр, AUR и витрина примеров. Затем
+План релизов: `0.8` — публичный `xkraft lint` и вывод `1.0, 1.5, 2.0` для
+дробного range; `1.0` — сайт, реестр, AUR и витрина примеров. Затем
 `std/http` (`1.1`), декораторы (`1.2`), `async` с авто-await (`1.3`) и LSP.
 
 ## Для разработчика

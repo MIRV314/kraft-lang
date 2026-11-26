@@ -11,8 +11,9 @@ Russian README: [README.ru](../README.md). English guide:
 xkraft file.kraft [args...]         # installed compiler, new model
 xkraft -c file.kraft                # executable file.lua next to the source
 xkraft --tokens file.kraft
-xkraft --version                    # xkraft 0.6.0
+xkraft --version                    # xkraft 0.8.0
 xkraft --update                     # проверить и обновить из GitHub Releases
+xkraft lint [path...]               # базовые правила стиля (docs/style.md)
 kpm init venv                       # kraft.json, kraft.lock, venv/, packages/
 kpm add ./local-package             # local path or URL
 kpm list

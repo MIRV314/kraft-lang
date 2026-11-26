@@ -283,6 +283,14 @@ function krt.tostr(v)
   return tostring(v)
 end
 
+-- Значение дробного range: целые шаги печатаются с .0, остальные как есть.
+function krt.tostr_range_flint(v)
+  if type(v) == "number" and is_integral(v) then
+    return string.format("%.1f", v)
+  end
+  return krt.tostr(v)
+end
+
 -- Внутри коллекций строки печатаются в кавычках.
 function krt.tostr_inner(v)
   if type(v) == "string" then return quote(v) end

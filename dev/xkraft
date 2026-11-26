@@ -4,6 +4,15 @@
 set -u
 root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
+case "${1-}" in
+  lint|--lint)
+    KRAFT_LINT_LIBRARY=1 . "$root/lint.sh"
+    shift
+    kl_lint "$@"
+    exit $?
+    ;;
+esac
+
 # Компилятор на Kraft собирается один раз и пересобирается только при изменении
 # его исходника или рантайма. Без этого каждый запуск стоил ~100 мс.
 cache="$root/xkraft.lua"
