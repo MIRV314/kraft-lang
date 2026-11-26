@@ -6,6 +6,7 @@ check:
 	./tests/xkraft.sh
 	./tests/new.sh
 	./tests/kpm.sh
+	./tests/update.sh
 
 dist:
 	./make-dist.sh

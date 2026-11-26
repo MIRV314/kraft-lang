@@ -5,6 +5,8 @@
 set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repo=$(CDPATH= cd -- "$root/.." && pwd)
+version=$(cat "$repo/VERSION")
+export KRAFT_VERSION="$version"
 
 command -v luajit >/dev/null 2>&1 || {
   echo "make-dist: нужен LuaJIT (команда luajit в PATH)" >&2
@@ -27,6 +29,7 @@ done
 
 python3 - "$root" "$repo" <<'PY'
 import hashlib
+import os
 import pathlib
 import re
 import subprocess
@@ -35,7 +38,9 @@ import zipfile
 
 root = pathlib.Path(sys.argv[1])
 repo = pathlib.Path(sys.argv[2])
+version = os.environ["KRAFT_VERSION"]
 lua = (root / "xkraft.lua").read_text()
+update_sh = (root / "update.sh").read_text()
 krt = (root / "src/krt.lua").read_text()
 
 # Prelude пишется на Kraft и собирается тем же xkraft; в дистрибутив вшивается
@@ -123,17 +128,26 @@ if "__KRAFT_EMBEDDED_COMPILER__" in lua:
     sys.exit("make-dist: метка встроенного компилятора уже встречается в Lua")
 
 header = '''#!/bin/sh
-# xkraft 0.5.0 — автономный компилятор Kraft.
+# xkraft @VERSION@ — автономный компилятор Kraft.
 # lua-код компилятора вшит ниже; внешних файлов и каталога src/ не нужно.
 set -eu
+KRAFT_VERSION='@VERSION@'
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/xkraft.XXXXXX") || exit 1
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
+
+@UPDATE_SH@
 
 awk 'seen { print } /^__KRAFT_EMBEDDED_COMPILER__$/ { seen = 1 }' "$0" > "$tmp/compiler.lua"
 
 if [ "${1-}" = "--version" ]; then
   exec luajit "$tmp/compiler.lua" --version
 fi
+if [ "${1-}" = "--update" ]; then
+  ku_update "$0" "$tmp"
+  exit $?
+fi
+
+ku_check "$KRAFT_VERSION" "$tmp" || true
 
 mode=run
 flags=""
@@ -149,7 +163,7 @@ while [ $# -gt 0 ]; do
 done
 
 if [ -z "$src" ]; then
-  echo "usage: xkraft [--tokens] [-c] file.kraft" >&2
+  echo "usage: xkraft [--version|--update|--tokens|-c] file.kraft" >&2
   exit 1
 fi
 
@@ -171,6 +185,8 @@ esac
 exit 0
 '''
 
+header = header.replace("@VERSION@", version).replace("@UPDATE_SH@", update_sh)
+
 out = repo / "dist" / "xkraft"
 dist_text = header + "__KRAFT_EMBEDDED_COMPILER__\n" + lua
 out.write_text(dist_text)
@@ -185,7 +201,7 @@ if dist_text.count(marker) != 1:
 # kpm: автономный Lua-скрипт с оболочкой, как у xkraft.
 kpm_src = (root / "kpm.lua").read_text()
 kpm_header = '''#!/bin/sh
-# kpm 0.5.0 — менеджер пакетов Kraft.
+# kpm @VERSION@ — менеджер пакетов Kraft.
 set -eu
 dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/kpm.XXXXXX") || exit 1
@@ -193,6 +209,8 @@ trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 awk 'seen { print } /^__KPM_EMBEDDED__$/ { seen = 1 }' "$0" > "$tmp/kpm.lua"
 XKRAFT="$dir/xkraft" exec luajit "$tmp/kpm.lua" "$@"
 '''
+kpm_header = kpm_header.replace("@VERSION@", version)
+
 kpm_out = repo / "dist" / "kpm"
 kpm_out.write_text(kpm_header + "__KPM_EMBEDDED__\n" + kpm_src)
 kpm_out.chmod(0o755)
@@ -225,6 +243,7 @@ set "XK_SRC="
 :scan
 if "%~1"=="" goto usage
 if "%~1"=="--version" goto version
+if "%~1"=="--update" goto update
 if "%~1"=="--no-prelude" (
   set "XK_FLAGS=%XK_FLAGS% --no-prelude"
   shift
@@ -256,6 +275,10 @@ goto args
 luajit "%XK_LUA%" --version
 exit /b %ERRORLEVEL%
 
+:update
+powershell -NoProfile -Command "param([string]$dir,[string]$base) $ErrorActionPreference='Stop'; if (-not $base) { $base='https://github.com/MIRV314/kraft-lang/releases/latest/download' }; $tmp=Join-Path $env:TEMP ('kraft-update-'+[guid]::NewGuid().ToString('N')); New-Item -ItemType Directory -Force $tmp | Out-Null; try { Invoke-WebRequest -Uri ($base+'/SHA256SUMS') -OutFile (Join-Path $tmp 'SHA256SUMS'); $want=(Get-Content (Join-Path $tmp 'SHA256SUMS') | Where-Object { $_ -match '\s+kraft-win\.zip$' } | ForEach-Object { ($_ -split '\s+')[0] } | Select-Object -First 1); Invoke-WebRequest -Uri ($base+'/kraft-win.zip') -OutFile (Join-Path $tmp 'kraft-win.zip'); $got=(Get-FileHash -Algorithm SHA256 (Join-Path $tmp 'kraft-win.zip')).Hash.ToLower(); if (-not $want -or $got -ne $want.ToLower()) { throw 'SHA256 mismatch' }; $u=Join-Path $tmp 'unpacked'; Expand-Archive -Force -Path (Join-Path $tmp 'kraft-win.zip') -DestinationPath $u; Copy-Item -Force (Join-Path $u 'xkraft-win.lua') $dir; Copy-Item -Force (Join-Path $u 'kpm-win.lua') $dir; Write-Host 'xkraft: обновлено' } finally { Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue }" "%~dp0" "%KRAFT_UPDATE_DOWNLOAD%"
+exit /b %ERRORLEVEL%
+
 :args
 set "XK_ARGS="
 :collect
@@ -284,7 +307,7 @@ del "%XK_TMP%" >nul 2>&1
 exit /b 1
 
 :usage
-echo usage: xkraft [--tokens] [-c] [--emit-lua] file.kraft [args...] 1>&2
+echo usage: xkraft [--version|--update|--tokens|-c|--emit-lua] file.kraft [args...] 1>&2
 exit /b 1
 '''
 

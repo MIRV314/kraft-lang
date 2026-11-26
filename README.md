@@ -1,9 +1,9 @@
 # Kraft
 
 [![CI](https://github.com/MIRV314/kraft-lang/actions/workflows/ci.yml/badge.svg)](https://github.com/MIRV314/kraft-lang/actions/workflows/ci.yml)
-[![release v0.5.0](https://img.shields.io/badge/release-v0.5.0-blue.svg)](https://github.com/MIRV314/kraft-lang/releases/tag/v0.5.0)
+[![release v0.6.0](https://img.shields.io/badge/release-v0.6.0-blue.svg)](https://github.com/MIRV314/kraft-lang/releases)
 
-[English](README.en.md) · [Релиз v0.5.0](https://github.com/MIRV314/kraft-lang/releases/tag/v0.5.0)
+[English](README.en.md) · [Релизы](https://github.com/MIRV314/kraft-lang/releases)
 
 Kraft — небольшой статически типизированный язык: один числовой тип `flint`,
 отступы вместо фигурных скобок, интерполяция `{}` вместо склейки строк.
@@ -11,7 +11,7 @@ Kraft — небольшой статически типизированный �
 а не новыми ключевыми словами. Компилятор `xkraft` написан на Kraft и собирает
 сам себя.
 
-Текущая версия — **0.5.0**.
+Текущая версия — **0.6.0**.
 
 ## Установка
 
@@ -20,13 +20,19 @@ Kraft — небольшой статически типизированный �
 ```sh
 curl -fsSL https://raw.githubusercontent.com/MIRV314/kraft-lang/main/install-auto.sh | sh
 # или из клона: sh install.sh
-xkraft --version                    # xkraft 0.5.0
+xkraft --version                    # xkraft 0.6.0
+xkraft --update                     # обновить из GitHub Releases
 ```
 
 Готовый бинарник лежит в корне репозитория (`./xkraft`) и в
-[релизе](https://github.com/MIRV314/kraft-lang/releases/tag/v0.5.0).
+[релизах](https://github.com/MIRV314/kraft-lang/releases).
 Основная команда — `xkraft`. Эталонный компилятор `kraft` v0.1 заморожен,
 лежит в `dev/kraft` и в поставку не входит.
+
+`xkraft --update` скачивает последний релиз, сверяет `SHA256SUMS` и атомарно
+заменяет бинарник (на Windows — файлы из `kraft-win.zip`). Обычная проверка
+новой версии происходит раз в сутки только в терминале; отключить её можно
+через `KRAFT_NO_UPDATE_CHECK=1`.
 
 ## Первая программа
 
@@ -105,6 +111,7 @@ kpm run                    # main.kraft через venv/bin/xkraft
 - `std/math`, `clamp`, `lerp`, `is_even`.
 - Вывода `1.0, 1.5, 2.0` для дробного range: сейчас печатается `1, 1.5, 2`.
 - Реестра пакетов: пока только локальные пути и URL.
+- `std/http`, декораторов и `async`/авто-await: запланированы после `1.0`.
 
 ## Куда дальше
 
@@ -118,6 +125,10 @@ kpm run                    # main.kraft через venv/bin/xkraft
 | Про философию языка | [docs/philosophy.md](docs/philosophy.md) |
 | Посмотреть законченные примеры | [examples/README.md](examples/README.md) |
 | Собирать и тестировать | раздел «Для разработчика» ниже |
+
+План релизов: `0.7` — публичный `xkraft lint`; `0.8` — вывод `1.0, 1.5, 2.0`
+для дробного range; `1.0` — сайт, реестр, AUR и витрина примеров. Затем
+`std/http` (`1.1`), декораторы (`1.2`), `async` с авто-await (`1.3`) и LSP.
 
 ## Для разработчика
 
@@ -138,7 +149,7 @@ editors/vscode/   подсветка и сниппеты
 ```
 
 ```sh
-make check                  # 22 + 20 + 25 + 111 + 11 тестов
+make check                  # 22 + 20 + 25 + 111 + 11 + 5 тестов
 make dist                   # собрать dist/xkraft и корневой xkraft
 (cd dev && ./kraft xkraft.kraft xkraft.kraft > xkraft.lua)   # самокомпиляция
 (cd dev && sh tests/stress.sh)          # вне релиза: стресс и сверка API с docs

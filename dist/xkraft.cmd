@@ -20,6 +20,7 @@ set "XK_SRC="
 :scan
 if "%~1"=="" goto usage
 if "%~1"=="--version" goto version
+if "%~1"=="--update" goto update
 if "%~1"=="--no-prelude" (
   set "XK_FLAGS=%XK_FLAGS% --no-prelude"
   shift
@@ -51,6 +52,10 @@ goto args
 luajit "%XK_LUA%" --version
 exit /b %ERRORLEVEL%
 
+:update
+powershell -NoProfile -Command "param([string]$dir,[string]$base) $ErrorActionPreference='Stop'; if (-not $base) { $base='https://github.com/MIRV314/kraft-lang/releases/latest/download' }; $tmp=Join-Path $env:TEMP ('kraft-update-'+[guid]::NewGuid().ToString('N')); New-Item -ItemType Directory -Force $tmp | Out-Null; try { Invoke-WebRequest -Uri ($base+'/SHA256SUMS') -OutFile (Join-Path $tmp 'SHA256SUMS'); $want=(Get-Content (Join-Path $tmp 'SHA256SUMS') | Where-Object { $_ -match '\s+kraft-win\.zip$' } | ForEach-Object { ($_ -split '\s+')[0] } | Select-Object -First 1); Invoke-WebRequest -Uri ($base+'/kraft-win.zip') -OutFile (Join-Path $tmp 'kraft-win.zip'); $got=(Get-FileHash -Algorithm SHA256 (Join-Path $tmp 'kraft-win.zip')).Hash.ToLower(); if (-not $want -or $got -ne $want.ToLower()) { throw 'SHA256 mismatch' }; $u=Join-Path $tmp 'unpacked'; Expand-Archive -Force -Path (Join-Path $tmp 'kraft-win.zip') -DestinationPath $u; Copy-Item -Force (Join-Path $u 'xkraft-win.lua') $dir; Copy-Item -Force (Join-Path $u 'kpm-win.lua') $dir; Write-Host 'xkraft: обновлено' } finally { Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue }" "%~dp0" "%KRAFT_UPDATE_DOWNLOAD%"
+exit /b %ERRORLEVEL%
+
 :args
 set "XK_ARGS="
 :collect
@@ -79,5 +84,5 @@ del "%XK_TMP%" >nul 2>&1
 exit /b 1
 
 :usage
-echo usage: xkraft [--tokens] [-c] [--emit-lua] file.kraft [args...] 1>&2
+echo usage: xkraft [--version|--update|--tokens|-c|--emit-lua] file.kraft [args...] 1>&2
 exit /b 1

@@ -4850,7 +4850,7 @@ func write_compiled(str path, str out_lua):
 
 list argv = args()
 if len(argv) >= 2 AND argv[1] == "--version":
-    show(xkraft 0.5.0)
+    show(xkraft 0.6.0)
     exit(0)
 if len(argv) < 2:
     show_err(usage: xkraft [--tokens] [-c] file.kraft)
