@@ -211,8 +211,8 @@ end
 
 local function shell(cmd)
   local ok = os.execute(cmd)
-  if is_windows() then return ok == true or ok == 0 end
-  return ok == 0
+  -- Lua 5.1/LuaJIT возвращают код возврата, Lua 5.4 — boolean.
+  return ok == true or ok == 0
 end
 
 local function mkdirp(path)
