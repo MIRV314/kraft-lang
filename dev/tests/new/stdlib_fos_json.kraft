@@ -1,6 +1,7 @@
 from_lib "std/fos" import write_json, read_json
 
-str path = "/tmp/opencode/xkraft_std_fos_json_test.json"
+list av = args()
+str path = path_join(av[1], "xkraft_std_fos_json_test.json")
 dict data = {name: "Аня", age: 30, tags: ["a", "b"], ok: TRUE}
 show({write_json(path, data)})
 dict loaded = read_json(path)

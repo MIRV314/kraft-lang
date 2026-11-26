@@ -1,6 +1,7 @@
 from_lib "std/fos" import write_csv, read_csv, csv_parse
 
-str path = "/tmp/opencode/xkraft_std_fos_csv_test.csv"
+list av = args()
+str path = path_join(av[1], "xkraft_std_fos_csv_test.csv")
 list rows = [["a", "b,c"], ["x\"y", "z"]]
 show({write_csv(path, rows)})
 show({read_csv(path)})

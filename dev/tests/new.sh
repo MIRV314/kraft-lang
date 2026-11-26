@@ -49,7 +49,8 @@ run_case() {
     cat "$prefix.err" > "$prefix.out"
     return "$code"
   fi
-  luajit "$prefix.lua" > "$prefix.out" 2>&1
+  # Тесты std/fos получают временный каталог первым аргументом.
+  luajit "$prefix.lua" "$tmp" > "$prefix.out" 2>&1
   return $?
 }
 
