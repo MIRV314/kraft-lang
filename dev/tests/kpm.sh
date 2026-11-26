@@ -29,7 +29,7 @@ printf 'show(hello package)\n' > "$tmp/pkgsrc/hello/main.kraft"
 
 cd "$tmp/proj" || exit 1
 kpm --version >/dev/null && check version 0 || check version 1
-kpm init venv demo >/dev/null 2>&1 && check init 0 || check init 1
+kpm init venv demo >/dev/null && check init 0 || check init 1
 [ -f kraft.json ] && [ -f kraft.lock ] && [ -x venv/bin/xkraft ] && [ -d packages ] \
   && check venv 0 || check venv 1
 grep -q '"deps": {}' kraft.json && check manifest 0 || check manifest 1
