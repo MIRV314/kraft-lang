@@ -1,0 +1,17 @@
+import_lib "std/math"
+
+show({math.pow(2, 10)})
+show({math.pow(2.5, 2)})
+
+flint n = math.random(1..5)
+assert(n >= 1 AND n < 5, "integer range")
+show("range ok")
+
+flint f = math.random(1..10..0.5)
+assert(f >= 1 AND f < 10, "fractional range")
+assert(round(f * 2) == f * 2, "fractional step")
+show("step ok")
+
+str c = math.random(["a", "b", "c"])
+assert(c == "a" OR c == "b" OR c == "c", "choice")
+show("choice ok")

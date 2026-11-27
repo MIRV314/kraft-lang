@@ -754,6 +754,12 @@ func builtin_info(str name) -> dict:
         return {ok: TRUE, n: 1, ret: "flint", a1: "flint"}
     if name == "fib":
         return {ok: TRUE, n: 1, ret: "flint", a1: "flint"}
+    # Внутренние функции для std/math; пользовательский код вызывает их через
+    # обёртки из std/math, а не напрямую.
+    if name == "rand_num":
+        return {ok: TRUE, n: 1, ret: "flint", a1: "any"}
+    if name == "rand_choice":
+        return {ok: TRUE, n: 1, ret: "any", a1: "any"}
     if name == "min":
         return {ok: TRUE, variadic: TRUE, min: 1, max: 9, ret: "flint", a1: "flint"}
     if name == "max":
@@ -3981,6 +3987,10 @@ func emit_expr(dict st, dict e) -> str:
             return cat(["krt.num_factorial(", wrap_flint(emit_expr(st, a0), a0[t], e_nullable(a0)), ")"])
         if bn == "fib":
             return cat(["krt.num_fib(", wrap_flint(emit_expr(st, a0), a0[t], e_nullable(a0)), ")"])
+        if bn == "rand_num":
+            return cat(["krt.rand_num(", emit_expr(st, a0), ")"])
+        if bn == "rand_choice":
+            return cat(["krt.rand_choice(", emit_expr(st, a0), ")"])
         if bn == "min" OR bn == "max":
             list mvals = []
             for mn0 in ba:
@@ -4884,7 +4894,7 @@ func write_compiled(str path, str out_lua):
 
 list argv = args()
 if len(argv) >= 2 AND argv[1] == "--version":
-    show(xkraft 0.9.0)
+    show(xkraft 0.9.1)
     exit(0)
 if len(argv) < 2:
     show_err(usage: xkraft [--tokens] [-c] file.kraft)

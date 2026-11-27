@@ -1,7 +1,7 @@
 # Kraft
 
 [![CI](https://github.com/MIRV314/kraft-lang/actions/workflows/ci.yml/badge.svg)](https://github.com/MIRV314/kraft-lang/actions/workflows/ci.yml)
-[![release v0.9.0](https://img.shields.io/badge/release-v0.9.0-blue.svg)](https://github.com/MIRV314/kraft-lang/releases)
+[![release v0.9.1](https://img.shields.io/badge/release-v0.9.1-blue.svg)](https://github.com/MIRV314/kraft-lang/releases)
 
 [English](README.en.md) · [Релизы](https://github.com/MIRV314/kraft-lang/releases)
 
@@ -11,7 +11,7 @@ Kraft — небольшой статически типизированный �
 а не новыми ключевыми словами. Компилятор `xkraft` написан на Kraft и собирает
 сам себя.
 
-Текущая версия — **0.9.0**.
+Текущая версия — **0.9.1**.
 
 ## Установка
 
@@ -20,7 +20,7 @@ Kraft — небольшой статически типизированный �
 ```sh
 curl -fsSL https://raw.githubusercontent.com/MIRV314/kraft-lang/main/install-auto.sh | sh
 # или из клона: sh install.sh
-kraft --version                     # xkraft 0.9.0; kraft — псевдоним
+kraft --version                     # xkraft 0.9.1; kraft — псевдоним
 kraft --update                      # обновить бинарник и kpm из GitHub Releases
 xkraft lint [path...]               # базовые правила стиля
 kpm --version                       # kpm 1.0.0
@@ -125,7 +125,8 @@ kpm run                    # main.kraft через venv/bin/xkraft
 - Наследования, полиморфизма и инкапсуляции как языковой ООП: паттерны живут в
   std. `class` не вводится — его роль выполняет `model`; свойства остаются
   отдельным будущим решением.
-- `std/math`, `clamp`, `lerp`, `is_even`.
+- `sin`, `cos`, `tan` и `log` в `std/math`: пока есть только `pow` и `random`.
+- `clamp`, `lerp` и `is_even` не вводятся.
 - Реестра пакетов: пока только локальные пути и URL.
 - `std/http`, декораторов и `async`/авто-await: запланированы после `1.0`.
 
@@ -133,8 +134,9 @@ kpm run                    # main.kraft через venv/bin/xkraft
 
 | Хочу… | Открыть |
 | --- | --- |
-| Кратко повторить синтаксис | [RU](docs/cheatsheet.md) · [EN](docs/cheatsheet.en.md) |
+| Кратко повторить синтаксис | [docs/cheatsheet.md](docs/cheatsheet.md) |
 | Полный список функций и методов | [docs/builtins.md](docs/builtins.md) |
+| Разобраться с библиотеками | [docs/libs.md](docs/libs.md) |
 | Понять, почему так устроено | [docs/decisions.md](docs/decisions.md) |
 | Узнать правила компилятора | [docs/rules.md](docs/rules.md) |
 | Писать код в стиле проекта | [docs/style.md](docs/style.md) |
@@ -146,7 +148,7 @@ kpm run                    # main.kraft через venv/bin/xkraft
 дробного range; `0.9` — `PI` в ядре, hotfix `kpm` и свежая документация.
 Следующий стабильный `1.0` не включает сайт, реестр, AUR и витрину примеров:
 они отложены на отдельный релиз. Затем `std/http` (`1.1`), декораторы (`1.2`),
-`async` с авто-await (`1.3`) и LSP.
+`async` с авто-await (`1.3`) и затем LSP — не только для VS Code.
 
 ## Для разработчика
 
@@ -166,8 +168,12 @@ docs/             документация
 editors/vscode/   подсветка и сниппеты
 ```
 
+Замороженный `kraft` v0.1 не знает нового синтаксиса (`pass`, новые срезы):
+он нужен только для самокомпиляции. Новый код принимает `xkraft` и псевдоним
+`kraft` из поставки.
+
 ```sh
-make check                  # 22 + 20 + 25 + 111 + 11 + 5 тестов
+make check                  # 22 + 20 + 25 + 115 + 13 + 6 + 9 тестов
 make dist                   # собрать dist/xkraft и корневой xkraft
 (cd dev && ./kraft xkraft.kraft xkraft.kraft > xkraft.lua)   # самокомпиляция
 (cd dev && sh tests/stress.sh)          # вне релиза: стресс и сверка API с docs

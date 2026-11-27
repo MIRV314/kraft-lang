@@ -1,6 +1,6 @@
 # Kraft cheatsheet
 
-Reference for `0.9.0`. Full docs: [English README](../README.en.md),
+Reference for `0.9.1`. Full docs: [English README](../README.en.md),
 [builtins](builtins.md), [decisions](decisions.md),
 [philosophy](philosophy.md). Russian version:
 [README](../README.md), [cheatsheet](cheatsheet.md).
@@ -11,7 +11,7 @@ Reference for `0.9.0`. Full docs: [English README](../README.en.md),
 xkraft file.kraft [args...]         # current compiler, new model
 xkraft -c file.kraft                # executable file.lua next to the source
 xkraft --tokens file.kraft
-xkraft --version                    # xkraft 0.9.0
+xkraft --version                    # xkraft 0.9.1
 kraft --update                      # update binary and kpm from GitHub Releases
 xkraft lint [path...]               # basic style rules (docs/style.md)
 kpm init venv                       # kraft.json, kraft.lock, venv/, packages/
@@ -53,7 +53,8 @@ names (`MAX`, `MAX_SIZE`) are hard constants: writing to them gives
 `CONST_ERROR`.
 
 The built-in constant `PI` is π, written without a call: `show({PI})` →
-`3.1415926535898`. There is no separate `std/math`.
+`3.1415926535898`. Math helpers on top of the core live in `std/math`:
+`pow` and `random`.
 
 `flint` takes external strings without an explicit `flint(...)`:
 `flint age = input()`, `flint port = args()[1]`. A numeric string literal is
@@ -87,6 +88,8 @@ str:
   (excluded), `xs[2..]` — to the end, `xs[...2]` — whole list with step 2,
   `xs[2...3]` — from 2 to the end with step 3, `xs[...]` — a full copy.
 - `pass` is an empty statement in a branch or loop body; it does nothing.
+  It and the new slice forms are understood by `xkraft`; the frozen `kraft`
+  v0.1 is only for self-compilation and does not know them.
 - Membership: `if age in 0..17`, `if x in xs`, `if k in d`.
 - Strings are joined with interpolation or `xs.join(sep)`, never with `+`.
 - Compound assignment: `+= -= *= /= //= %= **=` (numbers only).
@@ -254,8 +257,14 @@ import_lib "std/cli"
 `system(command)` is the built-in `/bin/sh -c` call; `cli.run(command)` is a
 wrapper in `std/cli`; both return the exit code.
 
-There is no `std/fs`, `std/json`, `std/math`, `clamp`, `lerp` or `is_even`;
-`fib` and `factorial` are builtins.
+`std/math` provides `pow(a, b)` and `random(x)`. `random(1..10)` picks from a
+range, `random(1..10..0.5)` from a fractional grid, and `random(list)` returns
+a random element; `random(5..5)` gives `VALUE_ERROR: empty range`. See
+`docs/libs.en.md`.
+
+There is no `std/fs`, `std/json`, `std/file`, `clamp`, `lerp` or `is_even`;
+`fib` and `factorial` are builtins. `sin`, `cos`, `tan` and `log` are not in
+`std/math` yet.
 
 ```sh
 kpm init venv        # kraft.json, kraft.lock, venv/, packages/

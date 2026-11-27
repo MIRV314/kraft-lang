@@ -89,7 +89,7 @@ $kl_found"
 
       if (text ~ /^[ \t]*export([ \t]|$)/)
         report("export is not in the language")
-      if (text ~ /std\/(math|fs|json|file)([^A-Za-z0-9_]|$)/)
+      if (text ~ /std\/(fs|json|file)([^A-Za-z0-9_]|$)/)
         report("removed stdlib module")
       if (text ~ /(^|[^A-Za-z0-9_])(clamp|lerp|is_even)[ \t]*\(/)
         report("removed builtin")

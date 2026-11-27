@@ -9,6 +9,11 @@ krt.NONE = setmetatable({}, { __tostring = function() return "NONE" end })
 -- Встроенная константа PI: число π, доступная в Kraft как `PI`.
 krt.PI = math.pi
 
+-- Генератор случайных чисел используется std/math. Инициализация один раз
+-- при загрузке рантайма; воспроизводимость тестам не нужна — они проверяют
+-- диапазон и принадлежность сетке, а не конкретное значение.
+math.randomseed(os.time())
+
 local LIST_MT = { __kraft = "list" }
 local FROZ_MT = { __kraft = "list" }
 local DICT_MT = { __kraft = "dict" }
@@ -435,6 +440,30 @@ function krt.num_fib(n)
   local a, b = 0, 1
   for i = 2, n do a, b = b, a + b end
   return b
+end
+
+-- ---------- случайные значения для std/math ----------
+
+-- rand_num принимает range целиком: границы и шаг уже разобраны компилятором.
+-- Правая граница исключена; шаг задаёт сетку, включая дробный шаг из D88.
+function krt.rand_num(r)
+  if not krt.is_range(r) then
+    krt.fail("TYPE_ERROR", "expected range, found " .. krt.typeof(r))
+  end
+  if r.from >= r.to then krt.fail("VALUE_ERROR", "empty range") end
+  local count = math.floor((r.to - r.from) / r.step + 1e-9)
+  if count <= 0 then krt.fail("VALUE_ERROR", "empty range") end
+  return r.from + math.floor(math.random() * count) * r.step
+end
+
+-- rand_choice — аналог choice для списка: случайный элемент, не индекс.
+function krt.rand_choice(xs)
+  if not (krt.is_list(xs) or krt.is_froz(xs)) then
+    krt.fail("TYPE_ERROR", "expected list, found " .. krt.typeof(xs))
+  end
+  local n = #xs
+  if n == 0 then krt.fail("VALUE_ERROR", "empty choice") end
+  return xs[math.floor(math.random() * n) + 1]
 end
 
 local function extrema(args, count, want_max)

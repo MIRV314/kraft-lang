@@ -1,0 +1,11 @@
+# std/math — математические функции поверх ядра.
+# pow — имя для уже существующего оператора **, random — выбор из range
+# (по правилам D87/D88) или случайный элемент списка.
+
+func pow(flint a, flint b) -> flint:
+    return a ** b
+
+func random(any x) -> any:
+    if type(x) == "range":
+        return rand_num(x)
+    return rand_choice(x)

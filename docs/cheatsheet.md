@@ -1,6 +1,6 @@
 # Kraft — шпаргалка
 
-Памятка по `0.9.0`. Полные документы: [README](../README.md),
+Памятка по `0.9.1`. Полные документы: [README](../README.md),
 [builtins](builtins.md), [decisions](decisions.md),
 [philosophy](philosophy.md). Английская версия:
 [README.en](../README.en.md), [cheatsheet.en](cheatsheet.en.md).
@@ -11,7 +11,7 @@
 xkraft file.kraft [args...]         # текущий компилятор, новая модель
 xkraft -c file.kraft                # исполняемый file.lua рядом с исходником
 xkraft --tokens file.kraft
-xkraft --version                    # xkraft 0.9.0
+xkraft --version                    # xkraft 0.9.1
 kraft --update                      # обновить бинарник и kpm из GitHub Releases
 xkraft lint [path...]               # базовые правила стиля (docs/style.md)
 kpm init venv                       # kraft.json, kraft.lock, venv/, packages/
@@ -54,7 +54,8 @@ show(hello: {name}, n={n})  # интерполяция, не конкатена�
 `CONST_ERROR`.
 
 Встроенная константа `PI` — число π, пишется без вызова: `show({PI})` →
-`3.1415926535898`. Отдельного `std/math` нет.
+`3.1415926535898`. Математические функции поверх ядра — в `std/math`:
+`pow` и `random`.
 
 `flint` принимает строки извне без явного `flint(...)`: `flint age = input()`,
 `flint port = args()[1]`. Числовой строковый литерал проверяется при компиляции:
@@ -85,7 +86,9 @@ str:
 - В срезах `..` разделяет границы, `...` задаёт шаг: `xs[..2]` — до индекса 2
   не включительно, `xs[2..]` — до конца, `xs[...2]` — весь список с шагом 2,
   `xs[2...3]` — от 2 до конца с шагом 3, `xs[...]` — копия всего.
-- `pass` — пустой оператор в ветке или теле цикла, ничего не делает.
+- `pass` — пустой оператор в ветке или теле цикла, ничего не делает. Его и
+  новые срезы знает `xkraft`; замороженный `kraft` v0.1 — только для
+  самокомпиляции и этих форм не понимает.
 - Вхождение: `if age in 0..17`, `if x in xs`, `if k in d`.
 - Строки склеиваются интерполяцией или `xs.join(sep)`, не `+`.
 - Составное присваивание: `+= -= *= /= //= %= **=` (только числа).
@@ -254,8 +257,13 @@ import_lib "std/cli"
 `system(command)` — встроенный запуск через `/bin/sh -c`; `cli.run(command)` —
 обёртка в `std/cli`; оба возвращают код выхода.
 
-`std/fs`, `std/json`, `std/math`, `clamp`, `lerp` и `is_even` не поставляются;
-`fib` и `factorial` — встроенные функции.
+`std/math` даёт `pow(a, b)` и `random(x)`. `random(1..10)` выбирает по range,
+`random(1..10..0.5)` — по дробной сетке, `random(list)` — случайный элемент;
+`random(5..5)` даёт `VALUE_ERROR: empty range`. Подробности — `docs/libs.md`.
+
+`std/fs`, `std/json`, `std/file`, `clamp`, `lerp` и `is_even` не поставляются;
+`fib` и `factorial` — встроенные функции. `sin`, `cos`, `tan` и `log` в
+`std/math` пока не добавлены.
 
 ```sh
 kpm init venv        # kraft.json, kraft.lock, venv/, packages/

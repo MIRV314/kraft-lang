@@ -82,7 +82,7 @@ for p, data in kraft:
 
 forbidden = [
     (re.compile(r'^\s*export\b'), 'export is not in the language'),
-    (re.compile(r'std/(?:math|fs|json|file)\b'), 'removed stdlib module'),
+    (re.compile(r'std/(?:fs|json|file)\b'), 'removed stdlib module'),
     (re.compile(r'\b(?:clamp|lerp|is_even)\s*\('), 'removed builtin'),
     (re.compile(r'\b(?:list|dict)\s*\('), 'list()/dict() casts do not exist'),
 ]

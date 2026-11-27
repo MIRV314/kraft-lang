@@ -1,7 +1,7 @@
 # Kraft
 
 [![CI](https://github.com/MIRV314/kraft-lang/actions/workflows/ci.yml/badge.svg)](https://github.com/MIRV314/kraft-lang/actions/workflows/ci.yml)
-[![release v0.9.0](https://img.shields.io/badge/release-v0.9.0-blue.svg)](https://github.com/MIRV314/kraft-lang/releases)
+[![release v0.9.1](https://img.shields.io/badge/release-v0.9.1-blue.svg)](https://github.com/MIRV314/kraft-lang/releases)
 
 [Русская версия](README.md) · [Releases](https://github.com/MIRV314/kraft-lang/releases)
 
@@ -11,7 +11,7 @@ concatenation. Errors show the category, file, line and a caret. The core grows
 through libraries, not new keywords. The compiler `xkraft` is written in Kraft
 and compiles itself.
 
-Current version: **0.9.0**.
+Current version: **0.9.1**.
 
 ## Installation
 
@@ -20,7 +20,7 @@ LuaJIT is the only requirement (`luajit` must be in `PATH`).
 ```sh
 curl -fsSL https://raw.githubusercontent.com/MIRV314/kraft-lang/main/install-auto.sh | sh
 # or from a clone: sh install.sh
-kraft --version                     # xkraft 0.9.0; kraft is the alias
+kraft --version                     # xkraft 0.9.1; kraft is the alias
 kraft --update                      # update binary and kpm from GitHub Releases
 xkraft lint [path...]               # basic style rules
 kpm --version                       # kpm 1.0.0
@@ -126,7 +126,8 @@ and hash in `kraft.lock`. A URL can be used instead of a path. Packages land in
 - No inheritance, polymorphism or encapsulation as language-level OOP:
   patterns live in std. There is no `class`; `model` fills that role.
   Properties remain a separate future decision.
-- No `std/math`, `clamp`, `lerp` or `is_even`.
+- No `sin`, `cos`, `tan` or `log` in `std/math` yet: only `pow` and `random`.
+- `clamp`, `lerp` and `is_even` are not introduced.
 - No package registry yet: local paths and URLs only.
 - No `std/http`, decorators or `async`/auto-await: planned after `1.0`.
 
@@ -134,20 +135,22 @@ and hash in `kraft.lock`. A URL can be used instead of a path. Packages land in
 
 | I want… | Open |
 | --- | --- |
-| A syntax refresher | [RU](docs/cheatsheet.md) · [EN](docs/cheatsheet.en.md) |
-| Every built-in function and method | [docs/builtins.md](docs/builtins.md) |
-| The reasoning behind the language | [docs/decisions.md](docs/decisions.md) |
-| Compiler rules | [docs/rules.md](docs/rules.md) |
-| The project's code style | [docs/style.md](docs/style.md) |
-| The philosophy | [docs/philosophy.md](docs/philosophy.md) |
-| Complete small projects | [examples/README.md](examples/README.md) |
+| A syntax refresher | [docs/cheatsheet.en.md](docs/cheatsheet.en.md) |
+| Every built-in function and method | [docs/builtins.en.md](docs/builtins.en.md) |
+| A guide to the libraries | [docs/libs.en.md](docs/libs.en.md) |
+| The reasoning behind the language | [docs/decisions.en.md](docs/decisions.en.md) |
+| Compiler rules | [docs/rules.en.md](docs/rules.en.md) |
+| The project's code style | [docs/style.en.md](docs/style.en.md) |
+| The philosophy | [docs/philosophy.en.md](docs/philosophy.en.md) |
+| Complete small projects | [examples/README.en.md](examples/README.en.md) |
 | Build and test instructions | "For developers" below |
 
 Release plan: `0.8` — public `xkraft lint` and fractional range printing
 `1.0, 1.5, 2.0`; `0.9` — `PI` in the core, the `kpm` hotfix and updated docs.
 The next stable `1.0` does not include the site, registry, AUR package or
 project showcase: they are postponed to a separate release. Then `std/http`
-(`1.1`), decorators (`1.2`), `async` with auto-await (`1.3`) and LSP.
+(`1.1`), decorators (`1.2`), `async` with auto-await (`1.3`), and then LSP —
+not just for VS Code.
 
 ## For developers
 
@@ -167,8 +170,12 @@ docs/             documentation
 editors/vscode/   syntax highlighting and snippets
 ```
 
+The frozen `kraft` v0.1 does not know the new syntax (`pass`, the new slice
+forms): it is only for self-compilation. New code requires `xkraft` or the
+`kraft` alias from the distribution.
+
 ```sh
-make check                                              # 22 + 20 + 25 + 111 + 11 + 5 tests
+make check                                              # 22 + 20 + 25 + 115 + 13 + 6 + 9 tests
 make dist                                               # rebuild dist/xkraft and ./xkraft
 (cd dev && ./kraft xkraft.kraft xkraft.kraft > xkraft.lua)  # self-compilation
 (cd dev && sh tests/stress.sh)          # outside release: stress + docs/API audit
