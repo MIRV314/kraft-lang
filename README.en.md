@@ -127,8 +127,10 @@ Packages land in `packages/<name>/`; the source is recorded in `kraft.json`
 | Build and test instructions | "For developers" below |
 
 Release plan: `0.8` — public `xkraft lint` and fractional range printing
-`1.0, 1.5, 2.0`; `1.0` — site, registry, AUR and the project showcase. Then
-`std/http` (`1.1`), decorators (`1.2`), `async` with auto-await (`1.3`) and LSP.
+`1.0, 1.5, 2.0`; `0.9` — `PI` in the core and the `kpm` hotfix. The next
+stable `1.0` does not include the site, registry, AUR package or project
+showcase: they are postponed to a separate release. Then `std/http` (`1.1`),
+decorators (`1.2`), `async` with auto-await (`1.3`) and LSP.
 
 ## For developers
 
