@@ -64,7 +64,7 @@ flint total = 2
 str word = "два"
 show({word}: {total})      # два: 2
 
-flint n = input()          # строка извне становится flint
+flint n = input()          # строка извне сразу приводится к flint
 show({n + 1})
 
 func twice(flint x) -> flint:
@@ -87,11 +87,12 @@ show({c.inc(3)})           # 8
 show({read_text("data.txt")})
 ```
 
-Тип при объявлении обязателен, `-> type` указывают для рекурсии и публичного
-API. `flint` принимает `input()`, `args()`, `read_text()` и ячейки CSV;
-нечисловое значение даёт `TYPE_MISMATCH_ERROR` при запуске, нечисловой литерал —
-`TYPE_ERROR` при компиляции. Ошибки перехватываются блоками
-`try` / `trigger` / `finally`.
+Тип при объявлении обязателен; тип каждого аргумента функции тоже обязателен.
+`-> type` указывают для рекурсии и публичного API. `flint` принимает `input()`,
+`args()`, `read_text()` и ячейки CSV без явного `flint(...)`: числовой строковый
+литерал (`flint n = "42"`) проверяется при компиляции, нечисловой (`flint n = "x"`)
+даёт `TYPE_ERROR`; нечисловое значение извне даёт `TYPE_MISMATCH_ERROR` при
+запуске. Ошибки перехватываются блоками `try` / `trigger` / `finally`.
 
 ## Зависимости
 
@@ -101,14 +102,18 @@ kpm add ./libs/helpers     # или URL: kpm add https://…/pkg.zip
 kpm run                    # main.kraft через venv/bin/xkraft
 ```
 
-Пакеты кладутся в `packages/<name>/`; источник записан в `kraft.json` (`deps`),
-точный вариант и хэш — в `kraft.lock`. Для Windows распакуйте `kraft-win.zip`
-и запустите `install-win.cmd`.
+`kpm add ./libs/helpers` добавляет локальный пакет в `deps` файла `kraft.json`,
+копирует его в `packages/helpers` и записывает точный вариант и хэш в
+`kraft.lock`. Вместо пути можно указать URL. Пакеты кладутся в
+`packages/<name>/`. Для Windows распакуйте `kraft-win.zip` и запустите
+`install-win.cmd`.
 
 ## Чего пока нет
 
 - LSP и автодополнения: есть только подсветка и сниппеты для VS Code.
-- Наследования, полиморфизма, инкапсуляции, свойств и `class`.
+- Наследования, полиморфизма и инкапсуляции как языковой ООП: паттерны живут в
+  std. `class` не вводится — его роль выполняет `model`; свойства остаются
+  отдельным будущим решением.
 - `std/math`, `clamp`, `lerp`, `is_even`.
 - Реестра пакетов: пока только локальные пути и URL.
 - `std/http`, декораторов и `async`/авто-await: запланированы после `1.0`.
@@ -117,7 +122,7 @@ kpm run                    # main.kraft через venv/bin/xkraft
 
 | Хочу… | Открыть |
 | --- | --- |
-| Кратко повторить синтаксис | [docs/cheatsheet.md](docs/cheatsheet.md) |
+| Кратко повторить синтаксис | [RU](docs/cheatsheet.md) · [EN](docs/cheatsheet.en.md) |
 | Полный список функций и методов | [docs/builtins.md](docs/builtins.md) |
 | Понять, почему так устроено | [docs/decisions.md](docs/decisions.md) |
 | Узнать правила компилятора | [docs/rules.md](docs/rules.md) |

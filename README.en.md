@@ -64,7 +64,7 @@ flint total = 2
 str word = "two"
 show({word}: {total})      # two: 2
 
-flint n = input()          # a string from outside becomes flint
+flint n = input()          # external string is converted to flint right away
 show({n + 1})
 
 func twice(flint x) -> flint:
@@ -87,10 +87,12 @@ show({c.inc(3)})           # 8
 show({read_text("data.txt")})
 ```
 
-Declarations always need a type; `-> type` is for recursion and public APIs.
-`flint` accepts `input()`, `args()`, `read_text()` and CSV cells; a non-numeric
-value raises `TYPE_MISMATCH_ERROR` at runtime, a non-numeric literal is a
-`TYPE_ERROR` at compile time. Errors are caught with `try` / `trigger` /
+Declarations always need a type; every function argument needs a type too.
+`-> type` is for recursion and public APIs. `flint` accepts `input()`, `args()`,
+`read_text()` and CSV cells without an explicit `flint(...)`: a numeric string
+literal (`flint n = "42"`) is checked at compile time, a non-numeric one
+(`flint n = "x"`) gives `TYPE_ERROR`; non-numeric external data gives
+`TYPE_MISMATCH_ERROR` at runtime. Errors are caught with `try` / `trigger` /
 `finally`.
 
 ## Dependencies
@@ -101,14 +103,18 @@ kpm add ./libs/helpers     # or a URL: kpm add https://…/pkg.zip
 kpm run                    # main.kraft through venv/bin/xkraft
 ```
 
-Packages land in `packages/<name>/`; the source is recorded in `kraft.json`
-(`deps`), the exact version and hash in `kraft.lock`. On Windows, unpack
-`kraft-win.zip` and run `install-win.cmd`.
+`kpm add ./libs/helpers` registers a local package in the `deps` section of
+`kraft.json`, copies it into `packages/helpers`, and stores the exact version
+and hash in `kraft.lock`. A URL can be used instead of a path. Packages land in
+`packages/<name>/`. On Windows, unpack `kraft-win.zip` and run
+`install-win.cmd`.
 
 ## Not here yet
 
 - No LSP or completion: only syntax highlighting and snippets for VS Code.
-- No inheritance, polymorphism, encapsulation, properties or `class`.
+- No inheritance, polymorphism or encapsulation as language-level OOP:
+  patterns live in std. There is no `class`; `model` fills that role.
+  Properties remain a separate future decision.
 - No `std/math`, `clamp`, `lerp` or `is_even`.
 - No package registry yet: local paths and URLs only.
 - No `std/http`, decorators or `async`/auto-await: planned after `1.0`.
@@ -117,7 +123,7 @@ Packages land in `packages/<name>/`; the source is recorded in `kraft.json`
 
 | I want… | Open |
 | --- | --- |
-| A syntax refresher | [docs/cheatsheet.md](docs/cheatsheet.md) |
+| A syntax refresher | [RU](docs/cheatsheet.md) · [EN](docs/cheatsheet.en.md) |
 | Every built-in function and method | [docs/builtins.md](docs/builtins.md) |
 | The reasoning behind the language | [docs/decisions.md](docs/decisions.md) |
 | Compiler rules | [docs/rules.md](docs/rules.md) |
