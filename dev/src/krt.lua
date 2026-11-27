@@ -6,6 +6,9 @@ local krt = {}
 -- NONE — отдельное значение, а не nil: nil нельзя положить в список/словарь.
 krt.NONE = setmetatable({}, { __tostring = function() return "NONE" end })
 
+-- Встроенная константа PI: число π, доступная в Kraft как `PI`.
+krt.PI = math.pi
+
 local LIST_MT = { __kraft = "list" }
 local FROZ_MT = { __kraft = "list" }
 local DICT_MT = { __kraft = "dict" }

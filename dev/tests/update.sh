@@ -47,7 +47,7 @@ cmp -s ../xkraft "$tmp/xkraft-bad"
 check "xkraft-update-bad-hash-keeps-file" $?
 
 out=$(KRAFT_NO_UPDATE_CHECK=1 "$tmp/xkraft-bad" --version)
-[ "$out" = "xkraft 0.8.0" ]
+[ "$out" = "xkraft 0.9.0" ]
 check "xkraft-update-version" $?
 
 echo "---"

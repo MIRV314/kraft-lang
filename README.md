@@ -1,7 +1,7 @@
 # Kraft
 
 [![CI](https://github.com/MIRV314/kraft-lang/actions/workflows/ci.yml/badge.svg)](https://github.com/MIRV314/kraft-lang/actions/workflows/ci.yml)
-[![release v0.8.0](https://img.shields.io/badge/release-v0.8.0-blue.svg)](https://github.com/MIRV314/kraft-lang/releases)
+[![release v0.9.0](https://img.shields.io/badge/release-v0.9.0-blue.svg)](https://github.com/MIRV314/kraft-lang/releases)
 
 [English](README.en.md) · [Релизы](https://github.com/MIRV314/kraft-lang/releases)
 
@@ -11,7 +11,7 @@ Kraft — небольшой статически типизированный �
 а не новыми ключевыми словами. Компилятор `xkraft` написан на Kraft и собирает
 сам себя.
 
-Текущая версия — **0.8.0**.
+Текущая версия — **0.9.0**.
 
 ## Установка
 
@@ -20,7 +20,7 @@ Kraft — небольшой статически типизированный �
 ```sh
 curl -fsSL https://raw.githubusercontent.com/MIRV314/kraft-lang/main/install-auto.sh | sh
 # или из клона: sh install.sh
-xkraft --version                    # xkraft 0.8.0
+xkraft --version                    # xkraft 0.9.0
 xkraft --update                     # обновить из GitHub Releases
 xkraft lint [path...]               # базовые правила стиля
 ```
@@ -132,10 +132,10 @@ kpm run                    # main.kraft через venv/bin/xkraft
 | Собирать и тестировать | раздел «Для разработчика» ниже |
 
 План релизов: `0.8` — публичный `xkraft lint` и вывод `1.0, 1.5, 2.0` для
-дробного range; `0.9` — `PI` в ядре и hotfix `kpm`. Следующий стабильный
-`1.0` не включает сайт, реестр, AUR и витрину примеров: они отложены на
-отдельный релиз. Затем `std/http` (`1.1`), декораторы (`1.2`), `async` с
-авто-await (`1.3`) и LSP.
+дробного range; `0.9` — `PI` в ядре, hotfix `kpm` и свежая документация.
+Следующий стабильный `1.0` не включает сайт, реестр, AUR и витрину примеров:
+они отложены на отдельный релиз. Затем `std/http` (`1.1`), декораторы (`1.2`),
+`async` с авто-await (`1.3`) и LSP.
 
 ## Для разработчика
 

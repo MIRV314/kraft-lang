@@ -1,6 +1,6 @@
 # Kraft — шпаргалка
 
-Памятка по `0.8.0`. Полные документы: [README](../README.md),
+Памятка по `0.9.0`. Полные документы: [README](../README.md),
 [builtins](builtins.md), [decisions](decisions.md),
 [philosophy](philosophy.md). Английская версия:
 [README.en](../README.en.md), [cheatsheet.en](cheatsheet.en.md).
@@ -11,7 +11,7 @@
 xkraft file.kraft [args...]         # текущий компилятор, новая модель
 xkraft -c file.kraft                # исполняемый file.lua рядом с исходником
 xkraft --tokens file.kraft
-xkraft --version                    # xkraft 0.8.0
+xkraft --version                    # xkraft 0.9.0
 xkraft --update                     # проверить и обновить из GitHub Releases
 xkraft lint [path...]               # базовые правила стиля (docs/style.md)
 kpm init venv                       # kraft.json, kraft.lock, venv/, packages/
@@ -49,6 +49,9 @@ show(hello: {name}, n={n})  # интерполяция, не конкатена�
 оператор на строку, `;` не нужен. `NONE` и `FALSE` — ложь, `TRUE` — истина.
 Имена в ВЕРХНЕМ РЕГИСТРЕ (`MAX`, `MAX_SIZE`) — жёсткие константы: запись даёт
 `CONST_ERROR`.
+
+Встроенная константа `PI` — число π, пишется без вызова: `show({PI})` →
+`3.1415926535898`. Отдельного `std/math` нет.
 
 `flint` принимает строки извне без явного `flint(...)`: `flint age = input()`,
 `flint port = args()[1]`. Числовой строковый литерал проверяется при компиляции:
@@ -151,7 +154,7 @@ Prelude доступен без `import`: `prelude_cat`, `path_join`, `now_ms`,
 `parse_args`, `parse_csv`, `parse_json`. Отключается флагом `--no-prelude`.
 
 Встроенные: `len`, `type`, `str`, `flint`, `up`, `low`, `title`, `abs`, `round`,
-`floor`, `ceil`, `sqrt`, `factorial`, `fib`, `min`, `max`, `sum`, `avg`, `keys`,
+`floor`, `ceil`, `sqrt`, `factorial`, `fib`, `PI`, `min`, `max`, `sum`, `avg`, `keys`,
 `values`, `upk`, `sort`, `reverse`, `clear`, `map`, `filter`, `reduce`,
 `read_file`, `write_file`, `file_exists`, `args`, `exit`, `time_ms`, `is_tty`,
 `system`, `assert`, `expect`, `show`, `show_err`, `input`. Вывод и ввод — только

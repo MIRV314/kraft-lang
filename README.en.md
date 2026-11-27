@@ -1,7 +1,7 @@
 # Kraft
 
 [![CI](https://github.com/MIRV314/kraft-lang/actions/workflows/ci.yml/badge.svg)](https://github.com/MIRV314/kraft-lang/actions/workflows/ci.yml)
-[![release v0.8.0](https://img.shields.io/badge/release-v0.8.0-blue.svg)](https://github.com/MIRV314/kraft-lang/releases)
+[![release v0.9.0](https://img.shields.io/badge/release-v0.9.0-blue.svg)](https://github.com/MIRV314/kraft-lang/releases)
 
 [Русская версия](README.md) · [Releases](https://github.com/MIRV314/kraft-lang/releases)
 
@@ -11,7 +11,7 @@ concatenation. Errors show the category, file, line and a caret. The core grows
 through libraries, not new keywords. The compiler `xkraft` is written in Kraft
 and compiles itself.
 
-Current version: **0.8.0**.
+Current version: **0.9.0**.
 
 ## Installation
 
@@ -20,7 +20,7 @@ LuaJIT is the only requirement (`luajit` must be in `PATH`).
 ```sh
 curl -fsSL https://raw.githubusercontent.com/MIRV314/kraft-lang/main/install-auto.sh | sh
 # or from a clone: sh install.sh
-xkraft --version                    # xkraft 0.8.0
+xkraft --version                    # xkraft 0.9.0
 xkraft --update                     # update from GitHub Releases
 xkraft lint [path...]               # basic style rules
 ```
@@ -133,10 +133,10 @@ and hash in `kraft.lock`. A URL can be used instead of a path. Packages land in
 | Build and test instructions | "For developers" below |
 
 Release plan: `0.8` — public `xkraft lint` and fractional range printing
-`1.0, 1.5, 2.0`; `0.9` — `PI` in the core and the `kpm` hotfix. The next
-stable `1.0` does not include the site, registry, AUR package or project
-showcase: they are postponed to a separate release. Then `std/http` (`1.1`),
-decorators (`1.2`), `async` with auto-await (`1.3`) and LSP.
+`1.0, 1.5, 2.0`; `0.9` — `PI` in the core, the `kpm` hotfix and updated docs.
+The next stable `1.0` does not include the site, registry, AUR package or
+project showcase: they are postponed to a separate release. Then `std/http`
+(`1.1`), decorators (`1.2`), `async` with auto-await (`1.3`) and LSP.
 
 ## For developers
 

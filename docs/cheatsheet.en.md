@@ -1,6 +1,6 @@
 # Kraft cheatsheet
 
-Reference for `0.8.0`. Full docs: [English README](../README.en.md),
+Reference for `0.9.0`. Full docs: [English README](../README.en.md),
 [builtins](builtins.md), [decisions](decisions.md),
 [philosophy](philosophy.md). Russian version:
 [README](../README.md), [cheatsheet](cheatsheet.md).
@@ -11,7 +11,7 @@ Reference for `0.8.0`. Full docs: [English README](../README.en.md),
 xkraft file.kraft [args...]         # current compiler, new model
 xkraft -c file.kraft                # executable file.lua next to the source
 xkraft --tokens file.kraft
-xkraft --version                    # xkraft 0.8.0
+xkraft --version                    # xkraft 0.9.0
 xkraft --update                     # check and update from GitHub Releases
 xkraft lint [path...]               # basic style rules (docs/style.md)
 kpm init venv                       # kraft.json, kraft.lock, venv/, packages/
@@ -49,6 +49,9 @@ Indentation defines blocks: 4 spaces or tabs, never mixed. One statement per
 line, no semicolons. `NONE` and `FALSE` are false, `TRUE` is true. Uppercase
 names (`MAX`, `MAX_SIZE`) are hard constants: writing to them gives
 `CONST_ERROR`.
+
+The built-in constant `PI` is π, written without a call: `show({PI})` →
+`3.1415926535898`. There is no separate `std/math`.
 
 `flint` takes external strings without an explicit `flint(...)`:
 `flint age = input()`, `flint port = args()[1]`. A numeric string literal is
@@ -153,7 +156,7 @@ Prelude is available without `import`: `prelude_cat`, `path_join`, `now_ms`,
 `parse_args`, `parse_csv`, `parse_json`. Add `--no-prelude` to disable it.
 
 Built-ins: `len`, `type`, `str`, `flint`, `up`, `low`, `title`, `abs`, `round`,
-`floor`, `ceil`, `sqrt`, `factorial`, `fib`, `min`, `max`, `sum`, `avg`, `keys`,
+`floor`, `ceil`, `sqrt`, `factorial`, `fib`, `PI`, `min`, `max`, `sum`, `avg`, `keys`,
 `values`, `upk`, `sort`, `reverse`, `clear`, `map`, `filter`, `reduce`,
 `read_file`, `write_file`, `file_exists`, `args`, `exit`, `time_ms`, `is_tty`,
 `system`, `assert`, `expect`, `show`, `show_err`, `input`. Output and input are

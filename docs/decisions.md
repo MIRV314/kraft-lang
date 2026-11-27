@@ -517,7 +517,7 @@ message в виде plain-строк. Категория должна быть �
 
 **D94. Минимальный stdlib.** В дистрибутив вшиты только `std/fos` и `std/cli`. `std/fos` («File Operating System») даёт `exists`, `copy`, `remove`, `read_text`, `write_text`, `read_json`, `write_json`, `read_csv`, `write_csv`; `csv_field`, `csv_line` и `csv_parse` — обычные имена верхнего уровня. `std/cli` даёт только `run(command)` и `kill(message)`. `std/fs`, `std/json`, `std/file`, `std/math`, универсальные `read`/`write`, `open`/`close`, `die` и `tty()` не добавляются. `json_parse` и `json_stringify` остаются внутренними встроенными функциями.
 
-**D95. Математика в ядре.** `fib(n)` и `factorial(n)` — встроенные функции компилятора и рантайма, не модуль stdlib. По D107 в `0.9.0` в ядро добавляется константа `PI`; пустой `std/math` не создаётся. `clamp`, `lerp` и `is_even` не вводятся вообще. Встроенный `title` остаётся, но в документации не выделяется.
+**D95. Математика в ядре.** `fib(n)` и `factorial(n)` — встроенные функции компилятора и рантайма, не модуль stdlib. В `0.9.0` в ядро добавлена константа `PI` как ключевое слово: `show({PI})` печатает `3.1415926535898`. Пустой `std/math` не создаётся. `clamp`, `lerp` и `is_even` не вводятся вообще. Встроенный `title` остаётся, но в документации не выделяется.
 
 **D96. Манифест называется `deps`.** Проект описывается парой `kraft.json` + `kraft.lock`. Секция зависимостей — `deps`, не `requirements` и не `dependencies`; `requirements.txt` не используется. Зависимость задаётся локальным путём или URL и устанавливается в `packages/<name>/`.
 
