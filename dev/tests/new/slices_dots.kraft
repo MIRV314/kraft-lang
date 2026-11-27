@@ -1,0 +1,12 @@
+list xs = [10, 20, 30, 40, 50]
+show({xs[..2]})
+show({xs[...2]})
+show({xs[2..]})
+show({xs[2...]})
+show({xs[2...3]})
+show({xs[4...-2]})
+show({xs[..3..2]})
+show({xs[...]})
+str s = "Kraft"
+show({s[...2]})
+show({s[1...]})

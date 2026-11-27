@@ -12,7 +12,7 @@ xkraft file.kraft [args...]         # текущий компилятор, но�
 xkraft -c file.kraft                # исполняемый file.lua рядом с исходником
 xkraft --tokens file.kraft
 xkraft --version                    # xkraft 0.9.0
-xkraft --update                     # проверить и обновить из GitHub Releases
+kraft --update                      # обновить бинарник и kpm из GitHub Releases
 xkraft lint [path...]               # базовые правила стиля (docs/style.md)
 kpm init venv                       # kraft.json, kraft.lock, venv/, packages/
 kpm add ./local-package             # зарегистрировать пакет в deps и скопировать в packages/
@@ -20,12 +20,13 @@ kpm list
 kpm run                             # main.kraft через venv/bin/xkraft
 kpm del local-package
 kpm --version                       # kpm 1.0.0
-kpm update                          # обновить kpm и xkraft из GitHub Releases
 ```
 
-Из клона используйте `./xkraft` в корне репозитория. Замороженный компилятор
-v0.1 лежит в `dev/kraft` только для проверки self-hosting и не ставится.
-Каноническая команда — `xkraft`; `kraft` в установщике может быть алиасом.
+Из клона используйте `./xkraft` в корне репозитория. Замороженный `kraft` v0.1
+лежит в `dev/kraft` только для проверки self-hosting и не ставится. Основной
+бинарник — `kraft` (то же самое, что `xkraft`); в установщике он ставится как
+`xkraft` плюс псевдоним `kraft`. Команда обновления только одна — `kraft
+--update`, обновляет и бинарник, и `kpm`; `kpm update` больше нет.
 
 Нужен `luajit` в `PATH`. Установка: `sh install.sh` (в `~/.kraft` и
 `~/.local/bin`) или `install-auto.sh` (одной командой, `/usr/local`, спросит
@@ -81,6 +82,10 @@ str:
 - Логика: `AND`, `OR`, `NOT`. Проверка типа: `n is flint`.
 - Диапазон: `1..5` даёт `1, 2, 3, 4` (правая граница не входит); `1..10..2`
   шагает по 2, `1..10..0.5` — по 0.5. Границы всегда целые.
+- В срезах `..` разделяет границы, `...` задаёт шаг: `xs[..2]` — до индекса 2
+  не включительно, `xs[2..]` — до конца, `xs[...2]` — весь список с шагом 2,
+  `xs[2...3]` — от 2 до конца с шагом 3, `xs[...]` — копия всего.
+- `pass` — пустой оператор в ветке или теле цикла, ничего не делает.
 - Вхождение: `if age in 0..17`, `if x in xs`, `if k in d`.
 - Строки склеиваются интерполяцией или `xs.join(sep)`, не `+`.
 - Составное присваивание: `+= -= *= /= //= %= **=` (только числа).
@@ -104,6 +109,8 @@ while n > 0:
     n -= 1
     if n == 3:
         break
+    else:
+        pass                # пустая ветка, разрешена
 ```
 
 ## Функции и глобальные переменные
@@ -134,7 +141,7 @@ show({xs.contains(2)})      # TRUE
 show({map(xs, double)})     # функция по имени, лямбд нет
 show({filter(xs, even)})
 show({reduce(xs, plus, 0)})
-show({xs[0]})               # индексы и срезы: s[2..7], s[..5], xs[1..5..2]
+show({xs[0]})               # срезы: s[2..7], xs[..5], xs[1..5..2], xs[...2]
 xs[0] = 10                  # после v0.1: присваивание по индексу
 ```
 
@@ -256,5 +263,5 @@ kpm add ./pkg        # локальный путь или URL
 kpm list
 kpm run
 kpm del pkg
-kpm update          # kpm и xkraft вместе, с проверкой SHA256SUMS
+# обновление: kraft --update (бинарник и kpm вместе, с проверкой SHA256SUMS)
 ```

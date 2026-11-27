@@ -159,6 +159,8 @@ func is_keyword(str w) -> bool:
         return TRUE
     if w == "while" OR w == "break" OR w == "continue" OR w == "return":
         return TRUE
+    if w == "pass":
+        return TRUE
     if w == "is" OR w == "AND" OR w == "OR" OR w == "NOT" OR w == "glob":
         return TRUE
     if w == "self" OR w == "try" OR w == "finally" OR w == "trigger" OR w == "panic":
@@ -193,6 +195,8 @@ func is_op2(str s) -> bool:
     return FALSE
 
 func is_op3(str s) -> bool:
+    if s == "...":
+        return TRUE
     return s == "**=" OR s == "//="
 
 func escape_of(str n) -> str:
@@ -1619,28 +1623,36 @@ func parse_expr(dict st, flint min_bp) -> dict:
                     return {}
                 dict from = {}
                 bool has_from = FALSE
-                if NOT tok_is(tk(st), "op", ".."):
+                if NOT tok_is(tk(st), "op", "..") AND NOT tok_is(tk(st), "op", "..."):
                     from = parse_expr(st, 36)
                     if NOT (st[err] is NONE):
                         return {}
                     has_from = TRUE
-                if tok_is(tk(st), "op", ".."):
-                    advance(st)
+                if tok_is(tk(st), "op", "..") OR tok_is(tk(st), "op", "..."):
+                    dict sep_tok = advance(st)
+                    str sep = sep_tok[value]
                     dict to = {}
                     bool has_to = FALSE
-                    if NOT tok_is(tk(st), "op", "]"):
-                        to = parse_expr(st, 36)
-                        if NOT (st[err] is NONE):
-                            return {}
-                        has_to = TRUE
                     dict step = {}
                     bool has_step = FALSE
-                    if tok_is(tk(st), "op", ".."):
-                        advance(st)
-                        step = parse_expr(st, 36)
-                        if NOT (st[err] is NONE):
-                            return {}
-                        has_step = TRUE
+                    if sep == "..":
+                        if NOT tok_is(tk(st), "op", "]"):
+                            to = parse_expr(st, 36)
+                            if NOT (st[err] is NONE):
+                                return {}
+                            has_to = TRUE
+                        if tok_is(tk(st), "op", ".."):
+                            advance(st)
+                            step = parse_expr(st, 36)
+                            if NOT (st[err] is NONE):
+                                return {}
+                            has_step = TRUE
+                    else:
+                        if NOT tok_is(tk(st), "op", "]"):
+                            step = parse_expr(st, 36)
+                            if NOT (st[err] is NONE):
+                                return {}
+                            has_step = TRUE
                     expect_tok(st, "op", "]", "']'")
                     if NOT (st[err] is NONE):
                         return {}
@@ -3371,6 +3383,9 @@ func parse_block(dict st, bool top) -> list:
                 else:
                     cur_rets.add({empty: TRUE, type: "NONE", nullable: FALSE, line: rtok2[line], col: rtok2[col]})
                     node = {k: "return", line: rtok2[line], col: rtok2[col]}
+            elif t[type] == "kw" AND t[value] == "pass":
+                dict ptok = advance(st)
+                node = {k: "pass", line: ptok[line], col: ptok[col]}
             elif t[type] == "kw" AND (t[value] == "break" OR t[value] == "continue"):
                 dict btok = advance(st)
                 if st[loop_depth] == 0:
@@ -4641,6 +4656,8 @@ func emit_stmts(dict st, list stmts) -> str:
             st.add("indent", st[indent] - 1)
             emit_line(st, "end")
             emit_line(st, cat(["::", brk, "::"]))
+        elif sk == "pass":
+            emit_line(st, "do end")
         elif sk == "break":
             list lsb = st[loop_stack]
             dict topb = lsb[len(lsb) - 1]

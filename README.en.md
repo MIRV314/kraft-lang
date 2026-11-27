@@ -20,27 +20,26 @@ LuaJIT is the only requirement (`luajit` must be in `PATH`).
 ```sh
 curl -fsSL https://raw.githubusercontent.com/MIRV314/kraft-lang/main/install-auto.sh | sh
 # or from a clone: sh install.sh
-xkraft --version                    # xkraft 0.9.0
-xkraft --update                     # update from GitHub Releases
+kraft --version                     # xkraft 0.9.0; kraft is the alias
+kraft --update                      # update binary and kpm from GitHub Releases
 xkraft lint [path...]               # basic style rules
 kpm --version                       # kpm 1.0.0
-kpm update                          # update kpm and xkraft together
 ```
 
 The ready binary sits in the repository root (`./xkraft`) and in the
 [releases](https://github.com/MIRV314/kraft-lang/releases).
-The command to use is `xkraft`. The reference compiler `kraft` v0.1 is frozen,
-lives in `dev/kraft` and is not shipped.
+The main command is `kraft`; the same binary is available as `xkraft`. The
+frozen `kraft` v0.1 lives in `dev/kraft` and is not shipped.
 
-`xkraft --update` downloads the latest release, verifies `SHA256SUMS` and
-atomically replaces the binary (on Windows, the files from `kraft-win.zip`).
-The automatic version check runs once a day and only in a terminal; disable it
-with `KRAFT_NO_UPDATE_CHECK=1`.
+`kraft --update` (`xkraft --update`) downloads the latest release, verifies both
+hashes against `SHA256SUMS` and only then replaces the binary and `kpm`. The
+replacement copies into a temporary file next to the target, so it works across
+filesystems. On Windows, the files from `kraft-win.zip` are updated. The
+automatic version check runs once a day and only in a terminal; disable it with
+`KRAFT_NO_UPDATE_CHECK=1`. `kpm update` is gone: `kpm` no longer updates itself.
 
-Both installers also install `kpm`. `kpm update` downloads `kpm` and `xkraft`,
-checks both files against `SHA256SUMS` and replaces them only after both hashes
-match; `kpm --version` reports `1.0.0`. On Windows, `kpm` is updated together
-with `xkraft` from `kraft-win.zip`.
+Both POSIX installers place `xkraft`, `kpm` and the `kraft` alias. The AUR package
+does not create the `kraft` alias. `kpm --version` reports `1.0.0`.
 
 ## Your first program
 
@@ -101,6 +100,11 @@ literal (`flint n = "42"`) is checked at compile time, a non-numeric one
 (`flint n = "x"`) gives `TYPE_ERROR`; non-numeric external data gives
 `TYPE_MISMATCH_ERROR` at runtime. Errors are caught with `try` / `trigger` /
 `finally`.
+
+In slices `..` separates bounds and `...` sets the step: `xs[..2]` — up to index
+2 (excluded), `xs[2..]` — to the end, `xs[...2]` — the whole list with step 2,
+`xs[2...3]` — from 2 to the end with step 3, `xs[...]` — a full copy. An empty
+branch or loop body is written with `pass`.
 
 ## Dependencies
 

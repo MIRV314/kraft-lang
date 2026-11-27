@@ -66,7 +66,7 @@
     },
     "keywords": {
       "name": "keyword.control.kraft",
-      "match": "\\b(func|model|method|construct|if|elif|else|for|in|while|break|continue|return|is|AND|OR|NOT|glob|self|init|try|trigger|finally|panic|import_file|from_file|import_lib|from_lib|namespace)\\b"
+      "match": "\\b(func|model|method|construct|if|elif|else|for|in|while|break|continue|pass|return|is|AND|OR|NOT|glob|self|init|try|trigger|finally|panic|import_file|from_file|import_lib|from_lib|namespace)\\b"
     },
     "types": {
       "name": "storage.type.kraft",
@@ -82,7 +82,7 @@
     },
     "operators": {
       "name": "keyword.operator.kraft",
-      "match": "(=>|\\*\\*|//|\\+\\+|\\+=|-=|\\*=|/=|==|!=|<=|>=|\\.\\.|[-+*/%=<>!])"
+      "match": "(=>|\\*\\*|//|\\+\\+|\\+=|-=|\\*=|/=|==|!=|<=|>=|\\.\\.\\.|\\.\\.|[-+*/%=<>!])"
     }
   }
 }

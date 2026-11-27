@@ -1,14 +1,15 @@
-# Обновление xkraft из GitHub Releases.
+# Обновление kraft (xkraft) и kpm из GitHub Releases.
 # Встраивается в dist/xkraft через make-dist.sh; тестируется отдельно.
 #
 # Переменные окружения:
 #   KRAFT_NO_UPDATE_CHECK=1   — отключить фоновую проверку версии;
 #   KRAFT_UPDATE_API          — URL/файл с JSON последнего релиза;
 #   KRAFT_UPDATE_DOWNLOAD     — URL/каталог с ассетами релиза;
+#   KPM_UPDATE_DOWNLOAD       — старое имя того же каталога;
 #   KRAFT_UPDATE_CACHE        — файл времени последней проверки.
 
 ku_api=${KRAFT_UPDATE_API:-https://api.github.com/repos/MIRV314/kraft-lang/releases/latest}
-ku_download=${KRAFT_UPDATE_DOWNLOAD:-https://github.com/MIRV314/kraft-lang/releases/latest/download}
+ku_download=${KRAFT_UPDATE_DOWNLOAD:-${KPM_UPDATE_DOWNLOAD:-https://github.com/MIRV314/kraft-lang/releases/latest/download}}
 
 # http(s)/file — через curl, обычный путь — через cat (для тестов и зеркал).
 ku_fetch() {
@@ -63,7 +64,7 @@ ku_check() {
 
   ku_tag=$(ku_latest_tag "$2") || return 0
   if [ "$ku_tag" != "v$1" ]; then
-    printf 'xkraft: доступна %s, запустите xkraft --update\n' "$ku_tag" >&2
+    printf 'kraft: доступна %s, запустите kraft --update\n' "$ku_tag" >&2
   fi
   return 0
 }
@@ -73,42 +74,73 @@ ku_check() {
 ku_replace() {
   ku_dir=$(dirname "$1")
   ku_tmp=$(mktemp "$ku_dir/.xkraft-new.XXXXXX") || {
-    printf 'xkraft: не могу создать временный файл в %s\n' "$ku_dir" >&2
+    printf 'kraft: не могу создать временный файл в %s\n' "$ku_dir" >&2
     return 1
   }
   if ! cp "$2" "$ku_tmp" || ! chmod 755 "$ku_tmp" || ! mv -f "$ku_tmp" "$1"; then
     rm -f "$ku_tmp"
-    printf 'xkraft: не могу заменить %s\n' "$1" >&2
+    printf 'kraft: не могу заменить %s\n' "$1" >&2
     return 1
   fi
 }
 
-# Скачать SHA256SUMS и xkraft, сверить хэш, атомарно заменить файл.
+# Скачать SHA256SUMS, xkraft и kpm, сверить оба хэша до замены, заменить оба.
 ku_update() {
   ku_fetch "$ku_download/SHA256SUMS" "$2/SHA256SUMS" || {
-    printf 'xkraft: не могу получить SHA256SUMS\n' >&2
+    printf 'kraft: не могу получить SHA256SUMS\n' >&2
     return 1
   }
-  ku_want=$(awk '$2 == "xkraft" { print $1; exit }' "$2/SHA256SUMS")
-  if [ -z "$ku_want" ]; then
-    printf 'xkraft: в SHA256SUMS нет xkraft\n' >&2
+  ku_want_xkraft=$(awk '$2 == "xkraft" { print $1; exit }' "$2/SHA256SUMS")
+  if [ -z "$ku_want_xkraft" ]; then
+    printf 'kraft: в SHA256SUMS нет xkraft\n' >&2
     return 1
+  fi
+
+  ku_kpm="$(dirname "$1")/kpm"
+  ku_have_kpm=FALSE
+  if [ -e "$ku_kpm" ]; then
+    ku_want_kpm=$(awk '$2 == "kpm" { print $1; exit }' "$2/SHA256SUMS")
+    if [ -z "$ku_want_kpm" ]; then
+      printf 'kraft: в SHA256SUMS нет kpm\n' >&2
+      return 1
+    fi
+    ku_have_kpm=TRUE
   fi
 
   ku_fetch "$ku_download/xkraft" "$2/xkraft.new" || {
-    printf 'xkraft: не могу скачать xkraft\n' >&2
+    printf 'kraft: не могу скачать xkraft\n' >&2
     return 1
   }
-  ku_got=$(ku_hash "$2/xkraft.new") || {
-    printf 'xkraft: нет sha256sum или shasum\n' >&2
+  ku_got_xkraft=$(ku_hash "$2/xkraft.new") || {
+    printf 'kraft: нет sha256sum или shasum\n' >&2
     return 1
   }
-  if [ "$ku_got" != "$ku_want" ]; then
-    printf 'xkraft: не совпал SHA256, обновление отменено\n' >&2
+  if [ "$ku_got_xkraft" != "$ku_want_xkraft" ]; then
+    printf 'kraft: не совпал SHA256 xkraft, обновление отменено\n' >&2
     return 1
   fi
 
+  if [ "$ku_have_kpm" = TRUE ]; then
+    ku_fetch "$ku_download/kpm" "$2/kpm.new" || {
+      printf 'kraft: не могу скачать kpm\n' >&2
+      return 1
+    }
+    ku_got_kpm=$(ku_hash "$2/kpm.new") || {
+      printf 'kraft: нет sha256sum или shasum\n' >&2
+      return 1
+    }
+    if [ "$ku_got_kpm" != "$ku_want_kpm" ]; then
+      printf 'kraft: не совпал SHA256 kpm, обновление отменено\n' >&2
+      return 1
+    fi
+  fi
+
   ku_replace "$1" "$2/xkraft.new" || return 1
-  printf 'xkraft: обновлено\n'
+  if [ "$ku_have_kpm" = TRUE ]; then
+    ku_replace "$ku_kpm" "$2/kpm.new" || return 1
+    printf 'kraft: обновлены xkraft и kpm\n'
+  else
+    printf 'kraft: обновлён xkraft\n'
+  fi
   return 0
 }

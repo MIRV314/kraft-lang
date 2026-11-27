@@ -12,7 +12,7 @@ xkraft file.kraft [args...]         # current compiler, new model
 xkraft -c file.kraft                # executable file.lua next to the source
 xkraft --tokens file.kraft
 xkraft --version                    # xkraft 0.9.0
-xkraft --update                     # check and update from GitHub Releases
+kraft --update                      # update binary and kpm from GitHub Releases
 xkraft lint [path...]               # basic style rules (docs/style.md)
 kpm init venv                       # kraft.json, kraft.lock, venv/, packages/
 kpm add ./local-package             # register in deps, copy into packages/
@@ -20,13 +20,13 @@ kpm list
 kpm run                             # run main.kraft through the venv
 kpm del local-package
 kpm --version                       # kpm 1.0.0
-kpm update                          # update kpm and xkraft from GitHub Releases
 ```
 
-From a clone use `./xkraft` in the repo root. The frozen v0.1 reference
-compiler lives in `dev/kraft` for self-hosting checks only and is never
-installed. The canonical command is `xkraft`; the installer may alias `kraft`
-to it.
+From a clone use `./xkraft` in the repo root. The frozen `kraft` v0.1 lives in
+`dev/kraft` for self-hosting checks only and is never installed. The main binary
+is `kraft` (the same program as `xkraft`); the installer places `xkraft` plus a
+`kraft` alias. There is one update command — `kraft --update`, which updates
+both the binary and `kpm`; `kpm update` is gone.
 
 Requires `luajit` in `PATH`. Install: `sh install.sh` (into `~/.kraft` and
 `~/.local/bin`) or `install-auto.sh` (one command, `/usr/local`, asks for
@@ -83,6 +83,10 @@ str:
 - Logic: `AND`, `OR`, `NOT`. Type check: `n is flint`.
 - Range: `1..5` yields `1, 2, 3, 4` (right bound excluded); `1..10..2`
   steps by 2, `1..10..0.5` steps by 0.5. Range bounds are always integers.
+- In slices `..` separates bounds, `...` sets the step: `xs[..2]` — up to index 2
+  (excluded), `xs[2..]` — to the end, `xs[...2]` — whole list with step 2,
+  `xs[2...3]` — from 2 to the end with step 3, `xs[...]` — a full copy.
+- `pass` is an empty statement in a branch or loop body; it does nothing.
 - Membership: `if age in 0..17`, `if x in xs`, `if k in d`.
 - Strings are joined with interpolation or `xs.join(sep)`, never with `+`.
 - Compound assignment: `+= -= *= /= //= %= **=` (numbers only).
@@ -106,6 +110,8 @@ while n > 0:
     n -= 1
     if n == 3:
         break
+    else:
+        pass                # empty branch is allowed
 ```
 
 ## Functions and globals
@@ -136,7 +142,7 @@ show({xs.contains(2)})      # TRUE
 show({map(xs, double)})     # function by name, no lambdas
 show({filter(xs, even)})
 show({reduce(xs, plus, 0)})
-show({xs[0]})               # indexing and slices: s[2..7], s[..5], xs[1..5..2]
+show({xs[0]})               # slices: s[2..7], xs[..5], xs[1..5..2], xs[...2]
 xs[0] = 10                  # post-v0.1: index assignment
 ```
 
@@ -257,5 +263,5 @@ kpm add ./pkg        # local path or URL
 kpm list
 kpm run
 kpm del pkg
-kpm update          # both kpm and xkraft, verified with SHA256SUMS
+# updates: kraft --update (binary and kpm together, SHA256SUMS verified)
 ```
