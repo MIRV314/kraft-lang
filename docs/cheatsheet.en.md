@@ -19,6 +19,8 @@ kpm add ./local-package             # register in deps, copy into packages/
 kpm list
 kpm run                             # run main.kraft through the venv
 kpm del local-package
+kpm --version                       # kpm 1.0.0
+kpm update                          # update kpm and xkraft from GitHub Releases
 ```
 
 From a clone use `./xkraft` in the repo root. The frozen v0.1 reference
@@ -255,4 +257,5 @@ kpm add ./pkg        # local path or URL
 kpm list
 kpm run
 kpm del pkg
+kpm update          # both kpm and xkraft, verified with SHA256SUMS
 ```

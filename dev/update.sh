@@ -68,6 +68,21 @@ ku_check() {
   return 0
 }
 
+# Копируем во временный файл рядом с целью, затем rename в пределах одного
+# каталога: обычный mv из /tmp в ~/.local/bin падает с EXDEV на другой ФС.
+ku_replace() {
+  ku_dir=$(dirname "$1")
+  ku_tmp=$(mktemp "$ku_dir/.xkraft-new.XXXXXX") || {
+    printf 'xkraft: не могу создать временный файл в %s\n' "$ku_dir" >&2
+    return 1
+  }
+  if ! cp "$2" "$ku_tmp" || ! chmod 755 "$ku_tmp" || ! mv -f "$ku_tmp" "$1"; then
+    rm -f "$ku_tmp"
+    printf 'xkraft: не могу заменить %s\n' "$1" >&2
+    return 1
+  fi
+}
+
 # Скачать SHA256SUMS и xkraft, сверить хэш, атомарно заменить файл.
 ku_update() {
   ku_fetch "$ku_download/SHA256SUMS" "$2/SHA256SUMS" || {
@@ -93,11 +108,7 @@ ku_update() {
     return 1
   fi
 
-  chmod 755 "$2/xkraft.new" || return 1
-  mv -f "$2/xkraft.new" "$1" || {
-    printf 'xkraft: не могу заменить %s\n' "$1" >&2
-    return 1
-  }
+  ku_replace "$1" "$2/xkraft.new" || return 1
   printf 'xkraft: обновлено\n'
   return 0
 }

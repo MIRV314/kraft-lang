@@ -219,7 +219,10 @@ dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/kpm.XXXXXX") || exit 1
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 awk 'seen { print } /^__KPM_EMBEDDED__$/ { seen = 1 }' "$0" > "$tmp/kpm.lua"
-XKRAFT="$dir/xkraft" exec luajit "$tmp/kpm.lua" "$@"
+KPM_SELF="$0"
+XKRAFT="$dir/xkraft"
+export KPM_SELF XKRAFT
+exec luajit "$tmp/kpm.lua" "$@"
 '''
 kpm_header = kpm_header.replace("@VERSION@", version)
 

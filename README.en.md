@@ -23,6 +23,8 @@ curl -fsSL https://raw.githubusercontent.com/MIRV314/kraft-lang/main/install-aut
 xkraft --version                    # xkraft 0.9.0
 xkraft --update                     # update from GitHub Releases
 xkraft lint [path...]               # basic style rules
+kpm --version                       # kpm 1.0.0
+kpm update                          # update kpm and xkraft together
 ```
 
 The ready binary sits in the repository root (`./xkraft`) and in the
@@ -34,6 +36,11 @@ lives in `dev/kraft` and is not shipped.
 atomically replaces the binary (on Windows, the files from `kraft-win.zip`).
 The automatic version check runs once a day and only in a terminal; disable it
 with `KRAFT_NO_UPDATE_CHECK=1`.
+
+Both installers also install `kpm`. `kpm update` downloads `kpm` and `xkraft`,
+checks both files against `SHA256SUMS` and replaces them only after both hashes
+match; `kpm --version` reports `1.0.0`. On Windows, `kpm` is updated together
+with `xkraft` from `kraft-win.zip`.
 
 ## Your first program
 

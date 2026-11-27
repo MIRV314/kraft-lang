@@ -23,6 +23,8 @@ curl -fsSL https://raw.githubusercontent.com/MIRV314/kraft-lang/main/install-aut
 xkraft --version                    # xkraft 0.9.0
 xkraft --update                     # обновить из GitHub Releases
 xkraft lint [path...]               # базовые правила стиля
+kpm --version                       # kpm 1.0.0
+kpm update                          # обновить kpm и xkraft вместе
 ```
 
 Готовый бинарник лежит в корне репозитория (`./xkraft`) и в
@@ -34,6 +36,11 @@ xkraft lint [path...]               # базовые правила стиля
 заменяет бинарник (на Windows — файлы из `kraft-win.zip`). Обычная проверка
 новой версии происходит раз в сутки только в терминале; отключить её можно
 через `KRAFT_NO_UPDATE_CHECK=1`.
+
+Оба установщика ставят и `kpm`. `kpm update` скачивает `kpm` и `xkraft`,
+сверяет оба файла с `SHA256SUMS` и меняет их только после успешной проверки;
+`kpm --version` показывает `1.0.0`. На Windows обновление `kpm` идёт вместе с
+`xkraft` из `kraft-win.zip`.
 
 ## Первая программа
 

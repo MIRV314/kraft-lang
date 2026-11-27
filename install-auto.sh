@@ -8,7 +8,7 @@
 #   KRAFT_REPO   — URL репозитория (по умолчанию официальный);
 #   KRAFT_TAG    — тег для клона (по умолчанию v0.9.0, при отсутствии v0.8.0);
 #   KRAFT_PREFIX — префикс установки (по умолчанию /usr/local).
-# Ставится xkraft и псевдоним kraft; замороженный v0.1 в систему не ставится.
+# Ставится xkraft, kpm и псевдоним kraft; замороженный v0.1 не ставится.
 set -eu
 
 prefix=${KRAFT_PREFIX:-/usr/local}
@@ -40,10 +40,12 @@ else
   src="$tmp/src"
 fi
 
-if [ ! -f "$src/dist/xkraft" ]; then
-  echo "install: в $src нет dist/xkraft — соберите дистрибутив: make dist" >&2
-  exit 1
-fi
+for f in xkraft kpm; do
+  if [ ! -f "$src/dist/$f" ]; then
+    echo "install: в $src нет dist/$f — соберите дистрибутив: make dist" >&2
+    exit 1
+  fi
+done
 
 if [ "$(id -u)" -eq 0 ]; then
   sudo=""
@@ -67,6 +69,8 @@ fi
 $sudo mkdir -p "$bin" "$doc"
 $sudo cp "$src/dist/xkraft" "$bin/xkraft"
 $sudo chmod 755 "$bin/xkraft"
+$sudo cp "$src/dist/kpm" "$bin/kpm"
+$sudo chmod 755 "$bin/kpm"
 # `kraft` — просто имя-псевдоним: запускает тот же x-бинарник,
 # а не замороженный эталон v0.1 из dev/.
 printf '#!/bin/sh\nexec "%s/xkraft" "$@"\n' "$bin" | $sudo tee "$bin/kraft" >/dev/null
@@ -79,11 +83,12 @@ done
 
 echo "install: проверяем установку ..."
 "$bin/xkraft" --version
+"$bin/kpm" --version
 # Проверяем именно установленный файл: рядом с ним нет исходников и src/.
 printf 'show(xkraft ok)\n' > "$tmp/check.kraft"
 (cd "$tmp" && "$bin/xkraft" check.kraft) >/dev/null
 (cd "$tmp" && "$bin/kraft" check.kraft) >/dev/null
 
-echo "xkraft установлен."
-echo "  команды: $bin/xkraft и $bin/kraft (обе запускают xkraft)"
+echo "xkraft и kpm установлены."
+echo "  команды: $bin/xkraft, $bin/kraft (псевдоним) и $bin/kpm"
 echo "  документация: $doc"

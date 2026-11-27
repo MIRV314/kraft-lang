@@ -12,10 +12,12 @@ if ! command -v luajit >/dev/null 2>&1; then
   echo "install: нужен LuaJIT (команда luajit должна быть в PATH)" >&2
   exit 1
 fi
-if [ ! -f "$src/dist/xkraft" ]; then
-  echo "install: нет $src/dist/xkraft — соберите дистрибутив: make dist" >&2
-  exit 1
-fi
+for f in xkraft kpm; do
+  if [ ! -f "$src/dist/$f" ]; then
+    echo "install: нет $src/dist/$f — соберите дистрибутив: make dist" >&2
+    exit 1
+  fi
+done
 
 # Старая ручная установка клала ядро в ~/.kraft; теперь там только документы.
 if [ -f "$home/src/krt.lua" ]; then
@@ -27,6 +29,8 @@ fi
 mkdir -p "$bin" "$home"
 cp "$src/dist/xkraft" "$bin/xkraft"
 chmod 755 "$bin/xkraft"
+cp "$src/dist/kpm" "$bin/kpm"
+chmod 755 "$bin/kpm"
 # `kraft` — псевдоним того же x-бинарника, не эталон v0.1.
 cat > "$bin/kraft" <<EOF
 #!/bin/sh
@@ -40,7 +44,8 @@ for f in README.md LICENSE NOTICE VERSION CHANGELOG.md; do
 done
 
 "$bin/xkraft" --version
-echo "xkraft установлен."
-echo "  команды: $bin/xkraft и $bin/kraft (обе запускают xkraft)"
+"$bin/kpm" --version
+echo "xkraft и kpm установлены."
+echo "  команды: $bin/xkraft, $bin/kraft (псевдоним) и $bin/kpm"
 echo "  документация: $home"
 echo "Добавьте $bin в PATH, если его там ещё нет."

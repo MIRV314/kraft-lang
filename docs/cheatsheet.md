@@ -19,6 +19,8 @@ kpm add ./local-package             # зарегистрировать паке�
 kpm list
 kpm run                             # main.kraft через venv/bin/xkraft
 kpm del local-package
+kpm --version                       # kpm 1.0.0
+kpm update                          # обновить kpm и xkraft из GitHub Releases
 ```
 
 Из клона используйте `./xkraft` в корне репозитория. Замороженный компилятор
@@ -254,4 +256,5 @@ kpm add ./pkg        # локальный путь или URL
 kpm list
 kpm run
 kpm del pkg
+kpm update          # kpm и xkraft вместе, с проверкой SHA256SUMS
 ```

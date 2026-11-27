@@ -35,6 +35,20 @@ check "xkraft-update-ok" $?
 cmp -s "$tmp/fake/xkraft" "$tmp/xkraft"
 check "xkraft-update-replaced" $?
 
+# Загрузка с другой ФС: mv из каталога загрузки в каталог бинарника
+# должен работать через копию во временный файл рядом с целью.
+if [ -d /dev/shm ] && [ -w /dev/shm ]; then
+  cp ../xkraft "$tmp/xkraft-cross"
+  out=$(KRAFT_NO_UPDATE_CHECK=1 TMPDIR=/dev/shm KRAFT_UPDATE_DOWNLOAD="$tmp/fake" \
+    "$tmp/xkraft-cross" --update 2>&1)
+  code=$?
+  [ "$code" -eq 0 ] && [ "$out" = "xkraft: обновлено" ] && \
+    cmp -s "$tmp/fake/xkraft" "$tmp/xkraft-cross"
+  check "xkraft-update-cross-device" $?
+else
+  echo "skip   xkraft-update-cross-device (нет /dev/shm)"
+fi
+
 # Подмена хэша: файл должен остаться прежним.
 cp ../xkraft "$tmp/xkraft-bad"
 printf '%s  xkraft\n' "$(printf '%064d' 0)" > "$tmp/fake/SHA256SUMS"

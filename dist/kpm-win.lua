@@ -3,7 +3,7 @@
 -- Зависимости в 1.0 задаются локальным путём или URL; реестр появится в 1.1.
 
 local kpm = {}
-local VERSION = "0.5.0"
+local VERSION = "1.0.0"
 
 local function is_windows()
   return package.config:sub(1, 1) == "\\"
@@ -331,6 +331,83 @@ local function find_compiler()
   fail("не нашёл автономный xkraft — положите kpm рядом с xkraft или задайте XKRAFT")
 end
 
+-- ---------- обновление kpm и xkraft ----------
+-- Переменные окружения: KPM_SELF (путь к запущенному kpm), XKRAFT (путь к
+-- компилятору их оболочки), KPM_UPDATE_DOWNLOAD или KRAFT_UPDATE_DOWNLOAD
+-- (каталог/URL с kpm, xkraft и SHA256SUMS).
+
+local function ufail(msg)
+  error(msg, 0)
+end
+
+local function path_dir(path)
+  local cut = 0
+  for i = 1, #path do
+    if path:sub(i, i) == "/" or path:sub(i, i) == "\\" then cut = i end
+  end
+  if cut == 0 then return "." end
+  local dir = path:sub(1, cut - 1)
+  return dir == "" and "/" or dir
+end
+
+local function q(path)
+  local s = tostring(path):gsub("'", "'\\''")
+  return "'" .. s .. "'"
+end
+
+local function shell_value(cmd)
+  local h = io.popen(cmd)
+  if not h then return nil end
+  local out = h:read("*a") or ""
+  local ok = h:close()
+  if ok == false or (type(ok) == "number" and ok ~= 0) then return nil end
+  return out
+end
+
+local function sha256_file(path)
+  local out = shell_value("sha256sum " .. q(path) .. " 2>/dev/null")
+  local h = out and out:match("^%s*(%x+)")
+  if not h then
+    out = shell_value("shasum -a 256 " .. q(path) .. " 2>/dev/null")
+    h = out and out:match("^%s*(%x+)")
+  end
+  if not h then ufail("нет sha256sum или shasum") end
+  return h:lower()
+end
+
+local function fetch_update(url, dest)
+  if url:match("^https?://") then
+    local cmd = "curl -fsSL --connect-timeout 3 --max-time 15 " .. q(url) ..
+      " -o " .. q(dest)
+    if not shell(cmd) then ufail("не могу скачать " .. url) end
+  else
+    local src = url:gsub("^file://", "")
+    if not shell("cp " .. q(src) .. " " .. q(dest)) then ufail("не могу прочесть " .. url) end
+  end
+end
+
+local function wanted_hash(text, name)
+  for line in (text .. "\n"):gmatch("([^\n]*)\n") do
+    local h, f = line:match("^%s*(%x+)%s+%*?([^%s]+)%s*$")
+    if f == name then return h:lower() end
+  end
+  return nil
+end
+
+-- Копируем рядом с целью и переименовываем в том же каталоге: mv из /tmp
+-- в другой каталог ломается, если это разные файловые системы.
+local function replace_file(src, dst)
+  local tmp = shell_value("mktemp " .. q(path_dir(dst) .. "/.kpm-new.XXXXXX"))
+  if not tmp or tmp == "" then ufail("не могу создать временный файл рядом с " .. dst) end
+  tmp = tmp:gsub("%s+$", "")
+  local cmd = "cp " .. q(src) .. " " .. q(tmp) .. " && chmod 755 " .. q(tmp) ..
+    " && mv -f " .. q(tmp) .. " " .. q(dst)
+  if not shell(cmd) then
+    shell("rm -f " .. q(tmp))
+    ufail("не могу заменить " .. dst)
+  end
+end
+
 local function load_manifest()
   if not exists("kraft.json") then
     fail("нет kraft.json — сначала выполните kpm init venv")
@@ -495,6 +572,53 @@ local function command_run(args)
   if not shell(cmd) then os.exit(1) end
 end
 
+local function command_update()
+  -- Windows: xkraft --update уже меняет kraft-win.zip целиком, включая
+  -- kpm-win.lua, поэтому отдельная замена kpm нужна только на POSIX.
+  if is_windows() then
+    -- kpm.cmd уже задаёт XKRAFT = xkraft.cmd; find_compiler() вернул бы
+    -- xkraft-win.lua, который нельзя запускать напрямую как команду.
+    local compiler = os.getenv("XKRAFT")
+    if not compiler or compiler == "" then
+      compiler = path_dir(arg[0] or "") .. "\\xkraft.cmd"
+    end
+    if not shell('call "' .. compiler .. '" --update') then os.exit(1) end
+    say("обновлены kpm и xkraft")
+    return
+  end
+
+  local base = os.getenv("KPM_UPDATE_DOWNLOAD") or os.getenv("KRAFT_UPDATE_DOWNLOAD") or
+    "https://github.com/MIRV314/kraft-lang/releases/latest/download"
+  base = base:gsub("/+$", "")
+  local tmp = shell_value('mktemp -d "${TMPDIR:-/tmp}/kpm-update.XXXXXX"')
+  if not tmp or tmp == "" then fail("не могу создать каталог для обновления") end
+  tmp = tmp:gsub("%s+$", "")
+
+  local ok, err = pcall(function()
+    fetch_update(base .. "/SHA256SUMS", tmp .. "/SHA256SUMS")
+    local sums = read_file(tmp .. "/SHA256SUMS") or ""
+    local want_kpm = wanted_hash(sums, "kpm")
+    local want_xkraft = wanted_hash(sums, "xkraft")
+    if not want_kpm then ufail("в SHA256SUMS нет kpm") end
+    if not want_xkraft then ufail("в SHA256SUMS нет xkraft") end
+
+    fetch_update(base .. "/kpm", tmp .. "/kpm.new")
+    fetch_update(base .. "/xkraft", tmp .. "/xkraft.new")
+    if sha256_file(tmp .. "/kpm.new") ~= want_kpm or
+      sha256_file(tmp .. "/xkraft.new") ~= want_xkraft then
+      ufail("не совпал SHA256, обновление отменено")
+    end
+
+    local self = os.getenv("KPM_SELF") or arg[0] or "kpm"
+    local compiler = find_compiler()
+    replace_file(tmp .. "/kpm.new", self)
+    replace_file(tmp .. "/xkraft.new", compiler)
+  end)
+  shell("rm -rf " .. q(tmp))
+  if not ok then fail(tostring(err)) end
+  say("обновлены kpm и xkraft")
+end
+
 local function usage()
   io.stderr:write("kpm " .. VERSION .. "\n")
   io.stderr:write("usage: kpm init venv [name]\n")
@@ -502,6 +626,7 @@ local function usage()
   io.stderr:write("       kpm del <name>\n")
   io.stderr:write("       kpm list\n")
   io.stderr:write("       kpm run [args...]\n")
+  io.stderr:write("       kpm update\n")
   os.exit(1)
 end
 
@@ -527,6 +652,8 @@ local function main(args)
     command_list()
   elseif cmd == "run" then
     command_run(rest)
+  elseif cmd == "update" then
+    command_update()
   else
     usage()
   end
