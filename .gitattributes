@@ -1,3 +1,15 @@
 # Windows-обёртки создаются dev/make-dist.sh и всегда имеют CRLF.
 # Текстовый diff по ним не нужен: источник — dev/make-dist.sh.
 *.cmd -diff
+
+# Сгенерированные бинарники/скрипты: не считаем их исходным кодом в
+# языковой статистике GitHub (иначе Shell занимает ~87% репозитория).
+/xkraft linguist-generated=true linguist-detectable=false -diff
+/kpm linguist-generated=true linguist-detectable=false -diff
+/dist/xkraft linguist-generated=true linguist-detectable=false -diff
+/dist/xkraft-win.lua linguist-generated=true linguist-detectable=false -diff
+/dist/kpm linguist-generated=true linguist-detectable=false -diff
+/dist/kpm-win.lua linguist-generated=true linguist-detectable=false -diff
+/dist/kraft-win.zip linguist-generated=true linguist-detectable=false -diff
+/dev/src/prelude.lua linguist-generated=true linguist-detectable=false -diff
+*.cmd linguist-generated=true linguist-detectable=false -diff
