@@ -12,4 +12,6 @@
 /dist/kpm-win.lua linguist-generated=true linguist-detectable=false -diff
 /dist/kraft-win.zip linguist-generated=true linguist-detectable=false -diff
 /dev/src/prelude.lua linguist-generated=true linguist-detectable=false -diff
+/dev/kraft linguist-generated=true linguist-detectable=false -diff
+/dev/xkraft linguist-generated=true linguist-detectable=false -diff
 *.cmd linguist-generated=true linguist-detectable=false -diff
