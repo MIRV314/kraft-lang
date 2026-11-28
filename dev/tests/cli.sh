@@ -97,7 +97,7 @@ out=$(./kraft --version)
 [ "$out" = "kraft 0.1.0" ]
 check "kraft-version" $?
 out=$(./xkraft --version)
-[ "$out" = "xkraft 0.9.1" ]
+[ "$out" = "xkraft 0.9.2" ]
 check "xkraft-version" $?
 
 # 8a. Забытую подстановку в show() нужно объяснять, а не ругаться на ')'.

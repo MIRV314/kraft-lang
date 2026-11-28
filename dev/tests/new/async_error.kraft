@@ -1,0 +1,7 @@
+async boom() -> flint:
+    timer(1, 0)
+    raise("E", "bad")
+
+flint a = boom()
+show(before await)
+show({a})

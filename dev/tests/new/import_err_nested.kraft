@@ -1,0 +1,3 @@
+func f():
+    import_lib "std/math"
+    pass

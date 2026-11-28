@@ -1741,10 +1741,210 @@ function krt.error_new(err)
   return e
 end
 
+-- ---------- асинхронность: future, таймеры и event loop ----------
+-- Все состояния планировщика живут в этом рантайме: сгенерированная программа
+-- получает одну копию krt.lua и один krt.run на запуск.
+
+local FUTURE_MT = { __kraft = "future" }
+local krt_ready = {}
+local krt_timers = {}
+local krt_current = nil
+local krt_queued = setmetatable({}, { __mode = "k" })
+local krt_now_ms, krt_sleep_ms
+
+local function future_new()
+  return setmetatable({ done = false, value = krt.NONE, err = nil, waiters = {} }, FUTURE_MT)
+end
+
+function krt.is_future(v)
+  return getmetatable(v) == FUTURE_MT
+end
+
+local function ready_push(co)
+  if krt_queued[co] then return end
+  krt_queued[co] = true
+  krt_ready[#krt_ready + 1] = co
+end
+
+local function future_settle(f, value, err)
+  if f.done then return end
+  f.done = true
+  f.value = value == nil and krt.NONE or value
+  f.err = err
+  local ws = f.waiters
+  f.waiters = {}
+  for i = 1, #ws do ready_push(ws[i]) end
+end
+
+local function resume_task(co)
+  krt_queued[co] = nil
+  for i = #krt_ready, 1, -1 do
+    if krt_ready[i] == co then table.remove(krt_ready, i) end
+  end
+  local prev = krt_current
+  krt_current = co
+  local ok, yielded = coroutine.resume(co)
+  krt_current = prev
+  if not ok then krt.fail("ASYNC_ERROR", tostring(yielded)) end
+end
+
+-- Вызов async-функции стартует работу сразу и возвращает future.
+function krt.async_start(body)
+  local f = future_new()
+  local co = coroutine.create(function()
+    local ok, res = pcall(body)
+    if ok then
+      future_settle(f, res, nil)
+    else
+      future_settle(f, krt.NONE, res)
+    end
+  end)
+  ready_push(co)
+  resume_task(co)
+  return f
+end
+
+-- Ожидание в точке первого использования значения. Ошибка future поднимается
+-- здесь, а не в месте её создания.
+function krt.future_await(f)
+  if not krt.is_future(f) then return f end
+  while not f.done do
+    if krt_current == nil then
+      krt.fail("ASYNC_ERROR", "await outside an async program")
+    end
+    f.waiters[#f.waiters + 1] = krt_current
+    coroutine.yield("kraft_wait")
+  end
+  if f.err ~= nil then error(f.err, 0) end
+  return f.value
+end
+
+-- Тестовая приостанавливаемая операция: возвращает value, уступив управление
+-- event loop на ms миллисекунд (реальное время, не CPU-время os.clock()).
+function krt.timer(ms, value)
+  local co = krt_current
+  if co == nil then krt.fail("ASYNC_ERROR", "timer() outside an async program") end
+  local delay = tonumber(ms) or 0
+  if delay < 0 then delay = 0 end
+  krt_timers[#krt_timers + 1] = { deadline = krt_now_ms() + delay, co = co }
+  coroutine.yield("kraft_timer")
+  return value
+end
+
+-- Монотонные часы и спящий режим только для event loop; сами операции ввода,
+-- файлы и system() остаются блокирующими по D106.
+do
+  local okffi, ffi = pcall(require, "ffi")
+  if okffi then
+    local okdef = pcall(function()
+      if ffi.os == "Windows" then
+        ffi.cdef[[
+          int64_t QueryPerformanceCounter(int64_t*);
+          int64_t QueryPerformanceFrequency(int64_t*);
+          void Sleep(unsigned long);
+        ]]
+      else
+        ffi.cdef[[
+          struct krt_timespec { long tv_sec; long tv_nsec; };
+          int clock_gettime(int clk_id, struct krt_timespec* tp);
+          int nanosleep(const struct krt_timespec* req, struct krt_timespec* rem);
+        ]]
+      end
+    end)
+    if okdef then
+      if ffi.os == "Windows" then
+        local freq = ffi.new("int64_t[1]")
+        ffi.C.QueryPerformanceFrequency(freq)
+        local hz = tonumber(freq[0])
+        krt_now_ms = function()
+          local c = ffi.new("int64_t[1]")
+          ffi.C.QueryPerformanceCounter(c)
+          return tonumber(c[0]) * 1000 / hz
+        end
+        krt_sleep_ms = function(ms)
+          if ms > 0 then ffi.C.Sleep(math.ceil(ms)) end
+        end
+      else
+        local mono = ffi.os == "OSX" and 6 or 1
+        krt_now_ms = function()
+          local ts = ffi.new("struct krt_timespec")
+          if ffi.C.clock_gettime(mono, ts) == 0 then
+            return tonumber(ts.tv_sec) * 1000 + tonumber(ts.tv_nsec) / 1000000
+          end
+          return os.time() * 1000
+        end
+        krt_sleep_ms = function(ms)
+          if ms <= 0 then return end
+          local sec = math.floor(ms / 1000)
+          local rem_ms = ms - sec * 1000
+          local req = ffi.new("struct krt_timespec", { sec, math.floor(rem_ms * 1000000) })
+          local rem = ffi.new("struct krt_timespec")
+          while ffi.C.nanosleep(req, rem) == -1 and ffi.errno() == 4 do
+            req = rem
+          end
+        end
+      end
+    end
+  end
+end
+if not krt_now_ms then
+  krt_now_ms = function() return os.time() * 1000 end
+  krt_sleep_ms = function(ms)
+    local until_t = os.clock() + ms / 1000
+    while os.clock() < until_t do end
+  end
+end
+
+local function fire_timers()
+  local now = krt_now_ms()
+  local left, due = {}, {}
+  for i = 1, #krt_timers do
+    local t = krt_timers[i]
+    if t.deadline <= now then due[#due + 1] = t.co
+    else left[#left + 1] = t end
+  end
+  krt_timers = left
+  for i = 1, #due do ready_push(due[i]) end
+end
+
+local function next_timer_delay()
+  if #krt_timers == 0 then return nil end
+  local soon = krt_timers[1].deadline
+  for i = 2, #krt_timers do
+    if krt_timers[i].deadline < soon then soon = krt_timers[i].deadline end
+  end
+  local delay = soon - krt_now_ms()
+  if delay < 0 then delay = 0 end
+  return delay
+end
+
 -- ---------- запуск программы ----------
 
 function krt.run(fn)
-  local ok, err = pcall(fn)
+  krt_ready, krt_timers, krt_current = {}, {}, nil
+  krt_queued = setmetatable({}, { __mode = "k" })
+  local ok, err = pcall(function()
+    local root_err = nil
+    local root = coroutine.create(function()
+      local dok, derr = pcall(fn)
+      if not dok then root_err = derr end
+    end)
+    ready_push(root)
+    while #krt_ready > 0 or #krt_timers > 0 do
+      if #krt_ready > 0 then
+        resume_task(table.remove(krt_ready, 1))
+      else
+        local delay = next_timer_delay()
+        if delay == nil then break end
+        krt_sleep_ms(delay)
+        fire_timers()
+      end
+    end
+    if root_err ~= nil then error(root_err, 0) end
+    if coroutine.status(root) ~= "dead" then
+      krt.fail("ASYNC_ERROR", "event loop stopped with pending tasks")
+    end
+  end)
   if ok then return end
 
   io.stdout:flush()

@@ -1,0 +1,4 @@
+from_lib "std/math" import pow
+
+func pow():
+    pass

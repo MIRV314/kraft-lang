@@ -47,6 +47,14 @@ check "xkraft-lint-bad-tab" $?
 printf '%s\n' "$out" | grep -q 'removed builtin'
 check "xkraft-lint-bad-builtin" $?
 
+printf 'async BadAsync():\n    pass\n' > "$tmp/async.kraft"
+out=$(./xkraft lint "$tmp/async.kraft" 2>&1)
+code=$?
+[ "$code" -ne 0 ]
+check "xkraft-lint-async-exit" $?
+printf '%s\n' "$out" | grep -q 'func/method name BadAsync is not snake_case'
+check "xkraft-lint-async-name" $?
+
 mkdir -p "$tmp/clean"
 cp "$tmp/good.kraft" "$tmp/clean/a.kraft"
 cp "$tmp/good.kraft" "$tmp/clean/b.kraft"

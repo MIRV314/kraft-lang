@@ -65,9 +65,9 @@ $kl_found"
       if (text ~ /[^ ]/ && (length(indent) % 4) != 0)
         report("indent " length(indent) " is not a multiple of 4")
 
-      if (match(text, /(func|method)[ \t]+[A-Za-z_][A-Za-z0-9_]*/)) {
+      if (match(text, /(func|method|async)[ \t]+[A-Za-z_][A-Za-z0-9_]*/)) {
         name = substr(text, RSTART, RLENGTH)
-        sub(/^(func|method)[ \t]+/, "", name)
+        sub(/^(func|method|async)[ \t]+/, "", name)
         if (name !~ /^[a-z][a-z0-9_]*$/)
           report("func/method name " name " is not snake_case")
       }

@@ -1,0 +1,6 @@
+namespace jobs:
+    async double(flint x) -> flint:
+        return timer(2, x * 2)
+
+flint a = jobs.double(4)
+show({a})

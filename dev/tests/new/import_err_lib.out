@@ -1,0 +1,3 @@
+FILE_ERROR: tests/new/import_err_lib.kraft:1
+    1 | import_lib "std/nope"
+        ^ expected module file, found ./stdlib/nope.kraft

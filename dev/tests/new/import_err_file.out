@@ -1,0 +1,3 @@
+FILE_ERROR: tests/new/import_err_file.kraft:1
+    1 | import_file "./modules/nope.kraft"
+        ^ expected module file, found tests/new/./modules/nope.kraft

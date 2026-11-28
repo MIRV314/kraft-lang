@@ -107,12 +107,69 @@ names.
 `json_parse` and `json_stringify` remain internal builtins and are not available
 through `import_lib`.
 
-## Part 4. `std/http` — later
+## Part 4. `std/base` — in `0.9.2` and `1.0`
 
-The module is planned for `1.1`, after stable `1.0`. Currently `std/http` is
-not in the distribution.
+One built-in module, like `std/math`: `import_lib "std/base"` gives the `base`
+namespace. There are no `std/base/input`, `std/base/oop` or other submodules.
+The module is implemented ahead of schedule and ships in `0.9.2`.
 
-## Part 5. Non-std libraries
+```kraft
+import_lib "std/base"
+
+flint x = base.tern(ok, 1, 2)
+```
+
+| Group | Names |
+| --- | --- |
+| Ternary | `tern(cond, a, b)` |
+| Strings | `upper`, `lower`, `capwords`, `starts`, `ends`, `has_text`, `find_pos`, `split`, `join_parts`, `trim`, `replace`, `count_text` |
+| Printing | `render(value)` |
+| Patterns over `dict` | `make`, `mixin`, `get_field`, `put_field`, `has_field`, `unset_field`, `has_protocol` |
+
+`tern` is an ordinary function: both branches are already evaluated at the call
+site; there is no lazy ternary expression in the grammar. The string helpers are
+thin wrappers over the built-ins `up`, `low`, `title`, `part`, `suff`, `preff`,
+`find` and string methods; `find_pos` returns `any` because `find` may produce
+`NONE`.
+
+`render(value)` prints a `dict` as `{key: value, ...}`, a `list` as `[a, b]`,
+and other values through `str(value)`. No `$` enters the grammar.
+
+The OOP patterns from D123 over `model`/`dict`/`self`:
+
+- inheritance — composition: a model stores the parent in a field and calls its
+  methods through explicit wrappers (delegation);
+- polymorphism — a shared protocol of identical method names plus an explicit
+  `is` dispatcher, because a method call on `any` is forbidden;
+- encapsulation — factory functions, `_` names and accessors; the `_` prefix is
+  only a convention (D114);
+- abstraction — an agreed protocol: `has_protocol(obj, names)` checks the
+  required keys of a `dict`-based object;
+- mixins — `mixin(base, extra)` and `make(fields)` through `dict.merge`; both
+  return a new dict.
+
+```kraft
+import_lib "std/base"
+
+dict defaults = {kind: "hero"}
+dict hero = base.mixin(defaults, {power: 7})
+show({base.render(hero)})
+```
+
+This is not language-level OOP: there is no `extends`, subtyping, private
+fields, dynamic dispatch or operator overloading; `is` checks the exact model
+type. Decorators, `fn` and native multiline `show()` are not put into
+`std/base` (D105, D115, D123); until the next grammar unfreeze, multiline output
+is written with `\n` in strings.
+
+## Part 5. `std/http` — in `1.1`
+
+The module ships after the official `1.0`, when async is already built into the
+binary from `0.9.2`. Its calls are suspendable: inside an `async` function they
+yield to the event loop, outside `async` they are synchronous; `get_many` runs
+requests in parallel. Currently `std/http` is not in the distribution.
+
+## Part 6. Non-std libraries
 
 Libraries outside the core are written in Kraft and imported by files:
 

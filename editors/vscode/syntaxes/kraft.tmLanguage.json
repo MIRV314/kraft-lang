@@ -44,9 +44,10 @@
       ]
     },
     "functions": {
-      "match": "^\\s*func\\s+([A-Za-z_][A-Za-z0-9_]*)",
+      "match": "^\\s*(func|async)\\s+([A-Za-z_][A-Za-z0-9_]*)",
       "captures": {
-        "1": { "name": "entity.name.function.kraft" }
+        "1": { "name": "keyword.control.kraft" },
+        "2": { "name": "entity.name.function.kraft" }
       }
     },
     "models": {
@@ -62,11 +63,11 @@
     },
     "builtins": {
       "name": "support.function.builtin.kraft",
-      "match": "\\b(show|show_err|input|len|type|str|flint|up|low|title|abs|round|floor|ceil|sqrt|factorial|fib|min|max|sum|avg|keys|values|upk|sort|reverse|clear|map|filter|reduce|read_file|write_file|file_exists|copy_file|remove_file|json_parse|json_stringify|raise|args|exit|time_ms|is_tty|system|assert|expect)\\b"
+      "match": "\\b(show|show_err|input|len|type|str|flint|up|low|title|abs|round|floor|ceil|sqrt|factorial|fib|min|max|sum|avg|keys|values|upk|sort|reverse|clear|map|filter|reduce|read_file|write_file|file_exists|copy_file|remove_file|json_parse|json_stringify|raise|args|exit|time_ms|is_tty|timer|system|assert|expect)\\b"
     },
     "keywords": {
       "name": "keyword.control.kraft",
-      "match": "\\b(func|model|method|construct|if|elif|else|for|in|while|break|continue|pass|return|is|AND|OR|NOT|glob|self|init|try|trigger|finally|panic|import_file|from_file|import_lib|from_lib|namespace)\\b"
+      "match": "\\b(func|async|model|method|construct|if|elif|else|for|in|while|break|continue|pass|return|is|AND|OR|NOT|glob|self|init|try|trigger|finally|panic|import_file|from_file|import_lib|from_lib|namespace)\\b"
     },
     "types": {
       "name": "storage.type.kraft",

@@ -11,7 +11,7 @@ concatenation. Errors show the category, file, line and a caret. The core grows
 through libraries, not new keywords. The compiler `xkraft` is written in Kraft
 and compiles itself.
 
-Current version: **0.9.1**.
+Current version in progress: **0.9.2**; the latest published release is **v0.9.1**.
 
 ## Installation
 
@@ -20,7 +20,7 @@ LuaJIT is the only requirement (`luajit` must be in `PATH`).
 ```sh
 curl -fsSL https://raw.githubusercontent.com/MIRV314/kraft-lang/main/install-auto.sh | sh
 # or from a clone: sh install.sh
-kraft --version                     # xkraft 0.9.1; kraft is the alias
+kraft --version                     # xkraft 0.9.2; kraft is the alias
 kraft --update                      # update binary and kpm from GitHub Releases
 xkraft lint [path...]               # basic style rules
 kpm --version                       # kpm 1.0.0
@@ -124,12 +124,18 @@ and hash in `kraft.lock`. A URL can be used instead of a path. Packages land in
 
 - No LSP or completion: only syntax highlighting and snippets for VS Code.
 - No inheritance, polymorphism or encapsulation as language-level OOP:
-  patterns live in std. There is no `class`; `model` fills that role.
-  Properties remain a separate future decision.
+  patterns over `model`/`dict`/`self` are already in `std/base` from `0.9.2`.
+  There is no `class`; `model` fills that role. Properties remain a separate
+  future decision (D123).
 - No `sin`, `cos`, `tan` or `log` in `std/math` yet: only `pow` and `random`.
 - `clamp`, `lerp` and `is_even` are not introduced.
+- Multiple errors per run: the compiler currently shows the first one; all
+  independent errors are planned for `1.0.0` (D121).
 - No package registry yet: local paths and URLs only.
-- No `std/http`, decorators or `async`/auto-await: planned after `1.0`.
+- `async`/auto-await and the event loop are available from `0.9.2`; `std/http`
+  follows in `1.1`, already async-aware (D104, D106).
+- No decorators, `fn` lambdas or multiline `show()`: ideas with no deadline, not
+  added in `1.x` (D105, D115, D123).
 
 ## Where to go next
 
@@ -146,11 +152,15 @@ and hash in `kraft.lock`. A URL can be used instead of a path. Packages land in
 | Build and test instructions | "For developers" below |
 
 Release plan: `0.8` — public `xkraft lint` and fractional range printing
-`1.0, 1.5, 2.0`; `0.9` — `PI` in the core, the `kpm` hotfix and updated docs.
-The next stable `1.0` does not include the site, registry, AUR package or
-project showcase: they are postponed to a separate release. Then `std/http`
-(`1.1`), decorators (`1.2`), `async` with auto-await (`1.3`), and then LSP —
-not just for VS Code.
+`1.0, 1.5, 2.0`; `0.9.1` — `PI`, the `kpm` hotfix, `std/math` and updated docs.
+We stay in `0.9.x` for now and verify changes: `0.9.2` adds `async` with
+auto-await (D106) but is not published yet. Then `1.0.0` is the official release: static typing, a small
+self-hosted binary, full async support and multiple errors per run (D121). From
+`1.0` the binary and grammar are frozen: `std/http` ships in `1.1` as an
+async-aware library, followed by other libraries and modules; LSP comes after
+`1.0`. The site, registry, AUR package and showcase are postponed to a separate
+release. Decorators, `fn` and multiline `show()` are ideas with no deadline
+until the next grammar unfreeze (D122).
 
 ## For developers
 

@@ -1,0 +1,6 @@
+async work(flint x) -> flint:
+    return timer(2, x)
+
+flint a = work(1)
+flint b = work(2)
+show({a + b})

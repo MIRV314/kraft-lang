@@ -1,0 +1,3 @@
+REDECLARE_ERROR: tests/new/import_err_shadow.kraft:3
+    3 | func pow():
+             ^ expected unique name, found name 'pow' is already declared

@@ -2,6 +2,42 @@
 
 > Russian original: [CHANGELOG.md](CHANGELOG.md). The Russian version is authoritative.
 
+## 1.0.0 (planned)
+
+- The official release of the Kraft language: static typing, a small
+  self-contained self-hosted binary with full async support from `0.9.2`,
+  multiple errors per run, and a grammar stable throughout `1.x` (D122).
+- Multiple errors in one run (D121): the compiler will collect independent
+  errors from different statements, print all of them with category, file,
+  line and caret, and exit with code 1. Limit 20, deduplication, enabled by
+  default. Inside a single statement and in the lexer, the first error still
+  wins for now.
+- Built-in `std/base` with OOP patterns over `model`/`dict`/`self`: composition
+  and delegation instead of inheritance, a protocol plus an explicit `is`
+  dispatcher instead of polymorphism, factories and `_` names with accessors
+  instead of encapsulation (D110, D123).
+- From `1.0.0` the binary and grammar are frozen: only libraries and modules
+  change afterwards. `std/http` ships in `1.1` as an async-aware library, LSP
+  comes after `1.0`.
+
+## 0.9.2 (in progress, not published)
+
+- `async` as a keyword in place of `func`, a future as the result type, and
+  automatic await at the first use of the value (D106). In `0.9.2` timers and
+  test futures are suspended; `std/http` arrives in `1.1` and is immediately
+  async-aware (D104).
+- An event loop and coroutine scheduler in `dev/src/krt.lua`, plus updates to
+  the VS Code grammar and lint. Frozen `dev/kraft` v0.1 is unchanged;
+  self-hosting and byte-stable double builds are mandatory.
+- Built-in `timer(ms, value)` as a suspendable test operation: monotonic clock,
+  real waiting time and parallel future starts. A future's error is raised at
+  the await point, not at the call site.
+- An import regression matrix: all std modules, `import_lib`/`from_lib`,
+  `import_file`/`from_file`, plus errors for missing modules, missing exports,
+  shadowing and nested imports.
+- `fn` lambdas, decorators and native multiline `show()` are not added: ideas
+  with no deadline until the next grammar unfreeze (D105, D115, D123).
+
 ## v0.9.1
 
 - The ready binary `xkraft` (alias `kraft`) is built and ready for the

@@ -1,0 +1,22 @@
+import_lib "std/math"
+import_lib "std/cli"
+import_lib "std/fos"
+import_lib "std/base"
+from_lib "std/math" import pow
+from_lib "std/base" import tern
+
+# Локальные функции после нескольких импортов не должны перекрыть f_N либ.
+async local_work(flint x) -> flint:
+    return timer(1, x)
+
+func plus(flint a, flint b) -> flint:
+    return a + b
+
+show({math.pow(2, 3)})
+show({pow(2, 4)})
+show({tern(FALSE, 1, 2)})
+show({base.render([1, 2])})
+show({fos.exists("/")})
+show({cli.run("true")})
+show({local_work(1)})
+show({plus(1, 2)})

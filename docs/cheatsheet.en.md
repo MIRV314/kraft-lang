@@ -1,6 +1,6 @@
 # Kraft cheatsheet
 
-Reference for `0.9.1`. Full docs: [English README](../README.en.md),
+Reference for `0.9.2`. Full docs: [English README](../README.en.md),
 [builtins](builtins.md), [decisions](decisions.md),
 [philosophy](philosophy.md). Russian version:
 [README](../README.md), [cheatsheet](cheatsheet.md).
@@ -11,7 +11,7 @@ Reference for `0.9.1`. Full docs: [English README](../README.en.md),
 xkraft file.kraft [args...]         # current compiler, new model
 xkraft -c file.kraft                # executable file.lua next to the source
 xkraft --tokens file.kraft
-xkraft --version                    # xkraft 0.9.1
+xkraft --version                    # xkraft 0.9.2
 kraft --update                      # update binary and kpm from GitHub Releases
 xkraft lint [path...]               # basic style rules (docs/style.md)
 kpm init venv                       # kraft.json, kraft.lock, venv/, packages/
@@ -134,6 +134,27 @@ func add(flint a, flint b) -> flint:
   (`TOPLEVEL_ERROR`). No `ext` keyword.
 - Locals, parameters and `for` counters may not shadow a global
   (`REDECLARE_ERROR`).
+
+## Async (from `0.9.2`)
+
+```kraft
+async work(flint x) -> flint:
+    return timer(2, x)
+
+flint a = work(1)   # started; the future is not awaited here yet
+flint b = work(2)
+show({a + b})       # first use — automatic await
+```
+
+- `async` takes the place of `func` and is also a reserved word.
+- Calling an `async` function starts it immediately and returns a future;
+  statically it has the result type (`-> flint` above). There is no separate
+  `future` type in the language.
+- The compiler inserts the wait at the first use of the value. Assignment to a
+  variable is not a use: the future is stored there and awaited when read.
+- `timer(ms, value)` is a suspendable test operation; parallel calls start
+  together and are awaited on the event loop.
+- A future's error is raised at the await point, not at the call site.
 
 ## Collections
 

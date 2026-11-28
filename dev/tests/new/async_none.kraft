@@ -1,0 +1,6 @@
+async tick():
+    timer(1, 0)
+    show(tick done)
+
+tick()
+show(after)

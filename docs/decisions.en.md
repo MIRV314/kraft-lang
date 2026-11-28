@@ -562,63 +562,54 @@ a fractional step, and for their output calls `krt.tostr_range_flint`, which
 adds `.0` only to integer values. Ordinary numbers and an integer range
 are unaffected. There is no explicit `fmt_flint()`.
 
-**D103. LSP is after `1.3`.** In `1.0` only highlighting and snippets for
+**D103. LSP is after `1.0`.** In `1.0` only highlighting and snippets for
 VS Code remain. The compiler gets stable machine-readable `--diagnostics` and
 `--ast-json`, whose format is fixed in the documentation. The language server and
-editor clients appear on their basis after `1.3`, when the grammar
-is finally fixed by decorators and `async`.
+editor clients appear on their basis after the official `1.0`: the grammar is
+fixed by the `async` keyword already in `0.9.2` and then stays unchanged until
+the next unfreeze (D122). Decorators are not part of the baseline grammar.
 
-**D104. `std/http` is in `1.1`.** After `1.0` a second base library appears:
-`get(url) → str`, `post(url, body) → str`, `download(url, path) → bool`, and
-`get_many(urls) → list[str]`. The implementation is a thin wrapper over `curl` with
-timeouts; on Windows — `Invoke-WebRequest`. Errors get the category
-`HTTP_ERROR`. The module is embedded in the distribution, like `fos` and `cli`. In `1.1`
-calls are synchronous; `get_many` provides parallelism through multiple processes
-without an async runtime. D94 is extended: the public API becomes `std/fos`,
-`std/cli`, `std/http`.
+**D104. `std/http` is in `1.1`, after async.** After the official `1.0` a
+networking library appears: `get(url) → str`, `post(url, body) → str`,
+`download(url, path) → bool`, and `get_many(urls) → list[str]`. The implementation is
+a thin wrapper over `curl` with timeouts; on Windows — `Invoke-WebRequest`. Errors
+get the category `HTTP_ERROR`. The module is embedded in the distribution, like
+`fos`, `cli`, `math` and `base`. Calls are suspendable: inside an `async` function
+they yield to the event loop, outside `async` they are synchronous; `get_many`
+runs requests in parallel on the async machine already shipped in `0.9.2`. D94
+is extended: the public API becomes `std/fos`, `std/cli`, `std/math`, `std/base`,
+`std/http`.
 
-**D105. Decorators are in `1.2`.** Syntax:
+**D105. Decorators are an idea with no deadline, not in `1.x`.** The previous
+plan (`deco`, `@name`, `target()` in `1.2`) is canceled by D122: decorators are
+not in `0.9.2`, not in `1.0`, not in later `1.x`, and are not put into `std/base`.
+The idea is kept only as a sketch for a future grammar unfreeze: `deco log():`
+would define a wrapper body, `target()` inside it would mark the call of the
+original function, `@name` would be equivalent to `@name()`, and an explicit
+`return` would change the result. It would be pure compile-time expansion, but
+there is currently no plan to implement it.
 
-```kraft
-deco log():
-    show(Привет)
-    target()
-    show(Пока)
-
-@log
-func greet(str name):
-    show({name}!)
-```
-
-`deco name(...)` defines the wrapper body; `target()` inside it is a marker for calling
-the original function with the arguments of the decorated call. `@name` is equivalent to
-`@name()`, decorator arguments are given as `@name(...)`. If the decorator does not
-make an explicit `return`, the result is the result of `target()` (the last one,
-if there are several calls; `NONE` if none). To change the result
-an explicit `return` is written, e.g. `flint r = target(); return r * 2`. This is
-pure compile-time expansion into a wrapper function: the runtime and self-hosting of
-`xkraft.kraft` via frozen `kraft` v0.1 do not change. `target()` outside
-`deco` is unavailable.
-
-**D106. `async` and auto-await are in `1.3`.** A declaration `async name(args): ...`
+**D106. `async` and auto-await are in `0.9.2`.** A declaration `async name(args): ...`
 takes the place of `func`; `async` becomes a reserved name. Calling
 an async function starts the work immediately and returns a future that statically
 has the result type. The compiler inserts a wait at the first use of the
-value:
+value (scheme with a test suspension point):
 
 ```kraft
-async fetch(str url) -> str:
-    return get(url)
+async work(flint x) -> flint:
+    return timer(10, x)   # test suspendable operation
 
-str a = fetch(u1)   # запрос уже в полёте
-str b = fetch(u2)   # второй запрос тоже стартовал
-show(a + b)         # здесь ждём оба результата
+flint a = work(1)   # the first job has already started
+flint b = work(2)   # and so has the second
+show(a + b)         # both results are awaited here
 ```
 
-Thus your syntax "just `async ...` and nothing else" gives parallelism without an explicit
-`await`. In `1.3` only `std/http` calls are suspended; files, `input()`
-and `system()` remain blocking. An event loop in `krt.lua` and an update of the
-VS Code grammar are needed. A future's error is raised at the point of waiting.
+Thus the syntax "just `async ...` and nothing else" gives parallelism without an explicit
+`await`. In `0.9.2` timers and test futures are suspended; starting with `1.1`
+`std/http` calls are added (D104). Files, `input()` and `system()` remain blocking.
+An event loop in `krt.lua` and an update of the VS Code grammar are needed. A future's
+error is raised at the point of waiting. From the official `1.0` on, the grammar is
+frozen: no new syntax until the next unfreeze (D122).
 
 **D107. `0.9.0` and the postponed ecosystem.** The nearest release is `0.9.0`: `PI`
 is added to the core as a built-in constant alongside `fib`/`factorial`;
@@ -635,7 +626,10 @@ does not become a decision. The current `model`, `construct`, `method`, `self`, 
 `init` remain in the core. Future principles such as inheritance and polymorphism
 are laid into std as patterns over `model`/`dict`/`self`, not as language-level
 OOP; a real `class` and subtyping will require a separate core decision.
-`async`/auto-await stays in `1.3` and does not go into std.
+`async`/auto-await was added to the core in `0.9.2`: it is new syntax and
+semantics, so it cannot be a library. Decorators, `fn` lambdas and multiline
+`show()` do not enter the core and remain ideas with no deadline (D105, D115,
+D123).
 
 **D109. `..`, `show()`, and `input()`.** D87/D88 already define `..` as an operator
 for a range value, including in function arguments. A separate declaration
@@ -654,15 +648,17 @@ show({q}..{q})
 `$` holes in signatures (`$(flint x)`) and macros are not introduced: the
 `gen_list` task is covered by the already existing range from D87.
 
-**D110. `std/base` as an idea without a date.** One module `std/base`, not
-`std/list` and `std/elif` for one or two functions. Planned contents:
-`tern(cond, a, b)` — an ordinary function with eager evaluation of both branches; small
-string helpers over `up`/`low`/`part`/`suff`/`preff`/`find`; `render(...)`
-as a function over `dict`, without `$` in the grammar; patterns over
-`model`/`dict`/`self`. A lazy ternary `if ... else` as an expression remains a
-candidate for the core. Decorators `@name` remain the syntax of `1.2`; helpers in
-std do not replace them. A separate module is created only when 5+ functions
-accumulate in one topic.
+**D110. `std/base` is one module in `1.0`.** The "idea without a date" plan
+is canceled: the module is embedded in the distribution together with the
+official `1.0`, like `std/math`, with no subdirectory modules. Contents:
+`tern(cond, a, b)` — an ordinary function with eager evaluation of both branches;
+string helpers over `up`/`low`/`part`/`suff`/`preff`/`find`; `render(...)` as a
+function over `dict`, without `$` in the grammar; patterns over
+`model`/`dict`/`self`, including the OOP patterns from D123. A lazy ternary
+`if ... else` remains a core candidate. Decorators and multiline `show()` are not
+put into `std/base` (D105, D123). A separate module is created only when 5+
+functions accumulate in one topic. The module was built early and already ships
+in `0.9.2`, before the official `1.0`.
 
 **D111. `method.type` is an idea without a date.** It is added neither to the core nor to std.
 The thought: outside a model, write `method.str name(...)` or `method.flint name(...)`,
@@ -774,6 +770,43 @@ functions. `clamp`, `lerp`, and `is_even` are still not introduced — D95 in th
 remains in force. Documentation for all libraries is collected in `docs/libs.md`
 in one file with the `math`, `cli`, `fos` parts, then `http` and non-std libraries.
 Version `0.9.1` is a bump within `0.9.x`, not `1.0`.
+
+**D121. Multiple errors per run in `1.0.0`.** Currently `fail()` writes only the
+first `st[err]`; the driver prints it and exits: a file with three errors gives
+one diagnostic. In the official `1.0.0` release the compiler will collect
+independent errors from different statements in one pass, print each through
+`report_error` (category, file, line, caret) and exit with code 1. The limit is
+20 errors with deduplication by `(category, line, column)`; no flag is needed —
+this is the default. Errors inside a single statement, as well as lexer errors,
+remain single for now: recovery after them is ambiguous. The implementation is
+only in `dev/xkraft.kraft`; the frozen `dev/kraft` v0.1 is unchanged. The
+`err_multiple` test, `self-host` and `make check` are mandatory. `v0.9.1` is
+already published, so the behavior changes starting with `1.0.0`.
+
+**D122. The path `0.9.2` → `1.0.0` and the binary freeze.** `v0.9.1` is published;
+we stay in `0.9.x` for now and verify changes without renaming the release.
+The next step is `0.9.2`: only `async` with auto-await and an event loop are added
+to the compiler (D106), without `fn`, decorators or multiline `show()`. Then
+`1.0.0` is the official release of the Kraft language: static typing, a small
+self-contained self-hosted binary, full async support, and multiple errors per
+run (D121). From `1.0.0` on, the binary and grammar are frozen throughout `1.x`:
+only libraries, modules and frameworks change. `std/http` ships in `1.1` as an
+async-aware library with no binary edits (D104); LSP comes after `1.0` (D103).
+The next grammar unfreeze requires a separate decision; no `2.0` number is
+assigned in advance.
+
+**D123. OOP patterns in `std/base` and multiline `show()`.** `std/base` contains
+patterns, not language-level OOP: inheritance becomes composition with a parent
+field plus explicit wrapper methods (delegation); polymorphism becomes a shared
+protocol of identical method names plus an explicit `is` dispatcher, because a
+method call on `any` is forbidden; encapsulation becomes factory functions,
+`_` names and accessors; abstraction as an agreed protocol and mixins via
+`dict.merge` complete the set. The limits are stated honestly: no `extends`,
+subtyping, private fields, dynamic dispatch or operator overloading; `is`
+checks the exact model type and `_` does not hide a field (D114). Native
+multiline `show()` remains an idea with no deadline until the next grammar
+unfreeze: in `1.x` multiline output is written with `\n` in strings and there is
+no dedicated helper in `std/base`.
 
 ## Documentation
 

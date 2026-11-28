@@ -153,7 +153,7 @@ func is_name_start(str c) -> bool:
     return is_name_char(c)
 
 func is_keyword(str w) -> bool:
-    if w == "func" OR w == "model" OR w == "method" OR w == "construct":
+    if w == "func" OR w == "async" OR w == "model" OR w == "method" OR w == "construct":
         return TRUE
     if w == "if" OR w == "elif" OR w == "else" OR w == "for" OR w == "in":
         return TRUE
@@ -814,6 +814,8 @@ func builtin_info(str name) -> dict:
         return {ok: TRUE, n: 2, ret: "NONE", a1: "str", a2: "str"}
     if name == "time_ms":
         return {ok: TRUE, n: 0, ret: "flint", a1: "any"}
+    if name == "timer":
+        return {ok: TRUE, n: 2, ret: "any", a1: "flint", a2: "any"}
     if name == "is_tty":
         return {ok: TRUE, n: 0, ret: "bool", a1: "any"}
     return {ok: FALSE}
@@ -1427,6 +1429,8 @@ func parse_expr(dict st, flint min_bp) -> dict:
                 cai += 1
             dict fnames = st[fnames]
             e = {k: "call_user", name: fn, lua: fnames.take(fn), args: cargs, ptypes: ptypes, t: fi[ret], nullable: fi[ret_nullable], line: t[line], col: t[col]}
+            if fi.contains("async") AND fi["async"]:
+                e.add("future", TRUE)
         else:
             str vn = fn
             dict vars = st[vars]
@@ -2222,7 +2226,10 @@ func parse_typed_decl(dict st, str dty, dict dname_tok) -> dict:
     if st[block_depth] > 0:
         dict dmu = st[maybe_unset]
         dmu.add(dkey, TRUE)
-    return {k: "decl", type: dty, name: dkey, short_name: dname, lua: dlua, expr: dexpr, line: dname_tok[line], col: dname_tok[col]}
+    dict dnode = {k: "decl", type: dty, name: dkey, short_name: dname, lua: dlua, expr: dexpr, line: dname_tok[line], col: dname_tok[col]}
+    if dexpr.contains("future"):
+        dnode.add("future", TRUE)
+    return dnode
 
 func snapshot_parser(dict st) -> dict:
     return {vars: st[vars], nullable: st[nullable], maybe_unset: st[maybe_unset], for_names: st[for_names], gvars: st[gvars], gnullable: st[gnullable], gmaybe: st[gmaybe], loop_depth: st[loop_depth], cond_depth: st[cond_depth], try_depth: st[try_depth], try_loop_base: st[try_loop_base], in_func: st[in_func], func_ret: st[func_ret], func_returns: st[func_returns], model_ctx: st[model_ctx]}
@@ -2652,6 +2659,8 @@ func finish_func(dict st, dict funtok, str fn_name, dict fninfo, list params, st
     fninfo.add("ret_nullable", fnullable)
     fninfo.add("inferring", FALSE)
     dict fnode = {k: "func", name: fn_name, lua: flua, params: params, ret: final_ret, body: fnbody, block_stmt: TRUE, line: funtok[line], col: funtok[col]}
+    if fninfo.contains("async") AND fninfo["async"]:
+        fnode.add("async", TRUE)
     if exported:
         fnode.add("exported", TRUE)
     return fnode
@@ -2681,7 +2690,10 @@ func prepare_func(dict st, bool exported) -> dict:
     expect_tok(st, "op", ":", "':'")
     if NOT (st[err] is NONE):
         return {}
+    bool fasyn = funtok[value] == "async"
     dict fninfo = {params: params, ret: NONE, ret_nullable: FALSE, inferring: TRUE}
+    if fasyn:
+        fninfo.add("async", TRUE)
     if fhas_ret:
         fninfo.add("ret", fret)
     dict gfuncs = st[funcs]
@@ -2819,8 +2831,12 @@ func bind_export(dict st, dict md, dict nt):
             dict tgm = st[gmaybe]
             tgm.add(target, TRUE)
     bound.add(name, TRUE)
-    st.add("vcounter", md[vcounter])
-    st.add("fcounter", md[fcounter])
+    # Несколько импортов не должны откатывать счётчики имён назад: иначе
+    # последующий локальный f_N перекрывает уже импортированную функцию.
+    if md[vcounter] > st[vcounter]:
+        st.add("vcounter", md[vcounter])
+    if md[fcounter] > st[fcounter]:
+        st.add("fcounter", md[fcounter])
 
 func parse_block(dict st, bool top) -> list:
     list stmts = []
@@ -2977,7 +2993,7 @@ func parse_block(dict st, bool top) -> list:
                             elif nnxt[type] != "dedent":
                                 fail(st, nnxt, "SYNTAX_ERROR", "end of line", describe_tok(nnxt))
                                 break
-                        elif tok_is(tk(st), "kw", "func"):
+                        elif tok_is(tk(st), "kw", "func") OR tok_is(tk(st), "kw", "async"):
                             dict nprep = prepare_func(st, nexp)
                             if NOT (st[err] is NONE):
                                 break
@@ -3221,7 +3237,7 @@ func parse_block(dict st, bool top) -> list:
                     ftnode.add("block_stmt", TRUE)
                     node = ftnode
                     block_stmt = TRUE
-            elif t[type] == "kw" AND t[value] == "func":
+            elif t[type] == "kw" AND (t[value] == "func" OR t[value] == "async"):
                 dict prep = prepare_func(st, exported)
                 if NOT (st[err] is NONE):
                     return stmts
@@ -3426,6 +3442,8 @@ func parse_block(dict st, bool top) -> list:
                 else:
                     anl.remove(aname)
                 node = {k: "assign", name: aname, lua: aw[lua], expr: aexpr, type: avt, line: atok[line], col: atok[col]}
+                if aexpr.contains("future"):
+                    node.add("future", TRUE)
             elif t[type] == "name" AND NOT is_template_func(t[value]) AND is_compound(name_assign_op(st)):
                 dict cn = consume_name(st, "variable name")
                 if NOT (st[err] is NONE):
@@ -3713,8 +3731,10 @@ func process_source(dict st, str path, str src, bool fresh, bool capture_body) -
             if NOT (st[err] is NONE):
                 break
             if NOT cached:
-                st.add("vcounter", usemd[vcounter])
-                st.add("fcounter", usemd[fcounter])
+                if usemd[vcounter] > st[vcounter]:
+                    st.add("vcounter", usemd[vcounter])
+                if usemd[fcounter] > st[fcounter]:
+                    st.add("fcounter", usemd[fcounter])
             str bodykey = cat([path, ":", str(req[start])])
             if cached:
                 bodies.add(bodykey, [])
@@ -3865,6 +3885,29 @@ func stmt_pos(dict s) -> dict:
         return {line: cc[line], col: cc[col]}
     return {line: s[line], col: s[col]}
 
+# Future statically has the result type; the wait is inserted at the first use.
+# Assignment to a variable is not a use: emit_future_call keeps the future in
+# the variable, and emit_await_var waits when that variable is read.
+func register_future(dict st, str lua, str ety, bool nullable, str target):
+    dict fu = st[futures]
+    fu.add(lua, TRUE)
+    dict fts = st[future_types]
+    fts.add(lua, {ety: ety, nullable: nullable, target: target})
+
+func emit_await_var(dict st, str lua) -> str:
+    dict fu = st[futures]
+    if NOT fu.contains(lua):
+        return lua
+    str x = cat(["krt.future_await(", lua, ")"])
+    dict fts = st[future_types]
+    if fts.contains(lua):
+        dict fi = fts.take(lua)
+        fts.add(lua, fi)
+        x = checked(x, fi["ety"], fi["nullable"], fi["target"])
+        if fi["ety"] != "NONE":
+            x = typed_wrap(x, fi["target"])
+    return x
+
 # Выражение -> текст Lua. Рекурсивна только сама в себя.
 func emit_expr(dict st, dict e) -> str:
     str k = e[k]
@@ -3880,7 +3923,7 @@ func emit_expr(dict st, dict e) -> str:
     if k == "const":
         return cat(["krt.", e[name]])
     if k == "var":
-        return e[lua]
+        return emit_await_var(st, e[lua])
 
     if k == "model_field":
         return cat(["krt.model_get(self, ", lua_str(e[name]), ")"])
@@ -3959,6 +4002,9 @@ func emit_expr(dict st, dict e) -> str:
         if bn == "is_tty":
             return "krt.is_tty()"
         dict a0 = ba[0]
+        if bn == "timer":
+            dict ta1 = ba[1]
+            return cat(["krt.timer(", wrap_flint(emit_expr(st, a0), a0[t], e_nullable(a0)), ", ", emit_expr(st, ta1), ")"])
         if bn == "len":
             return cat(["krt.len(", emit_expr(st, a0), ")"])
         if bn == "type":
@@ -4068,7 +4114,10 @@ func emit_expr(dict st, dict e) -> str:
             str cx = emit_expr(st, cnode)
             cp.add(wrap_to(cx, cnode[t], e_nullable(cnode), ctgt))
             ci += 1
-        return cat([e[lua], "(", cp.join(", "), ")"])
+        str ccall = cat([e[lua], "(", cp.join(", "), ")"])
+        if e.contains("future"):
+            return cat(["krt.future_await(", ccall, ")"])
+        return ccall
 
     if k == "list":
         list its = e[items]
@@ -4322,6 +4371,13 @@ func emit_expr(dict st, dict e) -> str:
 
     return "krt.NONE"
 
+# Присваивание future не является его первым использованием: снимаем метку,
+# чтобы обычный вызов не вставил ожидание, и сохраняем future в переменной.
+func emit_future_call(dict st, dict e) -> str:
+    dict ce = dict_copy(e)
+    ce.remove("future")
+    return emit_expr(st, ce)
+
 # Объявления поднимаются в начало своей функции (D11, D43).
 func collect_walk(list stmts, list out) -> list:
     for s0 in stmts:
@@ -4494,19 +4550,37 @@ func emit_stmts(dict st, list stmts) -> str:
             emit_line(st, cat(["krt.model_set(", emit_expr(st, s[base]), ", ", lua_str(s[name]), ", ", fax, ")"]))
         elif sk == "decl":
             dict de = s[expr]
-            str dx = checked(emit_expr(st, de), de[t], e_nullable(de), s[type])
-            if de[t] != "NONE":
-                dx = typed_wrap(dx, s[type])
+            bool dhold = de.contains("future")
+            str dx = ""
+            if dhold:
+                dx = emit_future_call(st, de)
+            else:
+                dx = emit_expr(st, de)
+            if dhold:
+                register_future(st, s[lua], de[t], e_nullable(de), s[type])
+            else:
+                dx = checked(dx, de[t], e_nullable(de), s[type])
+                if de[t] != "NONE":
+                    dx = typed_wrap(dx, s[type])
             emit_line(st, cat([s[lua], " = ", dx]))
         elif sk == "assign":
             dict ae = s[expr]
-            str ax = checked(emit_expr(st, ae), ae[t], e_nullable(ae), s[type])
-            if ae[t] != "NONE":
-                ax = typed_wrap(ax, s[type])
+            bool ahold = ae.contains("future")
+            str ax = ""
+            if ahold:
+                ax = emit_future_call(st, ae)
+            else:
+                ax = emit_expr(st, ae)
+            if ahold:
+                register_future(st, s[lua], ae[t], e_nullable(ae), s[type])
+            else:
+                ax = checked(ax, ae[t], e_nullable(ae), s[type])
+                if ae[t] != "NONE":
+                    ax = typed_wrap(ax, s[type])
             emit_line(st, cat([s[lua], " = ", ax]))
         elif sk == "compound":
             dict ce = s[expr]
-            str lhs = wrap_flint(s[lua], "flint", s[nullable])
+            str lhs = wrap_flint(emit_await_var(st, s[lua]), "flint", s[nullable])
             str rhs = wrap_flint(emit_expr(st, ce), ce[t], e_nullable(ce))
             str cop = s[op]
             str ex = ""
@@ -4791,8 +4865,12 @@ func emit_stmts(dict st, list stmts) -> str:
             for fp0 in fparams:
                 dict fp = fp0
                 fpl.add(fp[lua])
+            bool fasyn = s.contains("async")
             emit_line(st, cat(["local function ", s[lua], "(", fpl.join(", "), ")"]))
             st.add("indent", st[indent] + 1)
+            if fasyn:
+                emit_line(st, "return krt.async_start(function()")
+                st.add("indent", st[indent] + 1)
             str saved_ret = st[current_ret]
             st.add("current_ret", s[ret])
             list fbody = s[body]
@@ -4806,6 +4884,9 @@ func emit_stmts(dict st, list stmts) -> str:
                     ends_ret = TRUE
             if NOT ends_ret:
                 emit_line(st, "return krt.NONE")
+            if fasyn:
+                st.add("indent", st[indent] - 1)
+                emit_line(st, "end)")
             st.add("indent", st[indent] - 1)
             emit_line(st, "end")
         if wrap_ret:
@@ -4818,7 +4899,7 @@ func emit_stmts(dict st, list stmts) -> str:
 # ---------- сборка Lua ----------
 
 func generate(dict ast, dict opts) -> str:
-    dict st = {out: [], indent: 0, line_map: [], cur_pos: {}, loop_stack: [], loop_id: 0, try_id: 0, ret_id: 0, current_ret: "NONE", range_floats: {}, models: opts[models]}
+    dict st = {out: [], indent: 0, line_map: [], cur_pos: {}, loop_stack: [], loop_id: 0, try_id: 0, ret_id: 0, current_ret: "NONE", range_floats: {}, models: opts[models], futures: {}, future_types: {}}
     emit_line(st, "#!/usr/bin/env luajit")
     emit_line(st, "-- generated by kraft")
     emit_line(st, cat(["local __KRAFT_SOURCE = ", lua_str(opts[path])]))
@@ -4894,7 +4975,7 @@ func write_compiled(str path, str out_lua):
 
 list argv = args()
 if len(argv) >= 2 AND argv[1] == "--version":
-    show(xkraft 0.9.1)
+    show(xkraft 0.9.2)
     exit(0)
 if len(argv) < 2:
     show_err(usage: xkraft [--tokens] [-c] file.kraft)

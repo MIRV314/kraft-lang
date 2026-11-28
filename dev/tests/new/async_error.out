@@ -1,0 +1,4 @@
+before await
+E: tests/new/async_error.kraft:3
+    3 |     raise("E", "bad")
+            ^ bad

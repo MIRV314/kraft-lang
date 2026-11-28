@@ -1,0 +1,101 @@
+# std/base — базовые helper'ы и паттерны поверх model/dict/self.
+# Один модуль без подмодулей (D110). ООП здесь — соглашения, не синтаксис:
+# композиция вместо наследования, протокол плюс явный is-диспетчер, фабрики
+# и accessors вместо приватных полей (D123).
+
+# Жадный тернарный helper: обе ветки уже вычислены к моменту вызова.
+func tern(bool cond, any yes, any no) -> any:
+    if cond:
+        return yes
+    return no
+
+# Строковые helper'ы поверх встроенных up/low/part/suff/preff/find.
+func upper(str s) -> str:
+    return up(s)
+
+func lower(str s) -> str:
+    return low(s)
+
+func capwords(str s) -> str:
+    return title(s)
+
+func starts(str s, str prefix) -> bool:
+    return s.preff(prefix)
+
+func ends(str s, str suffix) -> bool:
+    return s.suff(suffix)
+
+func has_text(str s, str needle) -> bool:
+    return s.contains(needle)
+
+func find_pos(str s, str needle) -> any:
+    return s.find(needle)
+
+func split(str s, str sep) -> list:
+    return s.part(sep)
+
+func join_parts(list parts, str sep) -> str:
+    return parts.join(sep)
+
+func trim(str s) -> str:
+    return s.trim()
+
+func replace(str s, str old, str new) -> str:
+    return s.replace(old, new)
+
+func count_text(str s, str needle) -> flint:
+    return s.count(needle)
+
+func cat_pair(str key, str value) -> str:
+    list parts = [key, ": ", value]
+    return parts.join("")
+
+func cat_parts(list parts, str open, str close) -> str:
+    list all = [open, parts.join(", "), close]
+    return all.join("")
+
+# render — печать словарей и списков без `$` в грамматике.
+# Ветвление по type() и присваивание в типизированный локальный helper
+# обходит запрет на вызов метода напрямую у any.
+func render(any value) -> str:
+    if type(value) == "dict":
+        dict d = value
+        list parts = []
+        for key0 in keys(d):
+            str key = key0
+            parts.add(cat_pair(key, str(d.take(key))))
+        return cat_parts(parts, "\{", "\}")
+    if type(value) == "list":
+        list xs = value
+        list items = []
+        for item in xs:
+            items.add(str(item))
+        return cat_parts(items, "[", "]")
+    return str(value)
+
+# Паттерни поверх dict: фабрика, accessor'ы, примеси и соглашение о протоколе.
+# dict.merge всегда возвращает новый словарь, исходники не меняются.
+func make(dict fields) -> dict:
+    return fields.merge({})
+
+func mixin(dict base, dict extra) -> dict:
+    return base.merge(extra)
+
+func get_field(dict obj, str key) -> any:
+    return obj.take(key)
+
+func put_field(dict obj, str key, any value):
+    obj.add(key, value)
+
+func has_field(dict obj, str key) -> bool:
+    return obj.contains(key)
+
+func unset_field(dict obj, str key) -> bool:
+    return obj.remove(key)
+
+func has_protocol(dict obj, list names) -> bool:
+    for name0 in names:
+        str name = name0
+        if NOT obj.contains(name):
+            return FALSE
+    return TRUE

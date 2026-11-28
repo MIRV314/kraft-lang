@@ -1,0 +1,9 @@
+async inner(flint x) -> flint:
+    return timer(2, x + 1)
+
+async outer(flint x) -> flint:
+    flint y = inner(x)
+    return y * 2
+
+flint r = outer(3)
+show({r})

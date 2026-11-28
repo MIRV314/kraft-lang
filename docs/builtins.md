@@ -23,7 +23,7 @@ Prelude подключается автоматически; `--no-prelude` от
 | Коллекции | `sum(xs)`, `avg(xs)`, `keys(d)`, `values(d)`, `upk(coll)`, `sort(xs)`, `reverse(xs)`, `clear(coll)` |
 | Функции высшего порядка | `map(xs, f)`, `filter(xs, f)`, `reduce(xs, f, start)` |
 | Файлы | `read_file(path)`, `write_file(path, text)`, `file_exists(path)` |
-| Процесс | `args()`, `exit(code)`, `time_ms()`, `is_tty()`, `system(command)` |
+| Процесс | `args()`, `exit(code)`, `time_ms()`, `is_tty()`, `system(command)`, `timer(ms, value)` |
 | Тесты | `assert(condition, message)`, `expect(value)` |
 | Печать и ввод | `show(template)`, `show_err(template)`, `input(prompt)` |
 | Константа | `PI` |
@@ -107,6 +107,12 @@ Prelude подключается автоматически; `--no-prelude` от
   по сигналу — `128 + номер`, не запустилось — `-1`. Встроенный, доступен без
   импорта; `cli.run(command)` из `std/cli` — тонкая обёртка над тем же
   механизмом.
+- `timer(ms, value)` — тестовая приостанавливаемая операция из D106: уступает
+  управление event loop на `ms` миллисекунд реального времени и возвращает
+  `value`. Вызов стартует внутри программы (она целиком идёт в event loop),
+  в `async`-функции приостанавливает именно её; параллельные вызовы ждутся
+  одновременно. Ошибки таймера нет; `ms < 0` считается нулём. Ввод, файлы и
+  `system()` остаются блокирующими.
 
 ### Тесты
 
@@ -154,14 +160,20 @@ Prelude — не часть замороженного ядра v0.1, но он 
 
 ## Стандартная библиотека
 
-Три модуля вшиты в дистрибутив и подключаются через `import_lib` /
-`from_lib`:
+Четыре модуля входят в рабочую поставку `0.9.2` и подключаются через
+`import_lib` / `from_lib`:
 
 | Модуль | Имена |
 | --- | --- |
 | `std/fos` | `exists`, `copy`, `remove`, `read_text`, `write_text`, `read_json`, `write_json`, `read_csv`, `write_csv`, `csv_field`, `csv_line`, `csv_parse` |
 | `std/cli` | `run`, `kill` |
 | `std/math` | `pow`, `random` |
+| `std/base` | `tern`, строковые helper'ы, `render`, паттерны поверх `dict` |
+
+`std/base` (D110, D123) реализован досрочно и входит в `0.9.2` и `1.0`: `tern`,
+строковые helper'ы, `render` и ООП-паттерны поверх `model`/`dict`/`self`.
+В `1.1` появится `std/http`, сразу async-aware (D104). В опубликованной поставке
+`0.9.1` пока только первые три модуля.
 
 - `fos.exists(path)`, `fos.copy(src, dst)`, `fos.remove(path)` → `bool`.
 - `fos.read_text(path)` → `str`; `fos.write_text(path, data)` → `bool`.
@@ -176,6 +188,13 @@ Prelude — не часть замороженного ядра v0.1, но он 
 - `math.random(x)` — если `x` — `range`, возвращает случайное значение на его
   сетке; если `x` — список, возвращает случайный элемент. Подробности — в
   [docs/libs.md](libs.md).
+- `base.tern(cond, a, b)` — жадный тернарный helper; `base.upper`, `base.lower`,
+  `base.capwords`, `base.starts`, `base.ends`, `base.has_text`, `base.find_pos`,
+  `base.split`, `base.join_parts`, `base.trim`, `base.replace`,
+  `base.count_text` — строковые helper'ы; `base.render(value)` печатает dict,
+  list и скаляры; `base.make`, `base.mixin`, `base.get_field`, `base.put_field`,
+  `base.has_field`, `base.unset_field`, `base.has_protocol` — паттерны поверх
+  `dict`. Полный список — в [docs/libs.md](libs.md).
 
 `json_parse`, `json_stringify`, `rand_num` и `rand_choice` остаются внутренними
 встроенными функциями и не импортируются: `std/math` вызывает их сам. `std/fs`,

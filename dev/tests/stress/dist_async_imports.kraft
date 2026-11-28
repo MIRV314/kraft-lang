@@ -1,0 +1,14 @@
+import_lib "std/math"
+import_lib "std/base"
+from_lib "std/math" import pow
+
+async work(flint x) -> flint:
+    return timer(2, x + 1)
+
+flint a = work(1)
+flint b = work(2)
+show({a + b})
+show({math.pow(2, 3)})
+show({pow(2, 4)})
+show({base.tern(TRUE, 1, 2)})
+show({base.render([a, b])})

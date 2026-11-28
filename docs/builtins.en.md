@@ -25,7 +25,7 @@ The prelude is imported automatically; `--no-prelude` disables it.
 | Collections | `sum(xs)`, `avg(xs)`, `keys(d)`, `values(d)`, `upk(coll)`, `sort(xs)`, `reverse(xs)`, `clear(coll)` |
 | Higher-order functions | `map(xs, f)`, `filter(xs, f)`, `reduce(xs, f, start)` |
 | Files | `read_file(path)`, `write_file(path, text)`, `file_exists(path)` |
-| Process | `args()`, `exit(code)`, `time_ms()`, `is_tty()`, `system(command)` |
+| Process | `args()`, `exit(code)`, `time_ms()`, `is_tty()`, `system(command)`, `timer(ms, value)` |
 | Tests | `assert(condition, message)`, `expect(value)` |
 | Printing and input | `show(template)`, `show_err(template)`, `input(prompt)` |
 | Constant | `PI` |
@@ -109,6 +109,12 @@ ever appear, the keyword will be `fn`, not `lambda` (D115).
   on a signal — `128 + number`, failed to start — `-1`. Built-in, available without
   import; `cli.run(command)` from `std/cli` is a thin wrapper over the same
   mechanism.
+- `timer(ms, value)` — the suspendable test operation from D106: it yields to
+  the event loop for `ms` milliseconds of wall-clock time and returns `value`.
+  The whole program runs inside the loop; inside an `async` function the timer
+  suspends that function only, and parallel calls are awaited together.
+  There is no timer error; `ms < 0` is treated as zero. Input, files and
+  `system()` remain blocking.
 
 ### Tests
 
@@ -156,14 +162,21 @@ global variables are changed directly inside `func`, `for`, and `while`, without
 
 ## Standard library
 
-Three modules are built into the distribution and imported via `import_lib` /
-`from_lib`:
+Four modules are built into the working `0.9.2` distribution and imported via
+`import_lib` / `from_lib`:
 
 | Module | Names |
 | --- | --- |
 | `std/fos` | `exists`, `copy`, `remove`, `read_text`, `write_text`, `read_json`, `write_json`, `read_csv`, `write_csv`, `csv_field`, `csv_line`, `csv_parse` |
 | `std/cli` | `run`, `kill` |
 | `std/math` | `pow`, `random` |
+| `std/base` | `tern`, string helpers, `render`, patterns over `dict` |
+
+`std/base` (D110, D123) is implemented ahead of schedule and ships in `0.9.2`
+and `1.0`: `tern`, string helpers, `render`, and OOP patterns over
+`model`/`dict`/`self`. `std/http` follows in `1.1`, immediately async-aware
+(D104). The published `0.9.1` distribution contains only the first three
+modules.
 
 - `fos.exists(path)`, `fos.copy(src, dst)`, `fos.remove(path)` → `bool`.
 - `fos.read_text(path)` → `str`; `fos.write_text(path, data)` → `bool`.
@@ -177,6 +190,14 @@ Three modules are built into the distribution and imported via `import_lib` /
 - `math.pow(a, b)` — same as the `**` operator.
 - `math.random(x)` — if `x` is a `range`, returns a random value on its
   grid; if `x` is a list, returns a random element. Details are in
+  [docs/libs.md](libs.md).
+- `base.tern(cond, a, b)` — eager ternary helper; `base.upper`, `base.lower`,
+  `base.capwords`, `base.starts`, `base.ends`, `base.has_text`,
+  `base.find_pos`, `base.split`, `base.join_parts`, `base.trim`,
+  `base.replace`, `base.count_text` — string helpers; `base.render(value)`
+  prints dicts, lists and scalars; `base.make`, `base.mixin`,
+  `base.get_field`, `base.put_field`, `base.has_field`, `base.unset_field`,
+  `base.has_protocol` — patterns over `dict`. The full list is in
   [docs/libs.md](libs.md).
 
 `json_parse`, `json_stringify`, `rand_num`, and `rand_choice` remain internal

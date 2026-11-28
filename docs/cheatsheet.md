@@ -1,6 +1,6 @@
 # Kraft — шпаргалка
 
-Памятка по `0.9.1`. Полные документы: [README](../README.md),
+Памятка по `0.9.2`. Полные документы: [README](../README.md),
 [builtins](builtins.md), [decisions](decisions.md),
 [philosophy](philosophy.md). Английская версия:
 [README.en](../README.en.md), [cheatsheet.en](cheatsheet.en.md).
@@ -11,7 +11,7 @@
 xkraft file.kraft [args...]         # текущий компилятор, новая модель
 xkraft -c file.kraft                # исполняемый file.lua рядом с исходником
 xkraft --tokens file.kraft
-xkraft --version                    # xkraft 0.9.1
+xkraft --version                    # xkraft 0.9.2
 kraft --update                      # обновить бинарник и kpm из GitHub Releases
 xkraft lint [path...]               # базовые правила стиля (docs/style.md)
 kpm init venv                       # kraft.json, kraft.lock, venv/, packages/
@@ -133,6 +133,27 @@ func add(flint a, flint b) -> flint:
   `if`/`elif`/`else` (`TOPLEVEL_ERROR`). Ключевого слова `ext` нет.
 - Локальные переменные, параметры и счётчики `for` не могут перекрывать
   глобал (`REDECLARE_ERROR`).
+
+## Async (с `0.9.2`)
+
+```kraft
+async work(flint x) -> flint:
+    return timer(2, x)
+
+flint a = work(1)   # работа стартовала, здесь future ещё не ждём
+flint b = work(2)
+show({a + b})       # первое использование — автоматический await
+```
+
+- `async` занимает место `func` и тоже зарезервировано.
+- Вызов `async`-функции сразу стартует и возвращает future; статически он имеет
+  тип результата (`-> flint` выше), отдельного типа `future` в языке нет.
+- Ожидание вставляется компилятором при первом использовании значения.
+  Присваивание в переменную ожиданием не является: future хранится в ней и
+  ждётся при чтении.
+- `timer(ms, value)` — приостанавливаемая тестовая операция; параллельные вызовы
+  стартуют вместе и ждутся на event loop.
+- Ошибка future поднимается в точке await, а не в точке вызова.
 
 ## Коллекции
 

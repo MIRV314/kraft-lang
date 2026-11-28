@@ -1,0 +1,33 @@
+import_lib "std/base"
+from_lib "std/base" import tern, render, mixin, get_field
+
+show({base.tern(TRUE, 1, 2)})
+show({base.upper("kraft")})
+show({base.lower("KRAFT")})
+show({base.capwords("kraft lang")})
+show({base.starts("Kraft", "Kra")})
+show({base.ends("Kraft", "aft")})
+show({base.has_text("Kraft", "raf")})
+show({base.find_pos("Kraft", "raf")})
+show({base.split("a,b,c", ",")})
+show({base.join_parts(["a", "b"], "-")})
+show({base.trim("  kraft  ")})
+show({base.replace("kraft", "a", "A")})
+show({base.count_text("banana", "a")})
+show({base.render({name: "Kraft", n: 1})})
+show({base.render([1, "два"])})
+show({base.render(7)})
+
+dict a = {x: 1}
+dict b = base.mixin(a, {y: 2})
+show({b})
+show({a})
+show({get_field(b, "y")})
+show({base.has_field(b, "x")})
+base.put_field(b, "z", 3)
+show({b})
+show({base.unset_field(b, "x")})
+show({b})
+show({base.has_protocol(b, ["y", "z"])})
+show({base.make({p: 1})})
+show({tern(FALSE, 1, 2)})
