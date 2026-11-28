@@ -523,6 +523,128 @@ func peek_value(dict st) -> str:
         return n[value]
     return ""
 
+# D121: независимые ошибки собираются в список, а st[err] остаётся ошибкой
+# текущего оператора — все существующие проверки по-прежнему работают.
+func same_error(dict a, dict b) -> bool:
+    if a[cat] != b[cat]:
+        return FALSE
+    if a[line] != b[line]:
+        return FALSE
+    if a[col] != b[col]:
+        return FALSE
+    return TRUE
+
+# Имена из сообщения об ошибке помечаются «испорченными»: последующие
+# NAME_ERROR для них — каскад, а не новая независимая ошибка.
+func mark_broken_name(dict st, str name):
+    list broken = st[broken]
+    if NOT broken.contains(name):
+        broken.add(name)
+
+func mark_broken_text(dict st, str s):
+    bool open = FALSE
+    str cur = ""
+    flint i = 0
+    while i < len(s):
+        str c = s[i]
+        if c == "'":
+            if open:
+                list broken = st[broken]
+                mark_broken_name(st, cur)
+                open = FALSE
+                cur = ""
+            else:
+                open = TRUE
+        elif open:
+            cur = cat([cur, c])
+        i += 1
+
+func record_error(dict st, dict e):
+    if len(st[errors]) >= 10:
+        return:
+    if e.contains("expected"):
+        mark_broken_text(st, e[expected])
+    if e.contains("found"):
+        str found = e[found]
+        if e[cat] == "NAME_ERROR":
+            list broken = st[broken]
+            flint bi = 0
+            while bi < len(broken):
+                if found.contains(cat(["'", broken[bi], "'"])):
+                    return:
+                bi += 1
+        mark_broken_text(st, found)
+    if st[current_model] != "":
+        mark_broken_name(st, st[current_model])
+    list errs = st[errors]
+    flint i = 0
+    while i < len(errs):
+        # Внутри одной строки показываем только первую ошибку.
+        dict prev = errs[i]
+        if prev.take("line") == e.take("line"):
+            return:
+        i += 1
+    errs.add(e)
+
+func flush_error(dict st):
+    if st[err] is NONE:
+        return:
+    record_error(st, st[err])
+    st.add("err", NONE)
+
+# После ошибки остаток оператора больше не имеет смысла — переходим к
+# следующей строке, чтобы собрать независимые ошибки ниже.
+func skip_bad_statement(dict st):
+    # Пропускаем остаток плохой строки, затем весь блок, в котором она была,
+    # включая возможные trigger/finally того же уровня.
+    flint close = st[block_depth]
+    if st[current_model] != "":
+        close = 3
+    elif close > 0:
+        close += 1
+    while tk(st)[type] != "eof" AND tk(st)[type] != "newline" AND tk(st)[type] != "dedent":
+        advance(st)
+    if tk(st)[type] == "newline":
+        advance(st)
+    if tk(st)[type] == "indent":
+        advance(st)
+        close += 1
+    while close > 0 AND tk(st)[type] != "eof":
+        dict t = tk(st)
+        if t[type] == "indent":
+            close += 1
+        elif t[type] == "dedent":
+            close -= 1
+        advance(st)
+    # Ветки try/if — продолжение того же оператора, а не новые ошибки.
+    bool clauses = TRUE
+    while clauses:
+        dict ct = tk(st)
+        if ct[type] == "kw" AND (ct[value] == "trigger" OR ct[value] == "finally" OR ct[value] == "elif" OR ct[value] == "else"):
+            while tk(st)[type] != "eof" AND tk(st)[type] != "newline" AND tk(st)[type] != "dedent":
+                advance(st)
+            if tk(st)[type] == "newline":
+                advance(st)
+            if tk(st)[type] == "indent":
+                advance(st)
+                flint nested = 1
+                while nested > 0 AND tk(st)[type] != "eof":
+                    dict nt = tk(st)
+                    if nt[type] == "indent":
+                        nested += 1
+                    elif nt[type] == "dedent":
+                        nested -= 1
+                    advance(st)
+        else:
+            clauses = FALSE
+
+func report_errors(dict st, str src):
+    list errs = st[errors]
+    flint i = 0
+    while i < len(errs):
+        report_error(errs[i], src)
+        i += 1
+
 func fail(dict st, dict t, str ecat, str expected, str found):
     if NOT (st[err] is NONE):
         return:
@@ -530,6 +652,7 @@ func fail(dict st, dict t, str ecat, str expected, str found):
     if len(t) > 0:
         e.add("line", t[line])
         e.add("col", t[col])
+    record_error(st, e)
     st.add("err", e)
 
 func expect_tok(dict st, str ty, str val, str what) -> dict:
@@ -1185,7 +1308,7 @@ func template_state(dict st, dict p) -> dict:
         dict t2 = ts[i]
         shift_token_pos(t2, p[line] - 1, p[col] - 1)
         i += 1
-    return {toks: ts, pos: 0, path: st[path], vars: st[vars], nullable: st[nullable], maybe_unset: st[maybe_unset], gvars: st[gvars], gnullable: st[gnullable], gmaybe: st[gmaybe], for_names: st[for_names], funcs: st[funcs], in_func: st[in_func], func_ret: st[func_ret], func_returns: st[func_returns], block_depth: st[block_depth], loop_depth: st[loop_depth], cond_depth: st[cond_depth], err: e0, names: st[names], fnames: st[fnames], vcounter: st[vcounter], fcounter: st[fcounter], models: st[models], model_ctx: st[model_ctx]}
+    return {toks: ts, pos: 0, path: st[path], vars: st[vars], nullable: st[nullable], maybe_unset: st[maybe_unset], gvars: st[gvars], gnullable: st[gnullable], gmaybe: st[gmaybe], for_names: st[for_names], funcs: st[funcs], in_func: st[in_func], func_ret: st[func_ret], func_returns: st[func_returns], block_depth: st[block_depth], loop_depth: st[loop_depth], cond_depth: st[cond_depth], err: e0, errors: st[errors], broken: st[broken], current_model: st[current_model], names: st[names], fnames: st[fnames], vcounter: st[vcounter], fcounter: st[fcounter], models: st[models], model_ctx: st[model_ctx]}
 
 func parse_expr(dict st, flint min_bp) -> dict:
     if NOT (st[err] is NONE):
@@ -2920,6 +3043,7 @@ func parse_block(dict st, bool top) -> list:
                     return stmts
                 node = parse_typed_decl(st, dty, dname_tok)
                 if NOT (st[err] is NONE):
+                    mark_broken_name(st, dname_tok[value])
                     return stmts
                 if exported:
                     node.add("exported", TRUE)
@@ -3256,6 +3380,7 @@ func parse_block(dict st, bool top) -> list:
                 if NOT (st[err] is NONE):
                     return stmts
                 str mname = mnt[value]
+                st.add("current_model", mname)
                 if is_reserved(mname) OR is_const_name(mname):
                     fail(st, mnt, "NAME_ERROR", "free model name", cat(["reserved '", mname, "'"]))
                     return stmts
@@ -3382,6 +3507,7 @@ func parse_block(dict st, bool top) -> list:
                 if NOT mseen_construct:
                     fail(st, mtok, "SYNTAX_ERROR", "construct in model", "missing construct")
                     return stmts
+                st.add("current_model", "")
                 node = {k: "model", name: mname, schema: mschema, fields: mfield_nodes, line: mtok[line], col: mtok[col]}
                 block_stmt = TRUE
             elif t[type] == "kw" AND t[value] == "return":
@@ -3651,6 +3777,7 @@ func process_source(dict st, str path, str src, bool fresh, bool capture_body) -
         dict e = mlx[err]
         e.add("path", path)
         e.add("source", src)
+        record_error(st, e)
         st.add("err", e)
         if fresh:
             for rk1, rv1 in old:
@@ -5026,18 +5153,71 @@ if mode == "tokens":
     dump_tokens(lx[tokens])
     exit(0)
 
-dict st = {toks: lx[tokens], pos: 0, path: path, source: src, vars: {}, nullable: {}, maybe_unset: {}, gvars: {}, gnullable: {}, gmaybe: {}, for_names: {}, funcs: {}, in_func: FALSE, func_ret: "NONE", func_returns: [], block_depth: 0, loop_depth: 0, cond_depth: 0, err: NONE, names: {}, fnames: {}, vcounter: 0, fcounter: 0, models: {Error: error_schema()}, model_ctx: NONE, try_id: 0, try_depth: 0, try_loop_base: 0, exports: {}, import_stack: [], import_cache: {}, import_bodies: {}, ns_prefix: "", ns_read_prefix: "", self_dir: dirname(argv[0])}
+dict st = {}
+st.add("toks", lx[tokens])
+st.add("pos", 0)
+st.add("path", path)
+st.add("source", src)
+st.add("vars", {})
+st.add("nullable", {})
+st.add("maybe_unset", {})
+st.add("gvars", {})
+st.add("gnullable", {})
+st.add("gmaybe", {})
+st.add("for_names", {})
+st.add("funcs", {})
+st.add("in_func", FALSE)
+st.add("func_ret", "NONE")
+st.add("func_returns", [])
+st.add("block_depth", 0)
+st.add("loop_depth", 0)
+st.add("cond_depth", 0)
+st.add("err", NONE)
+st.add("errors", [])
+st.add("broken", [])
+st.add("current_model", "")
+st.add("names", {})
+st.add("fnames", {})
+st.add("vcounter", 0)
+st.add("fcounter", 0)
+st.add("models", {Error: error_schema()})
+st.add("model_ctx", NONE)
+st.add("try_id", 0)
+st.add("try_depth", 0)
+st.add("try_loop_base", 0)
+st.add("exports", {})
+st.add("import_stack", [])
+st.add("import_cache", {})
+st.add("import_bodies", {})
+st.add("ns_prefix", "")
+st.add("ns_read_prefix", "")
+st.add("self_dir", dirname(argv[0]))
 if use_prelude:
     add_prelude(st)
 process_source(st, path, src, FALSE, FALSE)
-if NOT (st[err] is NONE):
-    dict ie = st[err]
-    report_error(ie, src)
+flush_error(st)
+if len(st[errors]) > 0:
+    report_errors(st, src)
     exit(1)
-list prog = parse_block(st, TRUE)
-if NOT (st[err] is NONE):
-    dict e2 = st[err]
-    report_error(e2, src)
+list prog = []
+dict pstate = {parsing: TRUE}
+while pstate[parsing]:
+    list chunk = parse_block(st, TRUE)
+    flint pi2 = 0
+    while pi2 < len(chunk):
+        prog.add(chunk[pi2])
+        pi2 += 1
+    flush_error(st)
+    if len(st[errors]) >= 10:
+        pstate.add("parsing", FALSE)
+    elif tk(st)[type] == "eof":
+        pstate.add("parsing", FALSE)
+    else:
+        skip_bad_statement(st)
+        st.add("block_depth", 0)
+flush_error(st)
+if len(st[errors]) > 0:
+    report_errors(st, src)
     exit(1)
 dict ast = {k: "program", stmts: prog}
 

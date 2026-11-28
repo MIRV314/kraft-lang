@@ -1,0 +1,9 @@
+NAME_ERROR: tests/new/multi_error_basic.kraft:1
+    1 | show({missing_a(1)})
+              ^ expected declared function, found undeclared function 'missing_a'
+TYPE_ERROR: tests/new/multi_error_basic.kraft:2
+    2 | flint n = "text"
+                  ^ expected declaration of 'n': type flint, found str
+NAME_ERROR: tests/new/multi_error_basic.kraft:3
+    3 | show({missing_b(2)})
+              ^ expected declared function, found undeclared function 'missing_b'

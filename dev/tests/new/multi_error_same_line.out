@@ -1,0 +1,3 @@
+NAME_ERROR: tests/new/multi_error_same_line.kraft:1
+    1 | flint n = "text" + unknown
+                           ^ expected declared name, found undeclared 'unknown'

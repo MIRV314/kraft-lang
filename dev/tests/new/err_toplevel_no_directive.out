@@ -1,3 +1,6 @@
 TOPLEVEL_ERROR: tests/new/err_toplevel_no_directive.kraft:2
     2 | x = 2
         ^ expected assignment inside a nested block, found assignment to top-level variable 'x'
+TOPLEVEL_ERROR: tests/new/err_toplevel_no_directive.kraft:3
+    3 | x += 3
+        ^ expected assignment inside a nested block, found assignment to top-level variable 'x'

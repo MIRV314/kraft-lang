@@ -1,0 +1,30 @@
+TYPE_ERROR: tests/new/multi_error_limit.kraft:1
+    1 | flint n0 = "text"
+                   ^ expected declaration of 'n0': type flint, found str
+TYPE_ERROR: tests/new/multi_error_limit.kraft:2
+    2 | flint n1 = "text"
+                   ^ expected declaration of 'n1': type flint, found str
+TYPE_ERROR: tests/new/multi_error_limit.kraft:3
+    3 | flint n2 = "text"
+                   ^ expected declaration of 'n2': type flint, found str
+TYPE_ERROR: tests/new/multi_error_limit.kraft:4
+    4 | flint n3 = "text"
+                   ^ expected declaration of 'n3': type flint, found str
+TYPE_ERROR: tests/new/multi_error_limit.kraft:5
+    5 | flint n4 = "text"
+                   ^ expected declaration of 'n4': type flint, found str
+TYPE_ERROR: tests/new/multi_error_limit.kraft:6
+    6 | flint n5 = "text"
+                   ^ expected declaration of 'n5': type flint, found str
+TYPE_ERROR: tests/new/multi_error_limit.kraft:7
+    7 | flint n6 = "text"
+                   ^ expected declaration of 'n6': type flint, found str
+TYPE_ERROR: tests/new/multi_error_limit.kraft:8
+    8 | flint n7 = "text"
+                   ^ expected declaration of 'n7': type flint, found str
+TYPE_ERROR: tests/new/multi_error_limit.kraft:9
+    9 | flint n8 = "text"
+                   ^ expected declaration of 'n8': type flint, found str
+TYPE_ERROR: tests/new/multi_error_limit.kraft:10
+   10 | flint n9 = "text"
+                   ^ expected declaration of 'n9': type flint, found str
