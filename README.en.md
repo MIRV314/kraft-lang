@@ -1,7 +1,7 @@
 # Kraft
 
 [![CI](https://github.com/MIRV314/kraft-lang/actions/workflows/ci.yml/badge.svg)](https://github.com/MIRV314/kraft-lang/actions/workflows/ci.yml)
-[![release v0.9.3](https://img.shields.io/badge/release-v0.9.3-blue.svg)](https://github.com/MIRV314/kraft-lang/releases)
+[![release v0.9.4](https://img.shields.io/badge/release-v0.9.4-blue.svg)](https://github.com/MIRV314/kraft-lang/releases)
 
 [Русская версия](README.md) · [Releases](https://github.com/MIRV314/kraft-lang/releases)
 
@@ -11,7 +11,7 @@ concatenation. Errors show the category, file, line and a caret. The core grows
 through libraries, not new keywords. The compiler `xkraft` is written in Kraft
 and compiles itself. It reports up to 10 independent errors per run, one per line.
 
-Current version: **0.9.3**; the latest published release is **v0.9.3**.
+Current version: **0.9.4**; the latest published release is **v0.9.4**.
 
 ## Installation
 
@@ -20,7 +20,7 @@ LuaJIT is the only requirement (`luajit` must be in `PATH`).
 ```sh
 curl -fsSL https://raw.githubusercontent.com/MIRV314/kraft-lang/main/install-auto.sh | sh
 # or from a clone: sh install.sh
-kraft --version                     # xkraft 0.9.3; kraft is the alias
+kraft --version                     # xkraft 0.9.4; kraft is the alias
 kraft --update                      # update binary and kpm from GitHub Releases
 xkraft lint [path...]               # basic style rules
 kpm --version                       # kpm 1.0.0
@@ -152,8 +152,9 @@ and hash in `kraft.lock`. A URL can be used instead of a path. Packages land in
 Release plan: `0.8` — public `xkraft lint` and fractional range printing
 `1.0, 1.5, 2.0`; `0.9.1` — `PI`, the `kpm` hotfix, `std/math` and updated docs.
 We stay in `0.9.x` for now and verify changes: `0.9.2` added `async` with
-auto-await (D106), `0.9.3` adds multiple errors per run (D121); both are still
-unpublished and will be separate releases. Then `1.0.0` is the official release:
+auto-await (D106), `0.9.3` added multiple errors per run (D121), and `0.9.4`
+is a docs-only cleanup. All three are separate published releases. Then
+`1.0.0` is the official release:
 static typing, a small self-hosted binary, full async support and the same
 multiple-error diagnostics. From `1.0` the binary and grammar are frozen:
 `std/http` ships in `1.1` as an

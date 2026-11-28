@@ -1,6 +1,6 @@
 # Kraft — шпаргалка
 
-Памятка по `0.9.3`. Полные документы: [README](../README.md),
+Памятка по `0.9.4`. Полные документы: [README](../README.md),
 [builtins](builtins.md), [decisions](decisions.md),
 [philosophy](philosophy.md). Английская версия:
 [README.en](../README.en.md), [cheatsheet.en](cheatsheet.en.md).
@@ -11,7 +11,7 @@
 xkraft file.kraft [args...]         # текущий компилятор, новая модель
 xkraft -c file.kraft                # исполняемый file.lua рядом с исходником
 xkraft --tokens file.kraft
-xkraft --version                    # xkraft 0.9.3
+xkraft --version                    # xkraft 0.9.4
 kraft --update                      # обновить бинарник и kpm из GitHub Releases
 xkraft lint [path...]               # базовые правила стиля (docs/style.md)
 kpm init venv                       # kraft.json, kraft.lock, venv/, packages/

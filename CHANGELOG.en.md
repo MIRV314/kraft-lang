@@ -16,6 +16,19 @@
   change afterwards. `std/http` ships in `1.1` as an async-aware library, LSP
   comes after `1.0`.
 
+## v0.9.4 (published 28 November 2026)
+
+[Release](https://github.com/MIRV314/kraft-lang/releases/tag/v0.9.4)
+
+- A docs-only patch after `v0.9.2` and `v0.9.3`: comparisons with other
+  languages and historical sections about the port of deleted `src/*.c`
+  are gone. RU/EN versions are synchronized.
+- The changelog marks `v0.9.2` and `v0.9.3` as published and describes
+  `v0.1.0` and the subset in which `xkraft` is written.
+- Generated artifacts are hidden from Linguist: GitHub shows Lua ~71% and
+  Shell ~29% instead of the false ~87% Shell. Grammar, runtime and compiler
+  behavior are unchanged; only the version string changed.
+
 ## v0.9.3 (published 28 November 2026)
 
 [Release](https://github.com/MIRV314/kraft-lang/releases/tag/v0.9.3)

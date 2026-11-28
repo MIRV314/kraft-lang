@@ -788,11 +788,12 @@ regressions, `self-host` and `make check` are mandatory. `v0.9.1` is already
 published, so the behavior changes in the separate `0.9.3` release, not in
 `1.0.0`.
 
-**D122. The path `0.9.2` → `0.9.3` → `1.0.0` and the binary freeze.** `v0.9.1`
-is published; we stay in `0.9.x` and verify changes through separate releases.
-`0.9.2` added only `async` with auto-await and an event loop to the compiler
-(D106), without `fn`, decorators or multiline `show()`; `0.9.3` added multiple
-errors per run (D121). Then `1.0.0` is the official release of the Kraft
+**D122. The path `0.9.2` → `0.9.3` → `0.9.4` → `1.0.0` and the binary freeze.**
+`v0.9.1` is published; we stay in `0.9.x` and verify changes through separate
+releases. `0.9.2` added only `async` with auto-await and an event loop to the
+compiler (D106), without `fn`, decorators or multiline `show()`; `0.9.3` added
+multiple errors per run (D121); `0.9.4` is docs and Linguist settings only.
+Then `1.0.0` is the official release of the Kraft
 language: static typing, a small self-contained self-hosted binary, full async
 support and the same multiple-error diagnostics. From `1.0.0` on, the binary
 and grammar are frozen throughout `1.x`: only libraries, modules and frameworks

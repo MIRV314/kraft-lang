@@ -1,7 +1,7 @@
 # Kraft
 
 [![CI](https://github.com/MIRV314/kraft-lang/actions/workflows/ci.yml/badge.svg)](https://github.com/MIRV314/kraft-lang/actions/workflows/ci.yml)
-[![release v0.9.3](https://img.shields.io/badge/release-v0.9.3-blue.svg)](https://github.com/MIRV314/kraft-lang/releases)
+[![release v0.9.4](https://img.shields.io/badge/release-v0.9.4-blue.svg)](https://github.com/MIRV314/kraft-lang/releases)
 
 [English](README.en.md) · [Релизы](https://github.com/MIRV314/kraft-lang/releases)
 
@@ -11,7 +11,7 @@ Kraft — небольшой статически типизированный �
 а не новыми ключевыми словами. Компилятор `xkraft` написан на Kraft и собирает
 сам себя. За один запуск показывает до 10 независимых ошибок — по одной на строку.
 
-Текущая версия — **0.9.3**, последний опубликованный релиз — **v0.9.3**.
+Текущая версия — **0.9.4**, последний опубликованный релиз — **v0.9.4**.
 
 ## Установка
 
@@ -20,7 +20,7 @@ Kraft — небольшой статически типизированный �
 ```sh
 curl -fsSL https://raw.githubusercontent.com/MIRV314/kraft-lang/main/install-auto.sh | sh
 # или из клона: sh install.sh
-kraft --version                     # xkraft 0.9.3; kraft — псевдоним
+kraft --version                     # xkraft 0.9.4; kraft — псевдоним
 kraft --update                      # обновить бинарник и kpm из GitHub Releases
 xkraft lint [path...]               # базовые правила стиля
 kpm --version                       # kpm 1.0.0
@@ -150,8 +150,9 @@ kpm run                    # main.kraft через venv/bin/xkraft
 План релизов: `0.8` — публичный `xkraft lint` и вывод `1.0, 1.5, 2.0` для
 дробного range; `0.9.1` — `PI`, hotfix `kpm`, `std/math` и свежая документация.
 Сейчас остаёмся в `0.9.x` и проверяем изменения: `0.9.2` добавил `async` с
-авто-await (D106), `0.9.3` добавляет несколько ошибок за запуск (D121); оба ещё
-не опубликованы и будут отдельными релизами. Затем `1.0.0` — официальный релиз:
+авто-await (D106), `0.9.3` — несколько ошибок за запуск (D121), `0.9.4` — только
+очистка документации. Все три выпущены отдельными релизами. Затем `1.0.0` —
+официальный релиз:
 статическая типизация, маленький self-hosted бинарник, полноценная асинхронность
 и те же несколько ошибок за запуск. С `1.0` бинарник и грамматика заморожены: в `1.1`
 выходит `std/http` как async-aware либа, затем другие либы и модули; LSP — после
