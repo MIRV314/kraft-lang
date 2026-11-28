@@ -16,7 +16,9 @@
   change afterwards. `std/http` ships in `1.1` as an async-aware library, LSP
   comes after `1.0`.
 
-## 0.9.3 (in progress, not published)
+## v0.9.3 (published 28 November 2026)
+
+[Release](https://github.com/MIRV314/kraft-lang/releases/tag/v0.9.3)
 
 - Multiple errors in one run (D121): the compiler collects independent errors
   from different statements, prints each with category, file, line and caret,
@@ -30,7 +32,9 @@
   inside a single line. Grammar, runtime and frozen `dev/kraft` v0.1 are
   unchanged; self-hosting and the double build remain byte-stable.
 
-## 0.9.2 (not published, separate release)
+## v0.9.2 (published 28 November 2026, separate release)
+
+[Release](https://github.com/MIRV314/kraft-lang/releases/tag/v0.9.2)
 
 - `async` as a keyword in place of `func`, a future as the result type, and
   automatic await at the first use of the value (D106). In `0.9.2` timers and
@@ -243,4 +247,16 @@ Checks: `make check` — 22/22 + 15/15 + 25/25 + 71/71.
 
 ## v0.1.0
 
-Frozen reference compiler on LuaJIT.
+Frozen reference compiler on LuaJIT; it lives in `dev/kraft` and is needed
+only to build `xkraft.kraft`.
+
+Inside v0.1: types `str`/`flint`/`bool`/`NONE`/`list`/`dict`, indentation,
+`$name`/`$(expr)` templates, `show`/`input`, arithmetic
+`+ - * / // % **`, comparisons (including chains), `AND`/`OR`/`NOT`, `is`,
+`while`/`for`/`for-in` loops, `break`/`continue`, `func`/`return:`,
+indexing, `a..b..step` slices, collection methods and built-ins
+(`up`, `low`, `title`, `abs`, `round`, `floor`, `ceil`, `sqrt`, `min`,
+`max`, `sum`, `avg`, `keys`, `values`, `upk`, `sort`, `reverse`, `clear`,
+`find`, `part`, `replace`, `join`, `system`, `assert`, `expect`, `map`,
+`filter`, `reduce`). `xkraft.kraft` is written only in this subset: no
+`async`, `model`, `try`/`trigger`/`finally`, `froz` or new slice forms.

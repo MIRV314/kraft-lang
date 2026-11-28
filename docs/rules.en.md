@@ -175,7 +175,7 @@ The baseline v0 compiler does not include:
 - `list`, `dict`, `froz` are passed **by reference**: `b = a` does not copy,
   a slice copies;
 - truthiness: `0`, `""`, `[]`, `{}` are **true**; only `NONE` and
-  `FALSE` are false (deliberately not like Python);
+  `FALSE` are false;
 - a missing dict key gives `NONE` and is not an error (both indexing and `take`);
   `remove` of a missing key → `FALSE`;
 - an index out of list bounds → `VALUE_ERROR`; slice step `0` →
@@ -186,7 +186,9 @@ The baseline v0 compiler does not include:
   there is no separate `float`, `avg` returns `flint`;
 - `sort`/`reverse` are functions that return a **new** list (via
   assignment); `add`/`del`/`remove` mutate the collection in place, as does
-  the function `clear(coll)` (list/dict, returns `NONE`);
+  the function `clear(coll)` (list/dict, returns `NONE`). For example, after
+  `list b = a` and `clear(a)`, `b` is empty too: both names refer to one
+  collection; `sort(a)` instead creates a new list;
 - for dict: `add(ключ, значение)` — add/update, `remove(ключ)` —
   delete, `take(ключ)` — by a key variable; there is no `set` method;
 - for strings: more methods than in the old spec (`triml`, `trimr`,
@@ -229,7 +231,8 @@ time — acceptable for the seed stage; portability will be resolved with the se
   accept UTF-8, and original names never appear in the code;
 - arithmetic — runtime functions with checks: non-number (including `NONE`)
   → `TYPE_MISMATCH_ERROR`; division by 0 and negative exponent →
-  `VALUE_ERROR`; `//` is floor (Python), `%` takes the divisor's sign;
+  `VALUE_ERROR`; `//` is integer division rounded down, `%` takes the
+  divisor's sign;
 - comparisons `==`/`!=` — any types: different types — `FALSE`, `NONE == NONE`
   — `TRUE`; `<` `<=` `>` `>=` — flint with flint, str with str (memcmp over
   UTF-8 bytes), otherwise `TYPE_MISMATCH_ERROR`;
@@ -294,8 +297,8 @@ Decisions made at freeze time:
 
 - `min`/`max` accept **any** number of arguments (1 — over a list, ≥2 — over
   numbers); arity in the analyzer is 1..9, the runtime imposes no upper limit;
-- `round` — as in C: halves are pulled away from zero (`round(2.5)` → `3`,
-  `round(-2.5)` → `-3`); the spec does not specify, the mathematical convention was taken;
+- `round` rounds halves away from zero (`round(2.5)` → `3`,
+  `round(-2.5)` → `-3`);
 - a bare dict key in `[]` (`user[имя]`) is a literal **only** for a dict with
   a known type; after the first index the type is unknown, so for
   `d2[y][z]` the inner key is written as a string (`d2["y"]["z"]`);
@@ -310,162 +313,14 @@ negative exponent, `NONE + 1`, index/slice out of bounds, incomparable
 comparisons, `sum` of strings), both references from tour §18 (calculator, word
 counter); the generated C is clean under ASan/UBSan. Stage 3 is closed.
 
-## Porting the lexer to Kraft (xkraft, step 2)
-
-`xkraft/xkraft.kraft` is a full port of `src/lexer.c`: frames (TEXT/EXPR),
-INDENT/DEDENT, multiline `---`, all operators. `--tokens` parity
-with kraftc is byte-for-byte on all fixtures (including the caret error
-format). v0 limitations discovered during the port:
-
-- **literals do not carry over**: strings/lists/dicts — only on one
-  line; operator tables are built as flat lists of pairs
-  (`["..", "DD", ...]`);
-- **`if`/loop bodies share one scope** (the analyzer has no
-  nested scopes): variables from consecutive block bodies
-  conflict → names have to be spread out (`o3`/`o2`, `k3`/`k2`);
-- **assignment to an element is forbidden** ("an element is changed by a method") —
-  lexer state lives in a dict, updated via `add(ключ, значение)`;
-- a `$` literal in a string — only via escape `"\$"`; the characters `|`, `^`,
-  `#` in a show template are not tokens and are shown via a variable;
-- strings are indexed by UTF-8 characters — positions (line/col) in
-  characters match the C lexer without extra effort.
-
-Performance of the naive port: xkraft tokenizing itself —
-~2 s; optimization (not creating tables on every call) is the growth stage.
-
-## Error format in xkraft (step 3)
-
-`set_err` now has two parts: `set_err(st, exp, line, col, found)` —
-the texts **match byte-for-byte** with `src/lexer.c`. `report_lex` prints
-the kraftc format: the category in red, `expected X` in yellow, `found Y`
-in red — colors only when `is_tty()` (a built-in that checks stderr);
-with redirection the output is clean. kraftc ↔ xkraft parity has been checked
-both in a pipe and under `script` (a terminal) — byte-for-byte.
-
-Port nuances:
-
-- `found` for "unknown symbol" and "after `$`" is the **first byte**
-  of the character (`c[..1]`): the C side prints it the same way via `%c`;
-- temporary `fnd1`/`fnd2`/`fnd3` in `lex` — names were spread out because of
-  the shared scope of block bodies (see step 2);
-- colors in the source use escape `"\e[31m"` (a new `\e` character escape).
-
-## Porting the parser to Kraft (xkraft, step 4)
-
-`xkraft/xkraft.kraft` is a full port of `src/parser.c`: the AST is dict/list-based
-(a node is `{kind, line, col}` plus optional fields; a missing
-key reads as `NONE` and is not printed), parser state is a dict
-of errors (`has_err`/`exp`/`found`/`err_line`/`err_col`, the first wins),
-a statement dispatcher, `ast_dump` and `--ast`. Step 4a — the skeleton and atoms,
-step 4b — eight expression levels (`e_or`..`e_unary`), postfix
-(`index_tail`/`arglist`/`postfix_from`: index, slice, call, field,
-method; a call is only directly by name) and templates (`subst`,
-`parse_template`, `parse_string` for STRTEXT/DOLLAR..STREND).
-
-`--tokens` and `--ast` parity with kraftc is byte-for-byte: stdout, stderr
-and the return code are compared **separately per stream**; checked
-on ~50 positive and negative fixtures, on the self-parser (xkraft
-parses itself — the md5 of the outputs matches) and in TTY (colors under `script`).
-Errors go to stderr via the built-in `show_err` (as in kraftc).
-
-v0 bugs and nuances found during the port:
-
-- **the v0 `parse_template` bug is fixed** (parser.c, commit a4b8e64):
-  a literal `)` right after `$(...)` with an unpaired `(` in the text
-  of the template was lost — RPAREN was excluded from text gathering (`text_on` was not
-  enabled, flush did not happen). Fix: RPAREN takes part in
-  text gathering, an empty flush is safe (guard `b1 > b0`). Step 4b ports
-  the already fixed logic;
-- `trunc64` ("%.64s" for found): C cuts **bytes**, xkraft cuts characters;
-  it differs only on strings with multibyte characters in the first
-  64 bytes (not found in spec fixtures, does not affect the parity
-  denominator);
-- a `$` literal before a string's closing quote (`"..."`) is read by the lexer
-  as a substitution — in Kraft source write `"\$"`
-  (decode_text will return `$`);
-- `report_lex` in xkraft: the caret indent cannot be cut from a fixed
-  string — for `col > 13` the position was wrong; it is built by a loop, like C's `%*s`;
-- variable names inside a function are spread out for uniqueness
-  (shared scope of block bodies, see step 2) — in the port these are `i_e0`/`i_ec`,
-  `t1`/`t2`, `l1`/`n1`;
-- `upk`: the code (`krt_upk_of`) and the docs diverged on the example in
-  `docs/builtins.md` (old dump with a space) — the example was fixed
-  to the separator `", "` (the decision stayed with the runtime).
-
-Performance of the naive port: xkraft parses itself in ~22 s
-(kraftc — 5 ms; strings are concatenated character by character, each operation —
-a new string). This does not concern the growth stage: self-hosting is a one-time
-build, ~22 s is acceptable.
-
-## Porting C emission (xkraft, step 6)
-
-`emit_c(body, src, cpath, krtp)` is a full port of `src/emit.c`: names
-`kv_N`, deferred declarations (`em_collect` lifts block declarations
-to the top of the function), shadowing of loop variables (`em_var_shadow`),
-prototypes, `main` with stdin strings. The text is accumulated in a list and
-joined with `join("")` at the end; writing is `write_file`. Emitter state
-is a dict, updated with `add`/`del` (assignment to an element in v0
-is forbidden).
-
-Nuances inherited from kraftc byte-for-byte: doubled indentation of the line
-`{` for for-loops (`ind_` + `w` in C), a double pass over the function body
-(collect → decls → stmts), a middle link of a comparison chain
-evaluated twice, `krt_num(1)` instead of a missing step.
-
-**`.c` parity is functional** (step 6 decision). Two classes
-of text divergence that cannot be fixed in v0 — the binaries they produce are identical:
-
-1. **non-ASCII and control bytes in strings**: kraftc writes octal
-   (`\320\277`, `\033`), xkraft writes raw bytes. In v0 the byte value
-   is not observable: there is no `ord`/`chr`, string indexing and slices are
-   character-based, comparisons are only lexicographic (from the character
-   `€` one cannot obtain 226 — provably);
-2. **numeric literals**: kraftc writes `%.17g` (the exact 17-digit
-   representation of a double: `0.1` → `krt_num(0.10000000000000001)`),
-   xkraft writes the normalized text of the source literal (`08` → `8`,
-   `.5` → `0.5`); exact expansion of a double into a decimal fraction
-   requires bignum — unavailable in v0.
-
-Both classes change only the `.c` text: the original literal text goes
-through `strtod` to the same double. Byte parity of `.c` is preserved for
-ASCII programs with integer literals and fractions exact in binary
-(`3.5`, `0.25`).
-
-Verification of step 6:
-
-- `.c` kraftc ↔ xkraft: 5/8 valid fixtures byte-for-byte, 3 DIFF —
-  only the classes above;
-- binary behavior (stdout, stderr, rc) kraftc ↔ xkraft ↔
-  self-binary: 8/8 identical;
-- self-binary (xkraft.c from xkraft, built with cc): `--tokens`/`--ast`
-  md5 with kraftc, full parity 50/50, ASan/UBSan clean;
-- self-emission is deterministic: the `.c` produced by xkraft from
-  `xkraft.kraft` equals the `.c` from the self-binary byte-for-byte —
-  a fixed point (gen3 = gen2); with the `.c` from kraftc — only two
-  documented classes (see above), 28 lines;
-- self-emission of xkraft.kraft: ~80 s (lex+parse+analyze+emit).
-
-Other:
-
-- the runtime path is baked into `xkraft.kraft` as a string — just like
-  `-DKFT_KRT` in kraftc via Makefile; in the growth stage it may become
-  a flag;
-- xkraft's default mode now writes `.c` silently (a line like
-  `xkraft: записан …` is a step 7 decision);
-- lexer fix (commit 47e1470): C accepts a name with any byte
-  `>= 0x80`, not only Cyrillic; `DEL` (0x7F) in `is_name_start`
-  passes as a name start — in v0 it cannot be distinguished from a multibyte character
-  (there are no characters with a first byte of 0x80..0xC1),
-  it is the invalid-input class.
-
 ## CLI parity (xkraft, step 7)
 
-`xmain` mirrors `src/main.c` 1:1: the flags `--tokens`/`--ast`/`--emit`
+The `xmain` CLI: the flags `--tokens`/`--ast`/`--emit`
 in any order (before or after the file), an unknown flag →
 `xkraft: unknown flag: X` rc 2, a second file → `xkraft: specify only
 one file` rc 2, no file → usage rc 2, `FILE_ERROR: cannot open
-file: X` rc 1. A lone `-` is a file name, not a flag (as in C).
-Mode priority: tokens > ast > emit (as in the C if/else chain).
+file: X` rc 1. A lone `-` is a file name, not a flag.
+Mode priority: tokens > ast > emit; the first matching mode wins.
 
 xkraft default mode == `--emit`: writes `.c` and prints
 `xkraft: записан <cpath>`; kraftc's default is a build via cc and
@@ -560,10 +415,10 @@ the patch:
 
 ## Growth stage, step 2: autonomous cc and the system bilingual
 
-- xkraft's default mode is now 1:1 with kraftc: emission + standalone
+- xkraft's default mode: emission + standalone
   cc + `xkraft: собран <бинарник>`; `--emit` is "only .c"
   (`записан`); a cc failure → stderr `xkraft: cc exited with an error`,
-  rc 1 (as in kraftc);
+  rc 1;
 - the `system(команда)` bilingual — POSIX: `/bin/sh -c` (the internal
   `system()`); exit code 0..255, on a signal — 128+number, if it did not
   start → -1; shared by kraftc and xkraft: strings in
@@ -736,17 +591,16 @@ Semantics (one-to-one in both compilers):
 - `run` is recognized only as the first argument; the other modes are
   untouched. A file named `run` is now unreachable directly (a keyword)
   — worked around with a path like `./run`;
-- read/lexer/parser/analyzer errors — as in default (stderr, rc 1);
+- read/lexer/parser/analyzer errors — by default: stderr, rc 1;
   running without a file — usage, rc 2;
 - emission goes to a temporary directory `/tmp/kraft-run-<число>` (kraftc —
   wall seconds `time()`, xkraft — `time_ms()`; the path is normalized in
   the suite), nothing appears next to the source;
 - launch — a single `system()`; arguments are quoted with the POSIX idiom
-  (`'` → `'\''`, the same in C and in kraft);
+  (`'` → `'\''`);
 - rc — the system bilingual: 0..255 / 128+signal number / 1 (did not start);
-  in kraftc this is wait-status parsing as in `krt_system` — libc `system`
-  returns the status as a whole (256 for rc=1 was truncated to 0, caught
-  by the test on `e_divzero`/`t_exit`);
+  `system()` returns the status as a whole (256 for rc=1 was truncated to 0,
+  caught by the test on `e_divzero`/`t_exit`);
 - artifacts are removed by the same `rm -rf ... 2>/dev/null` command on
   all exit paths; there are no tmp leaks (the suite checks before/after).
 

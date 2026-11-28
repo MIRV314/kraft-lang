@@ -80,7 +80,7 @@ function. `for i` twice — `REDECLARE_ERROR`.
 
 ## Statements
 
-**D17. Arithmetic as in Python.** `/` is true division (`7 / 2` → `3.5`);
+**D17. Arithmetic in Kraft.** `/` is fractional division (`7 / 2` → `3.5`);
 `//` is floor (`-7 // 2` → `-4`); `%` takes the sign of the divisor (`-7 % 3` → `2`);
 `**` associates to the right (`2 ** 3 ** 2` → `512`); `*` is multiplication.
 
@@ -368,7 +368,8 @@ is available without libraries: strings (`up`, `low`, `title`), numbers (`abs`,
 (`system`), tests (`assert`, `expect`), higher-order functions (`map`,
 `filter`, `reduce`). D68 is clarified: the core includes the full set of built-ins,
 stdlib is only optional add-ons. Key decisions:
-`find` → `NONE`; `part` is split as in Python, a substring is a slice;
+`find` → `NONE`; `part` splits a string by a separator and keeps empty
+fields; a substring is a slice;
 `remove` removes all occurrences (with an optional count); `merge`
 returns a new dictionary; `sort`/`reverse` return new lists;
 `clear` changes in place; `round` rounds halves away from zero; `sqrt` of
@@ -706,8 +707,8 @@ download directory breaks on a different filesystem. For tests and mirrors,
 `TMPDIR` work. The variable `KPM_SELF` no longer exists.
 
 **D117. `..` and `...` in slices.** `..` is the bound separator, `...` is the step
-separator; this is consistent with ranges in `for`, where the step is also separated by `..`. Correspondence
-with Python: `..` ↔ `:`, `...` ↔ `::`. The forms for `xs = [10, 20, 30, 40, 50]`:
+separator; this is consistent with ranges in `for`, where the step is also separated by `..`.
+The forms for `xs = [10, 20, 30, 40, 50]`:
 
 | Notation | Meaning | Result |
 | --- | --- | --- |

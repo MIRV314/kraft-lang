@@ -1,7 +1,7 @@
 # Kraft
 
 [![CI](https://github.com/MIRV314/kraft-lang/actions/workflows/ci.yml/badge.svg)](https://github.com/MIRV314/kraft-lang/actions/workflows/ci.yml)
-[![release v0.9.1](https://img.shields.io/badge/release-v0.9.1-blue.svg)](https://github.com/MIRV314/kraft-lang/releases)
+[![release v0.9.3](https://img.shields.io/badge/release-v0.9.3-blue.svg)](https://github.com/MIRV314/kraft-lang/releases)
 
 [Русская версия](README.md) · [Releases](https://github.com/MIRV314/kraft-lang/releases)
 
@@ -11,7 +11,7 @@ concatenation. Errors show the category, file, line and a caret. The core grows
 through libraries, not new keywords. The compiler `xkraft` is written in Kraft
 and compiles itself. It reports up to 10 independent errors per run, one per line.
 
-Current version in progress: **0.9.3**; the latest published release is **v0.9.1**.
+Current version: **0.9.3**; the latest published release is **v0.9.3**.
 
 ## Installation
 

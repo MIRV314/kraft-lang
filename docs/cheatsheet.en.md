@@ -78,9 +78,9 @@ str:
 
 ## Operators
 
-- Arithmetic: `+ - * / // % **` (Python semantics: `/` is true division,
-  `//` floors, `%` follows the divisor), unary `-`.
-- Comparison: `== != < <= > >=`; chained like Python (`0 <= x <= 10`).
+- Arithmetic: `+ - * / // % **`; `/` is fractional division, `//` is integer
+  division rounded down, `%` follows the divisor, unary `-`.
+- Comparison: `== != < <= > >=`; chains are allowed (`0 <= x <= 10`).
 - Logic: `AND`, `OR`, `NOT`. Type check: `n is flint`.
 - Range: `1..5` yields `1, 2, 3, 4` (right bound excluded); `1..10..2`
   steps by 2, `1..10..0.5` steps by 0.5. Range bounds are always integers.

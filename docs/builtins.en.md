@@ -275,7 +275,7 @@ d[ключ] = 1    # запись по литеральному ключу
 ```
 
 In slices `..` separates bounds, `...` sets the step. This is the same style as
-`for i a..b..step`. Correspondence with Python: `..` ↔ `:`, `...` ↔ `::`.
+`for i a..b..step`.
 For `xs = [10, 20, 30, 40, 50]`:
 
 | Notation | What it gives |

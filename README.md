@@ -1,7 +1,7 @@
 # Kraft
 
 [![CI](https://github.com/MIRV314/kraft-lang/actions/workflows/ci.yml/badge.svg)](https://github.com/MIRV314/kraft-lang/actions/workflows/ci.yml)
-[![release v0.9.1](https://img.shields.io/badge/release-v0.9.1-blue.svg)](https://github.com/MIRV314/kraft-lang/releases)
+[![release v0.9.3](https://img.shields.io/badge/release-v0.9.3-blue.svg)](https://github.com/MIRV314/kraft-lang/releases)
 
 [English](README.en.md) · [Релизы](https://github.com/MIRV314/kraft-lang/releases)
 
@@ -11,7 +11,7 @@ Kraft — небольшой статически типизированный �
 а не новыми ключевыми словами. Компилятор `xkraft` написан на Kraft и собирает
 сам себя. За один запуск показывает до 10 независимых ошибок — по одной на строку.
 
-Текущая версия в работе — **0.9.3**, последний опубликованный релиз — **v0.9.1**.
+Текущая версия — **0.9.3**, последний опубликованный релиз — **v0.9.3**.
 
 ## Установка
 
