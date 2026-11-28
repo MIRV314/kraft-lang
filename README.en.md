@@ -1,5 +1,7 @@
 # Kraft
 
+> **This repository is frozen.** Development continues in [AXI](https://github.com/MIRV314/axi-lang).
+
 [![CI](https://github.com/MIRV314/kraft-lang/actions/workflows/ci.yml/badge.svg)](https://github.com/MIRV314/kraft-lang/actions/workflows/ci.yml)
 [![release v0.9.4](https://img.shields.io/badge/release-v0.9.4-blue.svg)](https://github.com/MIRV314/kraft-lang/releases)
 
