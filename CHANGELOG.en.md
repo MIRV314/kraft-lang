@@ -6,12 +6,8 @@
 
 - The official release of the Kraft language: static typing, a small
   self-contained self-hosted binary with full async support from `0.9.2`,
-  multiple errors per run, and a grammar stable throughout `1.x` (D122).
-- Multiple errors in one run (D121): the compiler will collect independent
-  errors from different statements, print all of them with category, file,
-  line and caret, and exit with code 1. Limit 20, deduplication, enabled by
-  default. Inside a single statement and in the lexer, the first error still
-  wins for now.
+  multiple-error diagnostics from `0.9.3`, and a grammar stable throughout
+  `1.x` (D122).
 - Built-in `std/base` with OOP patterns over `model`/`dict`/`self`: composition
   and delegation instead of inheritance, a protocol plus an explicit `is`
   dispatcher instead of polymorphism, factories and `_` names with accessors
@@ -20,7 +16,21 @@
   change afterwards. `std/http` ships in `1.1` as an async-aware library, LSP
   comes after `1.0`.
 
-## 0.9.2 (in progress, not published)
+## 0.9.3 (in progress, not published)
+
+- Multiple errors in one run (D121): the compiler collects independent errors
+  from different statements, prints each with category, file, line and caret,
+  and exits with code 1. The limit is 10, at most one error per line; enabled
+  by default with no flag.
+- Cascading `NAME_ERROR`s after failed declarations are suppressed, and after
+  an error the parser skips the rest of the statement or block instead of
+  filling the output with noise. Errors inside one line and lexer errors stay
+  single.
+- New regressions: three independent errors, the limit of 10, and one error
+  inside a single line. Grammar, runtime and frozen `dev/kraft` v0.1 are
+  unchanged; self-hosting and the double build remain byte-stable.
+
+## 0.9.2 (not published, separate release)
 
 - `async` as a keyword in place of `func`, a future as the result type, and
   automatic await at the first use of the value (D106). In `0.9.2` timers and

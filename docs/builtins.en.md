@@ -162,7 +162,7 @@ global variables are changed directly inside `func`, `for`, and `while`, without
 
 ## Standard library
 
-Four modules are built into the working `0.9.2` distribution and imported via
+Four modules are built into the working `0.9.3` distribution and imported via
 `import_lib` / `from_lib`:
 
 | Module | Names |

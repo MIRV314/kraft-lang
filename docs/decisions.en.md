@@ -771,29 +771,33 @@ remains in force. Documentation for all libraries is collected in `docs/libs.md`
 in one file with the `math`, `cli`, `fos` parts, then `http` and non-std libraries.
 Version `0.9.1` is a bump within `0.9.x`, not `1.0`.
 
-**D121. Multiple errors per run in `1.0.0`.** Currently `fail()` writes only the
-first `st[err]`; the driver prints it and exits: a file with three errors gives
-one diagnostic. In the official `1.0.0` release the compiler will collect
-independent errors from different statements in one pass, print each through
-`report_error` (category, file, line, caret) and exit with code 1. The limit is
-20 errors with deduplication by `(category, line, column)`; no flag is needed —
-this is the default. Errors inside a single statement, as well as lexer errors,
+**D121. Multiple errors per run — in `0.9.3`.** Previously `fail()` wrote only
+the first `st[err]`; the driver printed it and exited: a file with three errors
+gave one diagnostic. Since `0.9.3` the compiler collects independent errors
+from different statements in one pass, prints each through `report_error`
+(category, file, line, caret) and exits with code 1. The limit is 10 errors,
+at most one per line; no flag is needed — this is the default. Cascading
+`NAME_ERROR`s for names from already failed declarations are suppressed, and
+after an error the parser skips the rest of the statement or block, including
+`trigger`/`finally`. Errors inside a single line, as well as lexer errors,
 remain single for now: recovery after them is ambiguous. The implementation is
 only in `dev/xkraft.kraft`; the frozen `dev/kraft` v0.1 is unchanged. The
-`err_multiple` test, `self-host` and `make check` are mandatory. `v0.9.1` is
-already published, so the behavior changes starting with `1.0.0`.
+`multi_error_basic`, `multi_error_limit` and `multi_error_same_line`
+regressions, `self-host` and `make check` are mandatory. `v0.9.1` is already
+published, so the behavior changes in the separate `0.9.3` release, not in
+`1.0.0`.
 
-**D122. The path `0.9.2` → `1.0.0` and the binary freeze.** `v0.9.1` is published;
-we stay in `0.9.x` for now and verify changes without renaming the release.
-The next step is `0.9.2`: only `async` with auto-await and an event loop are added
-to the compiler (D106), without `fn`, decorators or multiline `show()`. Then
-`1.0.0` is the official release of the Kraft language: static typing, a small
-self-contained self-hosted binary, full async support, and multiple errors per
-run (D121). From `1.0.0` on, the binary and grammar are frozen throughout `1.x`:
-only libraries, modules and frameworks change. `std/http` ships in `1.1` as an
-async-aware library with no binary edits (D104); LSP comes after `1.0` (D103).
-The next grammar unfreeze requires a separate decision; no `2.0` number is
-assigned in advance.
+**D122. The path `0.9.2` → `0.9.3` → `1.0.0` and the binary freeze.** `v0.9.1`
+is published; we stay in `0.9.x` and verify changes through separate releases.
+`0.9.2` added only `async` with auto-await and an event loop to the compiler
+(D106), without `fn`, decorators or multiline `show()`; `0.9.3` added multiple
+errors per run (D121). Then `1.0.0` is the official release of the Kraft
+language: static typing, a small self-contained self-hosted binary, full async
+support and the same multiple-error diagnostics. From `1.0.0` on, the binary
+and grammar are frozen throughout `1.x`: only libraries, modules and frameworks
+change. `std/http` ships in `1.1` as an async-aware library with no binary
+edits (D104); LSP comes after `1.0` (D103). The next grammar unfreeze requires
+a separate decision; no `2.0` number is assigned in advance.
 
 **D123. OOP patterns in `std/base` and multiline `show()`.** `std/base` contains
 patterns, not language-level OOP: inheritance becomes composition with a parent

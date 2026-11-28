@@ -1,6 +1,6 @@
 # Kraft cheatsheet
 
-Reference for `0.9.2`. Full docs: [English README](../README.en.md),
+Reference for `0.9.3`. Full docs: [English README](../README.en.md),
 [builtins](builtins.md), [decisions](decisions.md),
 [philosophy](philosophy.md). Russian version:
 [README](../README.md), [cheatsheet](cheatsheet.md).
@@ -11,7 +11,7 @@ Reference for `0.9.2`. Full docs: [English README](../README.en.md),
 xkraft file.kraft [args...]         # current compiler, new model
 xkraft -c file.kraft                # executable file.lua next to the source
 xkraft --tokens file.kraft
-xkraft --version                    # xkraft 0.9.2
+xkraft --version                    # xkraft 0.9.3
 kraft --update                      # update binary and kpm from GitHub Releases
 xkraft lint [path...]               # basic style rules (docs/style.md)
 kpm init venv                       # kraft.json, kraft.lock, venv/, packages/

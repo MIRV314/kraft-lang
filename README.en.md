@@ -9,9 +9,9 @@ Kraft is a small statically typed language: one numeric type (`flint`),
 indentation instead of braces, and `{}` interpolation instead of string
 concatenation. Errors show the category, file, line and a caret. The core grows
 through libraries, not new keywords. The compiler `xkraft` is written in Kraft
-and compiles itself.
+and compiles itself. It reports up to 10 independent errors per run, one per line.
 
-Current version in progress: **0.9.2**; the latest published release is **v0.9.1**.
+Current version in progress: **0.9.3**; the latest published release is **v0.9.1**.
 
 ## Installation
 
@@ -20,7 +20,7 @@ LuaJIT is the only requirement (`luajit` must be in `PATH`).
 ```sh
 curl -fsSL https://raw.githubusercontent.com/MIRV314/kraft-lang/main/install-auto.sh | sh
 # or from a clone: sh install.sh
-kraft --version                     # xkraft 0.9.2; kraft is the alias
+kraft --version                     # xkraft 0.9.3; kraft is the alias
 kraft --update                      # update binary and kpm from GitHub Releases
 xkraft lint [path...]               # basic style rules
 kpm --version                       # kpm 1.0.0
@@ -129,8 +129,6 @@ and hash in `kraft.lock`. A URL can be used instead of a path. Packages land in
   future decision (D123).
 - No `sin`, `cos`, `tan` or `log` in `std/math` yet: only `pow` and `random`.
 - `clamp`, `lerp` and `is_even` are not introduced.
-- Multiple errors per run: the compiler currently shows the first one; all
-  independent errors are planned for `1.0.0` (D121).
 - No package registry yet: local paths and URLs only.
 - `async`/auto-await and the event loop are available from `0.9.2`; `std/http`
   follows in `1.1`, already async-aware (D104, D106).
@@ -153,10 +151,12 @@ and hash in `kraft.lock`. A URL can be used instead of a path. Packages land in
 
 Release plan: `0.8` — public `xkraft lint` and fractional range printing
 `1.0, 1.5, 2.0`; `0.9.1` — `PI`, the `kpm` hotfix, `std/math` and updated docs.
-We stay in `0.9.x` for now and verify changes: `0.9.2` adds `async` with
-auto-await (D106) but is not published yet. Then `1.0.0` is the official release: static typing, a small
-self-hosted binary, full async support and multiple errors per run (D121). From
-`1.0` the binary and grammar are frozen: `std/http` ships in `1.1` as an
+We stay in `0.9.x` for now and verify changes: `0.9.2` added `async` with
+auto-await (D106), `0.9.3` adds multiple errors per run (D121); both are still
+unpublished and will be separate releases. Then `1.0.0` is the official release:
+static typing, a small self-hosted binary, full async support and the same
+multiple-error diagnostics. From `1.0` the binary and grammar are frozen:
+`std/http` ships in `1.1` as an
 async-aware library, followed by other libraries and modules; LSP comes after
 `1.0`. The site, registry, AUR package and showcase are postponed to a separate
 release. Decorators, `fn` and multiline `show()` are ideas with no deadline
