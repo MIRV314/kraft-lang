@@ -1,5 +1,5 @@
 #!/bin/sh
-# kpm 0.9.3 — менеджер пакетов Kraft.
+# kpm 0.9.4 — менеджер пакетов Kraft.
 set -eu
 dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/kpm.XXXXXX") || exit 1
